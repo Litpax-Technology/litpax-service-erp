@@ -19,11 +19,30 @@
       <p id="hdrSub">Repair &amp; Enquiry — one place</p>
     </div>
     <button class="header-home" id="hdrHome" onclick="backToLauncher()">⌂ Menu</button>
+    <span class="header-role" id="hdrRole"></span>
+    <button class="header-logout" id="hdrLogout" onclick="logout()" style="display:none">⎋ Logout</button>
     <div class="header-date" id="headerDate"></div>
   </div>
 </div>
 
 <div class="main">
+
+  <!-- ============ LOGIN ============ -->
+  <div class="login-screen active" id="loginScreen">
+    <div class="login-title">Litpax Service Hub</div>
+    <div class="login-sub">Login karke aage badho</div>
+    <div class="role-grid" id="roleGrid"></div>
+    <div class="role-pin-box" id="rolePinBox" style="display:none">
+      <div class="form-group">
+        <label id="rolePinLabel">PIN</label>
+        <input type="password" id="rolePin" inputmode="numeric" placeholder="••••" onkeydown="if(event.key==='Enter')authLogin()">
+      </div>
+      <button class="btn-submit" style="width:100%;margin-top:10px" onclick="authLogin()">Login</button>
+    </div>
+  </div>
+
+  <!-- ============ APP (post-login) ============ -->
+  <div id="appWrap" style="display:none">
 
   <!-- ============ LAUNCHER ============ -->
   <div class="app-screen active" id="launcherScreen">
@@ -31,19 +50,16 @@
       <div class="launcher-title">Litpax Service Hub</div>
       <div class="launcher-sub">Choose a module to continue</div>
       <div class="launch-grid">
-        <div class="launch-card repair" onclick="openModule('repair')">
+        <div class="launch-card repair" data-mod="repair" onclick="openModule('repair')">
           <div class="launch-icon">🛠️</div>
           <div class="launch-name">Repair / Service Center</div>
           <div class="launch-desc">Battery / Charger receive &amp; dispatch</div>
         </div>
-        <div class="launch-card enquiry" onclick="openModule('enquiry')">
+        <div class="launch-card enquiry" data-mod="enquiry" onclick="openModule('enquiry')">
           <div class="launch-icon">📞</div>
           <div class="launch-name">Enquiry Desk</div>
           <div class="launch-desc">Customer enquiry log &amp; track</div>
         </div>
-      </div>
-      <div class="launch-admin">
-        <button onclick="openModule('admin')">⚙️ Manage dropdown options (Admin)</button>
       </div>
     </div>
   </div>
@@ -407,29 +423,8 @@
     </div>
   </div>
 
-  <!-- ============ ADMIN MODULE ============ -->
-  <div class="app-screen" id="adminModule">
-    <div id="adminLockScreen">
-      <div class="admin-lock card">
-        <div class="card-label" style="justify-content:center">⚙️ Admin — Manage Options</div>
-        <div class="form-group"><label>Enter Admin PIN</label><input type="password" id="adminPinInput" inputmode="numeric" placeholder="••••" onkeydown="if(event.key==='Enter')adminUnlock()"></div>
-        <button class="btn-submit" style="margin-top:14px;width:100%" onclick="adminUnlock()">Unlock</button>
-      </div>
-    </div>
-
-    <div id="adminPanel" style="display:none">
-      <div class="page-title">⚙️ Dropdown Options</div>
-      <div class="page-sub">Add / disable options — turant app mein reflect honge. Sheet ke existing data ko haath nahi lagta.</div>
-      <div class="cfg-app-tabs">
-        <button class="cfg-app-tab active" id="cfgTabRepair" onclick="adminSwitchApp('repair')">🛠️ Repair options</button>
-        <button class="cfg-app-tab" id="cfgTabEnquiry" onclick="adminSwitchApp('enquiry')">📞 Enquiry options</button>
-      </div>
-      <div id="adminLoading" class="loading-box" style="display:none"><div class="loading-spinner"></div><p>Loading options...</p></div>
-      <div id="adminGroups"></div>
-    </div>
-  </div>
-
-</div>
+  </div><!-- /appWrap -->
+</div><!-- /main -->
 
 <div class="toast" id="toast"></div>
 
