@@ -8,12 +8,19 @@ const CONFIG = {
   ENQUIRY_URL: 'https://script.google.com/macros/s/AKfycbzTZU0YyV8wTfaPcUhUj7C041nxgZz2nrVIlJEiVE9adF35-KuwoBczI22DXbLa7B2z/exec',
 
   // --- Login roles (ERP-jaisa, sessionStorage-based — koi GAS nahi) ---
-  // pin: login PIN | modules: ye role kya-kya dekh sakta
+  // Har role kya-kya dekh sakta:
   ROLES: {
-    repair:  { label: 'Repair',  icon: '\u{1F6E0}\u{FE0F}', pin: '1111', modules: ['repair'] },
-    service: { label: 'Service', icon: '\u{1F4DE}', pin: '2222', modules: ['enquiry'] },
-    admin:   { label: 'Admin',   icon: '\u{1F451}', pin: '2468', modules: ['repair', 'enquiry'] }
+    repair:  { label: 'Repair',  icon: '\u{1F6E0}\u{FE0F}', modules: ['repair'] },
+    service: { label: 'Service', icon: '\u{1F4DE}', modules: ['enquiry'] },
+    admin:   { label: 'Admin',   icon: '\u{1F451}', modules: ['repair', 'enquiry'] }
   },
+
+  // --- Login credentials (username + password -> role). Yahin se add/change ---
+  USERS: [
+    { username: 'repair',  password: '1111', role: 'repair'  },
+    { username: 'service', password: '2222', role: 'service' },
+    { username: 'admin',   password: '2468', role: 'admin'   }
+  ],
 
   // --- Dropdown options (hardcoded — add/remove yahin se) ---
   DROPDOWNS: {
