@@ -61,44 +61,54 @@ window.onload = function () {
   authInit();
 };
 
-/* ---------- LAUNCHER NAV ---------- */
+/* ---------- NAV (sidebar) ---------- */
 const HEADERS = {
-  launcher: ['Service Hub', 'Repair & Enquiry — one place'],
+  dashboard: ['Dashboard', 'Aaj ka overview'],
   repair:   ['Service Management', 'Battery / Charger — Receive & Dispatch'],
-  enquiry:  ['Enquiry Management', 'Customer Enquiry — Log & Track'],
-  admin:    ['Admin', 'Manage dropdown options']
+  enquiry:  ['Enquiry Management', 'Customer Enquiry — Log & Track']
 };
+const NAV_ITEMS = [
+  { key: 'dashboard', icon: '📊', label: 'Dashboard', mod: null },
+  { key: 'repair',    icon: '🛠️', label: 'Repair',    mod: 'repair' },
+  { key: 'enquiry',   icon: '📞', label: 'Enquiry',   mod: 'enquiry' }
+];
 
 function setHeader(mod) {
   document.getElementById('hdrTitle').textContent = HEADERS[mod][0];
   document.getElementById('hdrSub').textContent = HEADERS[mod][1];
-  document.getElementById('hdrHome').style.display = (mod === 'launcher') ? 'none' : 'inline-block';
 }
-
 function showApp(id) {
   document.querySelectorAll('.app-screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   window.scrollTo(0, 0);
 }
-
 function currentRole() { return sessionStorage.getItem('hub_role') || ''; }
 function roleCan(mod) { const r = CONFIG.ROLES[currentRole()]; return r && r.modules.indexOf(mod) !== -1; }
 
-function openModule(mod) {
-  if (!roleCan(mod)) { showToast('⚠️ Is role ko iski permission nahi'); return; }
-  if (mod === 'repair') { setHeader('repair'); showApp('repairModule'); repInit(); }
-  else if (mod === 'enquiry') { setHeader('enquiry'); showApp('enquiryModule'); enqInit(); }
-  // single-module role ke liye Menu button chhupao (launcher hai hi nahi)
-  const r = CONFIG.ROLES[currentRole()];
-  document.getElementById('hdrHome').style.display = (r && r.modules.length > 1) ? 'inline-block' : 'none';
+function buildSidebar() {
+  const nav = document.getElementById('sbNav');
+  nav.innerHTML = NAV_ITEMS.filter(it => it.mod === null || roleCan(it.mod)).map(it =>
+    '<button class="sb-item" data-nav="' + it.key + '" onclick="navGo(\'' + it.key + '\')"><span class="sb-ico">' + it.icon + '</span>' + it.label + '</button>'
+  ).join('');
+}
+function setActiveNav(key) {
+  document.querySelectorAll('.sb-item').forEach(b => b.classList.toggle('active', b.getAttribute('data-nav') === key));
+}
+function navGo(key) { if (key === 'dashboard') openDashboard(); else openModule(key); toggleSidebar(false); }
+function toggleSidebar(force) {
+  const sb = document.getElementById('sidebar'), ov = document.getElementById('sbOverlay');
+  const open = (typeof force === 'boolean') ? force : !sb.classList.contains('open');
+  sb.classList.toggle('open', open);
+  ov.classList.toggle('show', open);
 }
 
-// Menu button: multi-module role -> launcher; single-module role -> stay in its module
-function backToLauncher() {
-  const r = CONFIG.ROLES[currentRole()];
-  if (r && r.modules.length > 1) { setHeader('launcher'); showApp('launcherScreen'); }
-  else if (r && r.modules.length === 1) { openModule(r.modules[0]); }
+function openModule(mod) {
+  if (!roleCan(mod)) { showToast('⚠️ Is role ko iski permission nahi'); return; }
+  setActiveNav(mod);
+  if (mod === 'repair') { setHeader('repair'); showApp('repairModule'); repInit(); }
+  else if (mod === 'enquiry') { setHeader('enquiry'); showApp('enquiryModule'); enqInit(); }
 }
+function openDashboard() { setActiveNav('dashboard'); setHeader('dashboard'); showApp('dashboardScreen'); dashLoad(false); }
 
 /* ============================================================
    AUTH (sessionStorage-based, ERP-style — no GAS)
@@ -112,9 +122,8 @@ function authInit() {
 function showLogin() {
   document.getElementById('loginScreen').classList.add('active');
   document.getElementById('appWrap').style.display = 'none';
-  document.getElementById('hdrHome').style.display = 'none';
-  document.getElementById('hdrLogout').style.display = 'none';
-  document.getElementById('hdrRole').textContent = '';
+  document.body.classList.remove('has-sidebar');
+  toggleSidebar(false);
   const u = document.getElementById('loginUser'), p = document.getElementById('loginPass');
   if (u) u.value = ''; if (p) p.value = '';
 }
@@ -138,20 +147,97 @@ function authLogin() {
 function enterApp(role) {
   document.getElementById('loginScreen').classList.remove('active');
   document.getElementById('appWrap').style.display = 'block';
-  document.getElementById('hdrLogout').style.display = 'inline-block';
-  document.getElementById('hdrRole').textContent = CONFIG.ROLES[role].icon + ' ' + CONFIG.ROLES[role].label;
-  const mods = CONFIG.ROLES[role].modules;
-  if (mods.length === 1) openModule(mods[0]);        // single-module role: straight in
-  else { setHeader('launcher'); showApp('launcherScreen'); applyLauncherPerms(); } // admin: launcher
+  document.body.classList.add('has-sidebar');
+  document.getElementById('sbRole').innerHTML = CONFIG.ROLES[role].icon + ' ' + CONFIG.ROLES[role].label;
+  buildSidebar();
+  openDashboard();
 }
 
-function applyLauncherPerms() {
-  document.querySelectorAll('#launcherScreen [data-mod]').forEach(card => {
-    card.style.display = roleCan(card.getAttribute('data-mod')) ? '' : 'none';
-  });
+function logout() { sessionStorage.removeItem('hub_role'); toggleSidebar(false); showLogin(); }
+
+/* ============================================================
+   DASHBOARD (KPIs + recent lists) — uses existing backends
+   ============================================================ */
+let _dashLoading = false;
+function dashLoad(force) {
+  const role = currentRole();
+  const canRep = roleCan('repair'), canEnq = roleCan('enquiry');
+  const cached = cacheGet('dash_' + role);
+  if (cached && !force) { dashRender(cached.val); if (cached.fresh) return; }
+  else if (!cached) { document.getElementById('kpiGrid').innerHTML = '<div class="skeleton kpi-sk"></div>'.repeat(canRep && canEnq ? 6 : 3); document.getElementById('dashLists').innerHTML = ''; }
+
+  if (_dashLoading) return; _dashLoading = true;
+  const acc = { rep: null, repPend: null, enq: null, enqOpen: null };
+  let pending = 0;
+  const done = () => { if (pending === 0) { _dashLoading = false; const data = dashCompute(acc); cacheSet('dash_' + role, data); dashRender(data); } };
+
+  if (canRep) {
+    pending += 2;
+    jsonp(CONFIG.REPAIR_URL, { action: 'getDashboard' }, r => { acc.rep = (r && r.data) || []; pending--; done(); }, () => { acc.rep = []; pending--; done(); });
+    jsonp(CONFIG.REPAIR_URL, { action: 'getPending' }, r => { acc.repPend = (r && r.data) || []; pending--; done(); }, () => { acc.repPend = []; pending--; done(); });
+  }
+  if (canEnq) {
+    pending += 2;
+    jsonp(CONFIG.ENQUIRY_URL, { action: 'getAllEnquiries' }, r => { acc.enq = (r && r.rows) || []; pending--; done(); }, () => { acc.enq = []; pending--; done(); });
+    jsonp(CONFIG.ENQUIRY_URL, { action: 'getOpenEnquiries' }, r => { acc.enqOpen = (r && r.rows) || []; pending--; done(); }, () => { acc.enqOpen = []; pending--; done(); });
+  }
+  if (pending === 0) { _dashLoading = false; }
 }
 
-function logout() { sessionStorage.removeItem('hub_role'); showLogin(); }
+function dashCompute(acc) {
+  const out = { kpis: [], repPend: acc.repPend || [], enqOpen: acc.enqOpen || [], hasRep: !!acc.rep, hasEnq: !!acc.enq };
+  if (acc.rep) {
+    const rows = acc.rep;
+    const total = rows.length;
+    const pending = (acc.repPend || []).length;
+    const dispatched = rows.filter(r => String(r['Repair Status'] || '').toLowerCase().indexOf('dispatch') !== -1).length;
+    out.kpis.push({ label: 'Total Repairs', value: total, tone: 'blue', icon: '🛠️' });
+    out.kpis.push({ label: 'Pending', value: pending, tone: 'amber', icon: '⏳' });
+    out.kpis.push({ label: 'Dispatched', value: dispatched, tone: 'green', icon: '🚚' });
+  }
+  if (acc.enq) {
+    const rows = acc.enq;
+    const total = rows.length;
+    const open = (acc.enqOpen || []).length;
+    const closed = rows.filter(r => String(r.enquiryClosed || '').toLowerCase() === 'yes').length;
+    out.kpis.push({ label: 'Total Enquiries', value: total, tone: 'blue', icon: '📞' });
+    out.kpis.push({ label: 'Open', value: open, tone: 'amber', icon: '📂' });
+    out.kpis.push({ label: 'Closed', value: closed, tone: 'green', icon: '✅' });
+  }
+  return out;
+}
+
+function dashRender(d) {
+  const role = currentRole();
+  document.getElementById('dashHello').textContent = CONFIG.ROLES[role].icon + ' ' + CONFIG.ROLES[role].label + ' Dashboard';
+  document.getElementById('kpiGrid').innerHTML = d.kpis.map(k =>
+    '<div class="kpi kpi-' + k.tone + '"><div class="kpi-ico">' + k.icon + '</div>' +
+    '<div class="kpi-val">' + k.value + '</div><div class="kpi-lbl">' + k.label + '</div></div>'
+  ).join('');
+
+  let lists = '';
+  if (d.hasRep) {
+    const items = (d.repPend || []).slice(0, 5);
+    lists += '<div class="dash-list card"><div class="card-label">🔧 Pending Repairs</div>' +
+      (items.length ? items.map(r =>
+        '<div class="mini-row"><div><div class="mini-title">' + (r.repairId || '') + ' · ' + (r.customerName || '') + '</div>' +
+        '<div class="mini-sub">' + (r.category || '') + (r.batteryModel ? ' — ' + r.batteryModel : '') + '</div></div>' +
+        '<span class="badge badge-amber">' + r.pendingQty + ' pending</span></div>'
+      ).join('') : '<div class="no-results">Koi pending nahi ✅</div>') +
+      (roleCan('repair') ? '<button class="mini-cta" onclick="openModule(\'repair\')">Open Repair →</button>' : '') + '</div>';
+  }
+  if (d.hasEnq) {
+    const items = (d.enqOpen || []).slice(0, 5);
+    lists += '<div class="dash-list card"><div class="card-label">📂 Open Enquiries</div>' +
+      (items.length ? items.map(r =>
+        '<div class="mini-row"><div><div class="mini-title">Sr.' + r.srNo + ' · ' + (r.customerName || '') + '</div>' +
+        '<div class="mini-sub">' + (r.enquiryAbout || '') + (r.oems ? ' — ' + r.oems : '') + '</div></div>' +
+        '<span class="badge badge-amber">Open</span></div>'
+      ).join('') : '<div class="no-results">Koi open enquiry nahi ✅</div>') +
+      (roleCan('enquiry') ? '<button class="mini-cta" onclick="openModule(\'enquiry\')">Open Enquiry →</button>' : '') + '</div>';
+  }
+  document.getElementById('dashLists').innerHTML = lists;
+}
 
 /* ---------- Dropdowns (hardcoded from config.js — no GAS) ---------- */
 function fillDropdowns(moduleId, app) {
@@ -402,21 +488,22 @@ function repRenderPending() {
   document.getElementById('pendingSkeleton').style.display = 'none';
   const list = document.getElementById('pendingList');
   if (!repPending.length) { list.innerHTML = '<div class="no-results">Koi pending repair nahi hai ✅</div>'; return; }
-  list.innerHTML = '<div class="form-group"><label>Repair ID / Customer Name select karo</label>' +
-    '<select id="pendingDropdown" style="font-size:14px;padding:10px 14px;width:100%" onchange="repDispatchSelect(this)">' +
-    '<option value="">-- Select Repair ID --</option></select></div>';
-  const dd = document.getElementById('pendingDropdown');
-  repPending.forEach((row, idx) => {
-    const o = document.createElement('option');
-    o.value = idx;
-    o.textContent = row.repairId + ' — ' + row.customerName + ' (' + (row.category || '') + (row.batteryModel ? ' ' + row.batteryModel : '') + ') | Pending: ' + row.pendingQty;
-    dd.appendChild(o);
-  });
+  const q = (document.getElementById('pendingSearch').value || '').toLowerCase().trim();
+  const rows = repPending.map((r, i) => ({ r, i })).filter(({ r }) =>
+    !q || (r.repairId + ' ' + r.customerName + ' ' + (r.contactNo || '') + ' ' + (r.batteryModel || '')).toLowerCase().indexOf(q) !== -1);
+  if (!rows.length) { list.innerHTML = '<div class="no-results">Kuch nahi mila 🔍</div>'; return; }
+  const selId = document.getElementById('d_selectedRepairId').value;
+  list.innerHTML = rows.map(({ r, i }) =>
+    '<div class="pick-card' + (r.repairId === selId ? ' selected' : '') + '" onclick="repPickPending(' + i + ')">' +
+    '<div class="pick-main"><div class="pick-title">' + r.repairId + '</div>' +
+    '<div class="pick-sub">' + r.customerName + ' · ' + (r.category || '') + (r.batteryModel ? ' — ' + r.batteryModel : '') + '</div></div>' +
+    '<span class="badge badge-amber">' + r.pendingQty + ' pending</span></div>'
+  ).join('');
 }
 
-function repDispatchSelect(sel) {
-  if (!sel.value) { document.getElementById('selectedInfoBox').style.display = 'none'; document.getElementById('dNextBtn').disabled = true; document.getElementById('dNextBtn').style.opacity = '.5'; return; }
-  const row = repPending[parseInt(sel.value)];
+function repPickPending(idx) {
+  const row = repPending[idx];
+  if (!row) return;
   repSelected = row;
   document.getElementById('d_selectedRepairId').value = row.repairId;
   document.getElementById('d_selectedRow').value = row.rowIndex;
@@ -434,6 +521,8 @@ function repDispatchSelect(sel) {
   document.getElementById('dNextBtn').disabled = false; document.getElementById('dNextBtn').style.opacity = '1';
   repApplyDispatchCategory(row.category || 'Battery+Charger');
   repCalcPending();
+  repRenderPending(); // re-highlight selected card
+  document.getElementById('selectedInfoBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function repApplyDispatchCategory(cat) {
@@ -633,10 +722,9 @@ function enqReset() {
 
 let enqLoadingOpen = false;
 function enqLoadOpen() {
-  const dd = document.getElementById('openEnquiryDropdown');
   const cached = cacheGet('enq_open');
   if (cached) { enqOpen = cached.val || []; enqFillOpen(); if (cached.fresh) return; }
-  else { document.getElementById('openSkeleton').style.display = 'block'; }
+  else { document.getElementById('openSkeleton').style.display = 'block'; document.getElementById('openList').innerHTML = ''; }
 
   if (enqLoadingOpen) return; enqLoadingOpen = true;
   jsonp(CONFIG.ENQUIRY_URL, { action: 'getOpenEnquiries' }, function (res) {
@@ -649,10 +737,18 @@ function enqLoadOpen() {
 }
 
 function enqFillOpen() {
-  const dd = document.getElementById('openEnquiryDropdown');
-  if (!enqOpen.length) { dd.innerHTML = '<option value="">-- Koi open enquiry nahi --</option>'; return; }
-  dd.innerHTML = '<option value="">-- Select karo (' + enqOpen.length + ' open) --</option>' +
-    enqOpen.map((row, i) => '<option value="' + i + '">Sr.' + row.srNo + ' — ' + row.customerName + '</option>').join('');
+  const list = document.getElementById('openList');
+  if (!enqOpen.length) { list.innerHTML = '<div class="no-results">Koi open enquiry nahi ✅</div>'; return; }
+  const q = (document.getElementById('openSearch').value || '').toLowerCase().trim();
+  const rows = enqOpen.map((r, i) => ({ r, i })).filter(({ r }) =>
+    !q || (('sr.' + r.srNo) + ' ' + (r.customerName || '') + ' ' + (r.contact || '') + ' ' + (r.oems || '')).toLowerCase().indexOf(q) !== -1);
+  if (!rows.length) { list.innerHTML = '<div class="no-results">Kuch nahi mila 🔍</div>'; return; }
+  list.innerHTML = rows.map(({ r, i }) =>
+    '<div class="pick-card" onclick="enqSelectFromDropdown(' + i + ')">' +
+    '<div class="pick-main"><div class="pick-title">Sr.' + r.srNo + ' · ' + (r.customerName || '') + '</div>' +
+    '<div class="pick-sub">' + (r.enquiryAbout || '') + (r.oems ? ' — ' + r.oems : '') + '</div></div>' +
+    '<span class="badge badge-amber">Open</span></div>'
+  ).join('');
 }
 
 function enqSelectFromDropdown(idx) {
