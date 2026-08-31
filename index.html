@@ -11,16 +11,27 @@
 </head>
 <body>
 
+<!-- ============ SIDEBAR ============ -->
+<aside class="sidebar" id="sidebar">
+  <div class="sb-brand">
+    <div class="sb-logo">L</div>
+    <div><div class="sb-brand-name">Service Hub</div><div class="sb-brand-sub">Litpax Technology</div></div>
+  </div>
+  <nav class="sb-nav" id="sbNav"></nav>
+  <div class="sb-foot">
+    <div class="sb-role" id="sbRole"></div>
+    <button class="sb-logout" onclick="logout()">⎋ Logout</button>
+  </div>
+</aside>
+<div class="sb-overlay" id="sbOverlay" onclick="toggleSidebar(false)"></div>
+
 <div class="header">
   <div class="header-inner">
-    <div class="logo">LITPAX</div>
+    <button class="sb-toggle" id="sbToggle" onclick="toggleSidebar()" style="display:none">☰</button>
     <div class="header-text">
       <h1 id="hdrTitle">Service Hub</h1>
       <p id="hdrSub">Repair &amp; Enquiry — one place</p>
     </div>
-    <button class="header-home" id="hdrHome" onclick="backToLauncher()">⌂ Menu</button>
-    <span class="header-role" id="hdrRole"></span>
-    <button class="header-logout" id="hdrLogout" onclick="logout()" style="display:none">⎋ Logout</button>
     <div class="header-date" id="headerDate"></div>
   </div>
 </div>
@@ -79,24 +90,19 @@
   <!-- ============ APP (post-login) ============ -->
   <div id="appWrap" style="display:none">
 
-  <!-- ============ LAUNCHER ============ -->
-  <div class="app-screen active" id="launcherScreen">
-    <div class="launcher">
-      <div class="launcher-title">Litpax Service Hub</div>
-      <div class="launcher-sub">Choose a module to continue</div>
-      <div class="launch-grid">
-        <div class="launch-card repair" data-mod="repair" onclick="openModule('repair')">
-          <div class="launch-icon">🛠️</div>
-          <div class="launch-name">Repair / Service Center</div>
-          <div class="launch-desc">Battery / Charger receive &amp; dispatch</div>
-        </div>
-        <div class="launch-card enquiry" data-mod="enquiry" onclick="openModule('enquiry')">
-          <div class="launch-icon">📞</div>
-          <div class="launch-name">Enquiry Desk</div>
-          <div class="launch-desc">Customer enquiry log &amp; track</div>
-        </div>
+  <!-- ============ DASHBOARD ============ -->
+  <div class="app-screen active" id="dashboardScreen">
+    <div class="dash-head">
+      <div>
+        <div class="page-title" id="dashHello">Dashboard</div>
+        <div class="page-sub" id="dashSub">Aaj ka overview</div>
       </div>
+      <button class="btn-refresh" onclick="dashLoad(true)">↻ Refresh</button>
     </div>
+    <div class="kpi-grid" id="kpiGrid">
+      <div class="skeleton kpi-sk"></div><div class="skeleton kpi-sk"></div><div class="skeleton kpi-sk"></div>
+    </div>
+    <div class="dash-lists" id="dashLists"></div>
   </div>
 
   <!-- ============ REPAIR MODULE ============ -->
@@ -275,11 +281,12 @@
         <div class="card">
           <div class="card-label">Pending Repairs</div>
           <div id="pendingListContainer">
+            <div class="list-search"><span>🔍</span><input type="text" id="pendingSearch" placeholder="Repair ID ya customer search karo..." oninput="repRenderPending()"></div>
             <div id="pendingSkeleton" style="display:none;">
-              <div class="skeleton sk-row"></div><div class="skeleton sk-row"></div><div class="skeleton sk-row"></div>
+              <div class="skeleton sk-card"></div><div class="skeleton sk-card"></div><div class="skeleton sk-card"></div>
             </div>
             <div class="error-box" id="errorBox">Sheet se data load nahi ho paya.</div>
-            <div class="pending-list" id="pendingList"></div>
+            <div class="pick-list" id="pendingList"></div>
           </div>
           <input type="hidden" id="d_selectedRepairId" value="">
           <input type="hidden" id="d_selectedRow" value="">
@@ -398,12 +405,9 @@
       <div class="page-sub">Open enquiries mein se select karo</div>
       <div class="card">
         <div class="card-label">Open Enquiries — Select to Update</div>
-        <div id="openSkeleton" style="display:none"><div class="skeleton sk-row"></div></div>
-        <div class="form-group">
-          <select id="openEnquiryDropdown" onchange="enqSelectFromDropdown(this.value)">
-            <option value="">-- Select karo --</option>
-          </select>
-        </div>
+        <div class="list-search"><span>🔍</span><input type="text" id="openSearch" placeholder="Sr No ya customer search karo..." oninput="enqFillOpen()"></div>
+        <div id="openSkeleton" style="display:none"><div class="skeleton sk-card"></div><div class="skeleton sk-card"></div></div>
+        <div class="pick-list" id="openList"></div>
       </div>
     </div>
 
