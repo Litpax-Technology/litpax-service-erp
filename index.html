@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Litpax — Service Hub</title>
+<meta name="theme-color" content="#0d1526">
+<link rel="manifest" href="manifest.json">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="header">
+  <div class="header-inner">
+    <div class="logo">LITPAX</div>
+    <div class="header-text">
+      <h1 id="hdrTitle">Service Hub</h1>
+      <p id="hdrSub">Repair &amp; Enquiry — one place</p>
+    </div>
+    <button class="header-home" id="hdrHome" onclick="backToLauncher()">⌂ Menu</button>
+    <div class="header-date" id="headerDate"></div>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- ============ LAUNCHER ============ -->
+  <div class="app-screen active" id="launcherScreen">
+    <div class="launcher">
+      <div class="launcher-title">Litpax Service Hub</div>
+      <div class="launcher-sub">Choose a module to continue</div>
+      <div class="launch-grid">
+        <div class="launch-card repair" onclick="openModule('repair')">
+          <div class="launch-icon">🛠️</div>
+          <div class="launch-name">Repair / Service Center</div>
+          <div class="launch-desc">Battery / Charger receive &amp; dispatch</div>
+        </div>
+        <div class="launch-card enquiry" onclick="openModule('enquiry')">
+          <div class="launch-icon">📞</div>
+          <div class="launch-name">Enquiry Desk</div>
+          <div class="launch-desc">Customer enquiry log &amp; track</div>
+        </div>
+      </div>
+      <div class="launch-admin">
+        <button onclick="openModule('admin')">⚙️ Manage dropdown options (Admin)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ REPAIR MODULE ============ -->
+  <div class="app-screen" id="repairModule">
+
+    <!-- Repair Home -->
+    <div class="screen active" id="repHomeScreen">
+      <div class="home-screen">
+        <div class="home-title">Service Center</div>
+        <div class="home-sub">Battery / Charger receive karo ya dispatch karo</div>
+        <div class="mode-grid">
+          <div class="mode-card receive" onclick="repShowReceive()">
+            <div class="mode-icon">📥</div>
+            <div class="mode-title">Receive Battery</div>
+            <div class="mode-sub">Customer se battery / charger lena hai</div>
+          </div>
+          <div class="mode-card dispatch" onclick="repShowDispatch()">
+            <div class="mode-icon">🚚</div>
+            <div class="mode-title">Dispatch Battery</div>
+            <div class="mode-sub">Repaired battery customer ko deni hai</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Receive -->
+    <div class="screen" id="repReceiveScreen">
+      <div class="screen-header">
+        <button class="back-btn" onclick="repGoHome()">← Back</button>
+        <div><div class="screen-title">📥 Receive Battery</div><div class="screen-sub">Nayi service entry</div></div>
+      </div>
+
+      <div class="steps-nav">
+        <button class="step-btn active" onclick="repGoToStep(1)" id="rStepBtn1"><span class="step-num">1</span> Customer</button>
+        <button class="step-btn" onclick="repGoToStep(2)" id="rStepBtn2"><span class="step-num">2</span> Product</button>
+        <button class="step-btn" onclick="repGoToStep(3)" id="rStepBtn3"><span class="step-num">3</span> Details</button>
+      </div>
+
+      <!-- Step 1 -->
+      <div class="form-section active" id="rSection1">
+        <div class="card">
+          <div class="card-label">Repair ID (Auto)</div>
+          <div class="repair-id-box">
+            <div class="repair-id-label">Repair ID</div>
+            <div class="repair-id-value" id="repairIdDisplay">—</div>
+          </div>
+          <input type="hidden" id="r_srNo">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Receiving Date <span class="req">*</span></label>
+              <input type="date" id="r_receivingDate" required>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-label">Customer Details</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Customer Name <span class="req">*</span></label>
+              <input type="text" id="r_customerName" placeholder="Full name" required>
+            </div>
+            <div class="form-group">
+              <label>Contact No. <span class="req">*</span></label>
+              <input type="tel" id="r_contactNo" placeholder="10-digit mobile" maxlength="10" required>
+            </div>
+            <div class="form-group full">
+              <label>Email</label>
+              <input type="email" id="r_email" placeholder="customer@email.com">
+            </div>
+          </div>
+        </div>
+        <div class="nav-btns"><span></span><button class="btn-next" onclick="repNextStep(1)">Product Details →</button></div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="form-section" id="rSection2">
+        <div class="card">
+          <div class="card-label">Product Category <span class="req">*</span></div>
+          <div class="radio-group">
+            <label class="radio-opt selected" onclick="repSelectRadio(this,'r_category','Battery')"><input type="radio" name="rcat" checked><span class="radio-dot"></span> 🔋 Battery</label>
+            <label class="radio-opt" onclick="repSelectRadio(this,'r_category','Charger')"><input type="radio" name="rcat"><span class="radio-dot"></span> ⚡ Charger</label>
+            <label class="radio-opt" onclick="repSelectRadio(this,'r_category','Battery+Charger')"><input type="radio" name="rcat"><span class="radio-dot"></span> 🔋+⚡ Battery+Charger</label>
+          </div>
+          <input type="hidden" id="r_category" value="Battery">
+        </div>
+
+        <div class="card">
+          <div class="card-label">Product Info</div>
+          <div class="form-grid">
+            <div style="grid-column:1/-1;" id="grp_batterySection" class="product-section">
+              <div class="section-divider battery">🔋 Battery Details</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                <div class="form-group">
+                  <label>Battery Type</label>
+                  <select id="r_batteryType" data-cfg="BatteryType"><option value="">-- Select --</option></select>
+                </div>
+                <div class="form-group"><label>Battery Model (Voltage)</label><input type="text" id="r_batteryModel" placeholder="e.g. LFP-48V-100AH"></div>
+                <div class="form-group"><label>Battery Sr. No.</label><input type="text" id="r_batterySrNo" placeholder="Serial number"></div>
+                <div class="form-group" id="grp_batteryQty"><label>Battery Received Qty <span class="req">*</span></label><input type="number" id="r_batteryReceivedQty" placeholder="0" min="1" required></div>
+              </div>
+            </div>
+            <div style="grid-column:1/-1;" id="grp_chargerSection" class="product-section disabled">
+              <div class="section-divider charger">⚡ Charger Details</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                <div class="form-group"><label>Charger Type</label><select id="r_chargerType" data-cfg="ChargerType" disabled><option value="">-- Select --</option></select></div>
+                <div class="form-group"><label>Charger Model</label><input type="text" id="r_chargerModel" placeholder="e.g. CHR-48V-20A" disabled></div>
+                <div class="form-group"><label>Charger Serial Number</label><input type="text" id="r_chargerSrNo" placeholder="Charger serial number" disabled></div>
+                <div class="form-group" id="grp_chargerQty" style="display:none;"><label>Charger Received Qty <span class="req">*</span></label><input type="number" id="r_chargerReceivedQty" placeholder="0" min="1" disabled></div>
+              </div>
+            </div>
+            <div class="form-group"><label>Received Mode</label><select id="r_receivedMode" data-cfg="ReceivedMode"><option value="">-- Select --</option></select></div>
+            <div class="form-group full"><label>Problem Type <span class="req">*</span></label><select id="r_problemType" data-cfg="ProblemType" required><option value="">-- Select Problem Type --</option></select></div>
+            <div class="form-group full"><label>Problem Description <span class="req">*</span></label><textarea id="r_problemDesc" placeholder="Customer ne kya bataya..." required></textarea></div>
+          </div>
+        </div>
+        <div class="nav-btns"><button class="btn-back-nav" onclick="repPrevStep(2)">← Back</button><button class="btn-next" onclick="repNextStep(2)">More Details →</button></div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="form-section" id="rSection3">
+        <div class="card">
+          <div class="card-label">Warranty</div>
+          <div class="tag-group">
+            <div class="tag-opt yes" onclick="selectTag(this,'r_warranty','Yes')">✅ Yes</div>
+            <div class="tag-opt no" onclick="selectTag(this,'r_warranty','No')">❌ No</div>
+            <div class="tag-opt partial" onclick="selectTag(this,'r_warranty','Partial')">⚠️ Partial</div>
+          </div>
+          <input type="hidden" id="r_warranty" value="">
+          <div style="margin-top:14px">
+            <div class="form-group"><label>Warranty Claim Status</label><select id="r_claimStatus" data-cfg="WarrantyClaim"><option value="">-- Select --</option></select></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-label">Staff &amp; Transport</div>
+          <div class="form-grid">
+            <div class="form-group"><label>Received By <span class="req">*</span></label><input type="text" id="r_receivedBy" placeholder="Staff name" required></div>
+            <div class="form-group"><label>Accepted By</label><input type="text" id="r_acceptedBy" placeholder="Manager name"></div>
+            <div class="form-group"><label>Estimated Dispatch Date</label><input type="date" id="r_estimatedDispatchDate"></div>
+            <div class="form-group full"><label>Transport Details (Inward)</label><input type="text" id="r_transportInward" placeholder="e.g. BlueDart AWB 123456"></div>
+            <div class="form-group full"><label>Receiving Remarks</label><textarea id="r_remarks" placeholder="Additional info..."></textarea></div>
+          </div>
+        </div>
+        <div class="nav-btns"><button class="btn-back-nav" onclick="repPrevStep(3)">← Back</button><button class="btn-submit-receive" onclick="repSubmitReceive()">Submit Entry ✓</button></div>
+      </div>
+
+      <!-- Receive Success -->
+      <div class="success-screen" id="repReceiveSuccess">
+        <div style="background:white;border-radius:12px;border:1px solid #dde1f0;padding:24px;margin-bottom:16px;">
+          <div class="receipt-header">
+            <div><div class="receipt-logo">LITPAX</div><div class="receipt-title">Battery / Charger Service Center</div></div>
+            <div style="text-align:right;"><div style="font-size:11px;color:#5a6080;">Service Receipt</div><div id="receiptDate" style="font-size:11px;color:#8890b0;"></div></div>
+          </div>
+          <div style="background:#e8f0fe;border-radius:6px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-size:11px;color:#1a5fd8;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Repair ID</span>
+            <span id="successReceiveId" style="font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:700;color:#1a5fd8;"></span>
+          </div>
+          <div id="receiveSummary"></div>
+          <div class="receipt-footer"><span>Litpax Technology — Service Management System</span><span id="receiptFooterDate"></span></div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn-pdf" onclick="repPrint()">🖨️ Print / Save PDF</button>
+          <button class="btn-home" onclick="repGoHome()">🏠 Home</button>
+          <button class="btn-new-entry" onclick="repResetReceive()">+ New Entry</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dispatch -->
+    <div class="screen" id="repDispatchScreen">
+      <div class="screen-header">
+        <button class="back-btn" onclick="repGoHome()">← Back</button>
+        <div><div class="screen-title">🚚 Dispatch Battery</div><div class="screen-sub">Pending repairs se select karo</div></div>
+      </div>
+
+      <div class="form-section active" id="dSection1">
+        <div class="card">
+          <div class="card-label">Pending Repairs</div>
+          <div id="pendingListContainer">
+            <div id="pendingSkeleton" style="display:none;">
+              <div class="skeleton sk-row"></div><div class="skeleton sk-row"></div><div class="skeleton sk-row"></div>
+            </div>
+            <div class="error-box" id="errorBox">Sheet se data load nahi ho paya.</div>
+            <div class="pending-list" id="pendingList"></div>
+          </div>
+          <input type="hidden" id="d_selectedRepairId" value="">
+          <input type="hidden" id="d_selectedRow" value="">
+        </div>
+
+        <div id="selectedInfoBox" style="display:none">
+          <div class="selected-info">
+            <div class="selected-info-title">Selected Entry</div>
+            <div class="info-row"><span>Repair ID</span><span id="si_repairId" style="font-family:'IBM Plex Mono',monospace;color:var(--blue);font-weight:700"></span></div>
+            <div class="info-row"><span>Customer</span><span id="si_customer"></span></div>
+            <div class="info-row"><span>Contact</span><span id="si_contact"></span></div>
+            <div class="info-row"><span>Product</span><span id="si_product"></span></div>
+            <div class="info-row"><span>Battery Qty Received</span><span id="si_batteryRcv"></span></div>
+            <div class="info-row"><span>Charger Qty Received</span><span id="si_chargerRcv"></span></div>
+            <div class="info-row"><span>🔋 Battery Pending</span><span id="si_batteryPending" style="color:var(--danger);font-weight:600"></span></div>
+            <div class="info-row"><span>⚡ Charger Pending</span><span id="si_chargerPending" style="color:var(--warning);font-weight:600"></span></div>
+            <div class="info-row"><span style="font-weight:600">Total Pending</span><span id="si_pendingQty" style="color:var(--danger);font-weight:600;font-family:'IBM Plex Mono',monospace"></span></div>
+            <div class="info-row"><span>Received On</span><span id="si_receivedDate"></span></div>
+          </div>
+        </div>
+
+        <div class="nav-btns"><span></span><button class="btn-next" onclick="repGoToDStep2()" id="dNextBtn" disabled style="opacity:.5">Dispatch Details →</button></div>
+      </div>
+
+      <div class="form-section" id="dSection2">
+        <div class="card">
+          <div class="card-label">Dispatch Details</div>
+          <div class="form-grid">
+            <div class="form-group"><label>Dispatch Date <span class="req">*</span></label><input type="date" id="d_dispatchDate" required></div>
+            <div class="form-group" id="grp_dBatteryQty"><label>🔋 Battery Dispatch Qty</label><input type="number" id="d_batteryDispatchQty" placeholder="0" min="0" value="0" oninput="repCalcPending()"></div>
+            <div class="form-group" id="grp_dChargerQty"><label>⚡ Charger Dispatch Qty</label><input type="number" id="d_chargerDispatchQty" placeholder="0" min="0" value="0" oninput="repCalcPending()"></div>
+            <div class="form-group"><label>Pending Qty (Auto)</label><input type="text" id="d_pendingQty" readonly style="background:#f0f6ff;border-color:#b3d0f7;color:var(--blue);font-weight:600;font-family:'IBM Plex Mono',monospace"></div>
+            <div class="form-group"><label>Repair Status <span class="req">*</span></label><select id="d_repairStatus" data-cfg="RepairStatus" required><option value="">-- Select --</option></select></div>
+            <div class="form-group full"><label>Actual Problem Found</label><select id="d_actualProblem" data-cfg="ActualProblem"><option value="">-- Select --</option></select></div>
+            <div class="form-group full"><label>Transport Details (Outward)</label><input type="text" id="d_transportOutward" placeholder="e.g. DTDC Tracking No. 789012"></div>
+            <div class="form-group full"><label>Dispatched By <span class="req">*</span></label><input type="text" id="d_dispatchedBy" placeholder="Staff name" required></div>
+            <div class="form-group"><label>Any Cost / Repair Cost</label><input type="text" id="d_anyCost" placeholder="e.g. ₹500 (parts replaced)"></div>
+            <div class="form-group full"><label>Dispatch Remarks</label><textarea id="d_remarks" placeholder="Additional info..."></textarea></div>
+          </div>
+        </div>
+        <div class="nav-btns"><button class="btn-back-nav" onclick="repBackToDStep1()">← Back</button><button class="btn-submit-dispatch" onclick="repSubmitDispatch()">Dispatch Karo 🚚</button></div>
+      </div>
+
+      <div class="success-screen" id="repDispatchSuccess">
+        <div class="success-icon dispatch">🚚</div>
+        <h2>Battery Dispatched!</h2>
+        <p>Sheet mein record update ho gaya:</p>
+        <div class="big-id dispatch" id="successDispatchId"></div>
+        <p class="id-note">Entry successfully updated</p>
+        <div class="card" style="text-align:left;margin-bottom:20px;" id="dispatchSummary"></div>
+        <button class="btn-pdf" onclick="repPrint()">🖨️ Print / Save PDF</button>
+        <button class="btn-home" onclick="repGoHome()">🏠 Home</button>
+        <button class="btn-new-entry" onclick="repResetDispatch()">+ Aur Dispatch</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ ENQUIRY MODULE ============ -->
+  <div class="app-screen" id="enquiryModule">
+    <div class="tabs">
+      <button class="tab-btn active" id="tab-new" onclick="enqSwitchTab('new')">📋 New Enquiry</button>
+      <button class="tab-btn" id="tab-update" onclick="enqSwitchTab('update')">✏️ Update Enquiry</button>
+    </div>
+
+    <!-- New Enquiry -->
+    <div id="enqFormScreen">
+      <div class="page-title">📋 New Enquiry Entry</div>
+      <div class="page-sub">Customer enquiry ka record darj karo</div>
+
+      <div class="card">
+        <div class="card-label">Entry Info</div>
+        <div class="enquiry-id-box">
+          <div class="enquiry-id-label">Sr. No.</div>
+          <div class="enquiry-id-value" id="srNoDisplay">Loading...</div>
+        </div>
+        <div class="form-grid">
+          <div class="form-group"><label>Date <span class="req">*</span></label><input type="date" id="entryDate" required></div>
+          <div class="form-group"><label>Attended By <span class="req">*</span></label><select id="attendedBy" data-cfg="AttendedBy" required><option value="">-- Select --</option></select></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Customer Details</div>
+        <div class="form-grid">
+          <div class="form-group"><label>Customer Name <span class="req">*</span></label><input type="text" id="customerName" placeholder="Full name" required></div>
+          <div class="form-group"><label>Contact <span class="req">*</span></label><input type="tel" id="contact" placeholder="Mobile number" required></div>
+          <div class="form-group"><label>OEM's <span class="req">*</span></label><select id="oems" data-cfg="OEM" required><option value="">-- Select OEM --</option></select></div>
+          <div class="form-group"><label>Company Name</label><input type="text" id="companyName" placeholder="Company / Dealer name"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Enquiry Details</div>
+        <div class="form-grid">
+          <div class="form-group"><label>Enquiry About <span class="req">*</span></label><select id="enquiryAbout" data-cfg="EnquiryAbout" required><option value="">-- Select --</option></select></div>
+          <div class="form-group">
+            <label>Enquiry Closed <span class="req">*</span></label>
+            <div class="tag-group">
+              <div class="tag-opt yes" onclick="selectTag(this,'enquiryClosed','Yes')">✅ Yes</div>
+              <div class="tag-opt no" onclick="selectTag(this,'enquiryClosed','No')">❌ No</div>
+            </div>
+            <input type="hidden" id="enquiryClosed" value="">
+          </div>
+          <div class="form-group full"><label>Response <span class="req">*</span></label><select id="response" data-cfg="Response" required><option value="">-- Select Response --</option></select></div>
+          <div class="form-group full"><label>Solution</label><textarea id="solution" placeholder="Problem ka solution kya tha..."></textarea></div>
+          <div class="form-group full"><label>Remarks</label><textarea id="remarks" placeholder="Koi aur information..."></textarea></div>
+        </div>
+      </div>
+
+      <div class="nav-btns" style="justify-content:flex-end"><button class="btn-submit" onclick="enqSubmit()" id="submitBtn">Submit Entry ✓</button></div>
+    </div>
+
+    <!-- Update Search -->
+    <div id="enqUpdateSearchScreen" style="display:none">
+      <div class="page-title">✏️ Update Enquiry</div>
+      <div class="page-sub">Open enquiries mein se select karo</div>
+      <div class="card">
+        <div class="card-label">Open Enquiries — Select to Update</div>
+        <div id="openSkeleton" style="display:none"><div class="skeleton sk-row"></div></div>
+        <div class="form-group">
+          <select id="openEnquiryDropdown" onchange="enqSelectFromDropdown(this.value)">
+            <option value="">-- Select karo --</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Update Form -->
+    <div id="enqUpdateFormScreen" style="display:none">
+      <div class="page-title">✏️ Enquiry Update</div>
+      <div class="page-sub">Selected enquiry ki details update karo</div>
+      <div class="card">
+        <div class="update-header">
+          <div class="update-header-title" id="uf-title">Enquiry Details</div>
+          <div class="update-header-sub" id="uf-sub">Read-only info</div>
+        </div>
+        <div class="readonly-grid" id="ro-grid"></div>
+        <div class="card-label">Update Fields</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Enquiry Closed <span class="req">*</span></label>
+            <div class="tag-group">
+              <div class="tag-opt yes" onclick="selectTag(this,'uEnquiryClosed','Yes')">✅ Yes</div>
+              <div class="tag-opt no" onclick="selectTag(this,'uEnquiryClosed','No')">❌ No</div>
+            </div>
+            <input type="hidden" id="uEnquiryClosed" value="">
+          </div>
+          <div class="form-group"><label>Response</label><select id="uResponse" data-cfg="Response"><option value="">-- Select --</option></select></div>
+          <div class="form-group full"><label>Remarks (add / update)</label><textarea id="uRemarks" placeholder="Koi update ya note..."></textarea></div>
+        </div>
+        <div class="update-btns">
+          <button class="btn-back" onclick="enqBackToSearch()">← Wapas</button>
+          <button class="btn-update" id="updateBtn" onclick="enqSubmitUpdate()">✅ Update Karo</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Update Success -->
+    <div id="enqUpdateSuccessScreen" style="display:none;text-align:center;padding:56px 20px">
+      <div class="success-icon" style="background:#e8f8f4">✅</div>
+      <h2 style="font-size:22px;font-weight:600;margin-bottom:8px">Updated!</h2>
+      <p style="font-size:14px;color:var(--text2);margin-bottom:20px">Enquiry successfully update ho gayi</p>
+      <div class="big-id" id="updateSrNoDisplay"></div><br>
+      <button class="btn-new" onclick="enqSwitchTab('update')" style="margin-right:10px">🔍 Aur Search Karo</button>
+      <button class="btn-new" onclick="enqSwitchTab('new')">📋 Nayi Entry</button>
+    </div>
+
+    <!-- New Success -->
+    <div class="success-screen" id="enqSuccessScreen">
+      <div class="success-icon">📋</div>
+      <h2>Enquiry Logged!</h2>
+      <p>Entry successfully save ho gayi</p>
+      <div class="big-id" id="enqSuccessSrNo"></div>
+      <div class="card" style="text-align:left;margin-bottom:0" id="enqSummaryCard"></div>
+      <button class="btn-new" onclick="enqReset()" style="margin-top:20px">+ Nayi Entry</button>
+    </div>
+  </div>
+
+  <!-- ============ ADMIN MODULE ============ -->
+  <div class="app-screen" id="adminModule">
+    <div id="adminLockScreen">
+      <div class="admin-lock card">
+        <div class="card-label" style="justify-content:center">⚙️ Admin — Manage Options</div>
+        <div class="form-group"><label>Enter Admin PIN</label><input type="password" id="adminPinInput" inputmode="numeric" placeholder="••••" onkeydown="if(event.key==='Enter')adminUnlock()"></div>
+        <button class="btn-submit" style="margin-top:14px;width:100%" onclick="adminUnlock()">Unlock</button>
+      </div>
+    </div>
+
+    <div id="adminPanel" style="display:none">
+      <div class="page-title">⚙️ Dropdown Options</div>
+      <div class="page-sub">Add / disable options — turant app mein reflect honge. Sheet ke existing data ko haath nahi lagta.</div>
+      <div class="cfg-app-tabs">
+        <button class="cfg-app-tab active" id="cfgTabRepair" onclick="adminSwitchApp('repair')">🛠️ Repair options</button>
+        <button class="cfg-app-tab" id="cfgTabEnquiry" onclick="adminSwitchApp('enquiry')">📞 Enquiry options</button>
+      </div>
+      <div id="adminLoading" class="loading-box" style="display:none"><div class="loading-spinner"></div><p>Loading options...</p></div>
+      <div id="adminGroups"></div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
