@@ -29,15 +29,50 @@
 
   <!-- ============ LOGIN ============ -->
   <div class="login-screen active" id="loginScreen">
-    <div class="login-title">Litpax Service Hub</div>
-    <div class="login-sub">Login karke aage badho</div>
-    <div class="role-grid" id="roleGrid"></div>
-    <div class="role-pin-box" id="rolePinBox" style="display:none">
-      <div class="form-group">
-        <label id="rolePinLabel">PIN</label>
-        <input type="password" id="rolePin" inputmode="numeric" placeholder="••••" onkeydown="if(event.key==='Enter')authLogin()">
+    <div class="login-card">
+      <!-- Left: brand + workflow + stats -->
+      <div class="login-left">
+        <div class="login-brand">
+          <div class="login-logo">L</div>
+          <div><div class="login-brand-name">Litpax Service Hub</div><div class="login-brand-sub">Service &amp; Repair Suite</div></div>
+        </div>
+        <div class="login-hero">Receive se Dispatch tak,<br>ek jagah.</div>
+        <div class="login-hero-sub">Repair, service aur customer enquiry — sab ek app mein, role ke hisaab se.</div>
+        <div class="login-steps">
+          <div class="login-step"><span class="login-step-num">1</span> Battery / Charger Receive</div>
+          <div class="login-step"><span class="login-step-num">2</span> Repair / Service</div>
+          <div class="login-step"><span class="login-step-num">3</span> Dispatch</div>
+          <div class="login-step"><span class="login-step-num">4</span> Enquiry Log &amp; Track</div>
+          <div class="login-step"><span class="login-step-num">5</span> Resolved / Closed</div>
+        </div>
+        <div class="login-stats">
+          <div class="login-stat"><div class="login-stat-num">3</div><div class="login-stat-lbl">Roles</div></div>
+          <div class="login-stat"><div class="login-stat-num">2</div><div class="login-stat-lbl">Modules</div></div>
+          <div class="login-stat"><div class="login-stat-num">Live</div><div class="login-stat-lbl">Data Sync</div></div>
+        </div>
       </div>
-      <button class="btn-submit" style="width:100%;margin-top:10px" onclick="authLogin()">Login</button>
+      <!-- Right: sign-in form -->
+      <div class="login-right">
+        <div class="login-welcome">Welcome back</div>
+        <div class="login-welcome-sub">Sign in to access Service Hub</div>
+        <div class="login-field">
+          <label>USERNAME</label>
+          <div class="login-input-wrap">
+            <span class="login-input-icon">👤</span>
+            <input type="text" id="loginUser" placeholder="Enter username" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('loginPass').focus()">
+          </div>
+        </div>
+        <div class="login-field">
+          <label>PASSWORD</label>
+          <div class="login-input-wrap">
+            <span class="login-input-icon">🔒</span>
+            <input type="password" id="loginPass" placeholder="Enter password" autocomplete="current-password" onkeydown="if(event.key==='Enter')authLogin()">
+            <span class="login-eye" onclick="loginTogglePass(this)">👁️</span>
+          </div>
+        </div>
+        <button class="login-btn" onclick="authLogin()">Sign In →</button>
+        <div class="login-foot">Role-based Access • Google Sheets • GitHub Hosted</div>
+      </div>
     </div>
   </div>
 
