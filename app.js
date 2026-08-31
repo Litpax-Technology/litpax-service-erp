@@ -104,17 +104,6 @@ function backToLauncher() {
    AUTH (sessionStorage-based, ERP-style — no GAS)
    ============================================================ */
 function authInit() {
-  // build role cards
-  const grid = document.getElementById('roleGrid');
-  if (grid && !grid.dataset.built) {
-    grid.innerHTML = Object.keys(CONFIG.ROLES).map(key => {
-      const r = CONFIG.ROLES[key];
-      return '<div class="role-card" onclick="authPick(\'' + key + '\')">' +
-             '<div class="role-icon">' + r.icon + '</div>' +
-             '<div class="role-name">' + r.label + '</div></div>';
-    }).join('');
-    grid.dataset.built = '1';
-  }
   const role = currentRole();
   if (role && CONFIG.ROLES[role]) enterApp(role);
   else showLogin();
@@ -125,27 +114,25 @@ function showLogin() {
   document.getElementById('appWrap').style.display = 'none';
   document.getElementById('hdrHome').style.display = 'none';
   document.getElementById('hdrLogout').style.display = 'none';
-  document.getElementById('rolePinBox').style.display = 'none';
-  document.querySelectorAll('.role-card').forEach(c => c.classList.remove('selected'));
+  document.getElementById('hdrRole').textContent = '';
+  const u = document.getElementById('loginUser'), p = document.getElementById('loginPass');
+  if (u) u.value = ''; if (p) p.value = '';
 }
 
-let _pickedRole = '';
-function authPick(role) {
-  _pickedRole = role;
-  document.querySelectorAll('.role-card').forEach(c => c.classList.remove('selected'));
-  event.currentTarget.classList.add('selected');
-  document.getElementById('rolePinBox').style.display = 'block';
-  document.getElementById('rolePinLabel').textContent = CONFIG.ROLES[role].label + ' PIN';
-  const inp = document.getElementById('rolePin'); inp.value = ''; inp.focus();
+function loginTogglePass(el) {
+  const p = document.getElementById('loginPass');
+  p.type = p.type === 'password' ? 'text' : 'password';
+  el.style.opacity = p.type === 'text' ? '1' : '.5';
 }
 
 function authLogin() {
-  const role = _pickedRole;
-  if (!role) { showToast('⚠️ Pehle role choose karo'); return; }
-  const pin = document.getElementById('rolePin').value.trim();
-  if (pin !== String(CONFIG.ROLES[role].pin)) { showToast('❌ Galat PIN'); return; }
-  sessionStorage.setItem('hub_role', role);
-  enterApp(role);
+  const user = (document.getElementById('loginUser').value || '').trim().toLowerCase();
+  const pass = (document.getElementById('loginPass').value || '').trim();
+  if (!user || !pass) { showToast('⚠️ Username aur password bharein'); return; }
+  const match = (CONFIG.USERS || []).find(u => u.username.toLowerCase() === user && String(u.password) === pass);
+  if (!match) { showToast('❌ Galat username ya password'); return; }
+  sessionStorage.setItem('hub_role', match.role);
+  enterApp(match.role);
 }
 
 function enterApp(role) {
@@ -164,7 +151,7 @@ function applyLauncherPerms() {
   });
 }
 
-function logout() { sessionStorage.removeItem('hub_role'); _pickedRole = ''; showLogin(); }
+function logout() { sessionStorage.removeItem('hub_role'); showLogin(); }
 
 /* ---------- Dropdowns (hardcoded from config.js — no GAS) ---------- */
 function fillDropdowns(moduleId, app) {
