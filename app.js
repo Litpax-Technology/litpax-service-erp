@@ -1,0 +1,732 @@
+/* ============================================================
+   LITPAX SERVICE HUB — app.js
+   Merged logic: Repair + Enquiry + Admin. Namespaced, cached,
+   config-driven dropdowns, client-side validation.
+   ============================================================ */
+
+/* ---------- SHARED: JSONP + POST + TOAST + CACHE ---------- */
+let _jsonpSeq = 0;
+function jsonp(baseUrl, params, onData, onErr) {
+  const cbName = '__cb' + (++_jsonpSeq) + '_' + Date.now();
+  const qs = Object.keys(params || {}).map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k])).join('&');
+  const src = baseUrl + '?' + qs + (qs ? '&' : '') + 'callback=' + cbName + '&t=' + Date.now();
+
+  let done = false;
+  const script = document.createElement('script');
+  const timer = setTimeout(() => { if (!done) { cleanup(); onErr && onErr('timeout'); } }, CONFIG.JSONP_TIMEOUT_MS);
+
+  function cleanup() { done = true; clearTimeout(timer); delete window[cbName]; if (script.parentNode) script.parentNode.removeChild(script); }
+  window[cbName] = function (data) { cleanup(); onData && onData(data); };
+  script.onerror = function () { if (!done) { cleanup(); onErr && onErr('network'); } };
+  script.src = src;
+  document.body.appendChild(script);
+}
+
+function postNoCors(baseUrl, data) {
+  return fetch(baseUrl, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+function selectTag(el, fieldId, val) {
+  el.parentElement.querySelectorAll('.tag-opt').forEach(o => o.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById(fieldId).value = val;
+}
+
+// sessionStorage cache with TTL
+function cacheSet(key, val) { try { sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), val })); } catch (e) {} }
+function cacheGet(key) {
+  try {
+    const raw = sessionStorage.getItem(key); if (!raw) return null;
+    const obj = JSON.parse(raw);
+    return { fresh: (Date.now() - obj.ts) < CONFIG.CACHE_TTL_MS, val: obj.val };
+  } catch (e) { return null; }
+}
+
+const todayStr = () => new Date().toISOString().split('T')[0];
+
+/* ---------- HEADER DATE ---------- */
+window.onload = function () {
+  const now = new Date();
+  const opts = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' };
+  document.getElementById('headerDate').innerHTML =
+    now.toLocaleDateString('en-IN', opts) + '<br>' + now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(() => {}); }
+};
+
+/* ---------- LAUNCHER NAV ---------- */
+const HEADERS = {
+  launcher: ['Service Hub', 'Repair & Enquiry — one place'],
+  repair:   ['Service Management', 'Battery / Charger — Receive & Dispatch'],
+  enquiry:  ['Enquiry Management', 'Customer Enquiry — Log & Track'],
+  admin:    ['Admin', 'Manage dropdown options']
+};
+
+function setHeader(mod) {
+  document.getElementById('hdrTitle').textContent = HEADERS[mod][0];
+  document.getElementById('hdrSub').textContent = HEADERS[mod][1];
+  document.getElementById('hdrHome').style.display = (mod === 'launcher') ? 'none' : 'inline-block';
+}
+
+function showApp(id) {
+  document.querySelectorAll('.app-screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+function openModule(mod) {
+  if (mod === 'repair') { setHeader('repair'); showApp('repairModule'); repInit(); }
+  else if (mod === 'enquiry') { setHeader('enquiry'); showApp('enquiryModule'); enqInit(); }
+  else if (mod === 'admin') { setHeader('admin'); showApp('adminModule'); }
+}
+
+function backToLauncher() { setHeader('launcher'); showApp('launcherScreen'); }
+
+/* ============================================================
+   CONFIG (sheet-driven dropdowns)
+   ============================================================ */
+const _configCache = { repair: null, enquiry: null };
+
+function loadConfig(app, cb) {
+  const url = app === 'repair' ? CONFIG.REPAIR_URL : CONFIG.ENQUIRY_URL;
+  const ckey = 'cfg_' + app;
+
+  // instant from cache
+  const cached = cacheGet(ckey);
+  if (cached) { _configCache[app] = cached.val; cb && cb(cached.val); if (cached.fresh) return; }
+
+  jsonp(url, { action: 'getConfig' }, function (res) {
+    if (res && res.ok && res.config) { _configCache[app] = res.config; cacheSet(ckey, res.config); cb && cb(res.config); }
+  }, function () { /* keep cache/defaults silently */ });
+}
+
+// Fill every <select data-cfg="X"> inside a module from config (active only)
+function applyConfigToSelects(moduleId, config) {
+  if (!config) return;
+  document.querySelectorAll('#' + moduleId + ' select[data-cfg]').forEach(sel => {
+    const cat = sel.getAttribute('data-cfg');
+    const opts = (config[cat] || []).filter(o => o.active).map(o => o.value);
+    const first = sel.querySelector('option'); // keep placeholder
+    const current = sel.value;
+    sel.innerHTML = '';
+    if (first) sel.appendChild(first);
+    opts.forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
+    if (current) sel.value = current; // preserve selection if still valid
+  });
+}
+
+/* ============================================================
+   REPAIR MODULE
+   ============================================================ */
+let repInited = false;
+let repStep = 1;
+let repRepairId = '';
+let repNextSrNo = 1;
+let repPending = [];
+let repSelected = null;
+
+function repInit() {
+  document.getElementById('r_receivingDate').value = todayStr();
+  document.getElementById('d_dispatchDate').value = todayStr();
+  if (!repInited) {
+    loadConfig('repair', c => applyConfigToSelects('repairModule', c));
+    repApplyCategory('Battery');
+    repInited = true;
+  }
+  // warm the pending/srNo data in background so both screens are instant
+  repLoadData(false);
+  repGoHome();
+}
+
+function repGoHome() {
+  document.querySelectorAll('#repairModule .screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('repHomeScreen').classList.add('active');
+  document.getElementById('repReceiveSuccess').style.display = 'none';
+  document.getElementById('repDispatchSuccess').style.display = 'none';
+  window.scrollTo(0, 0);
+}
+function repShowScreen(id) {
+  document.querySelectorAll('#repairModule .screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+/* ----- shared data fetch (getPending gives {data, lastSrNo}) ----- */
+function repLoadData(force, cb) {
+  const ckey = 'rep_pending';
+  const cached = cacheGet(ckey);
+  if (cached && !force) {
+    repPending = cached.val.data || [];
+    repNextSrNo = (cached.val.lastSrNo || 0) + 1;
+    cb && cb();
+    if (cached.fresh) return; // still refresh in bg if stale
+  }
+  jsonp(CONFIG.REPAIR_URL, { action: 'getPending' }, function (res) {
+    repPending = (res && res.data) || [];
+    repNextSrNo = ((res && res.lastSrNo) || 0) + 1;
+    cacheSet(ckey, { data: repPending, lastSrNo: (res && res.lastSrNo) || 0 });
+    cb && cb();
+    // if user currently on dispatch list, re-render
+    if (document.getElementById('repDispatchScreen').classList.contains('active')) repRenderPending();
+  }, function () { cb && cb('err'); });
+}
+
+/* ----- RECEIVE ----- */
+function repShowReceive() {
+  repShowScreen('repReceiveScreen');
+  document.getElementById('repairIdDisplay').textContent = '...';
+  repLoadData(false, function () {
+    repRepairId = 'LTX-R-' + String(repNextSrNo).padStart(3, '0');
+    document.getElementById('r_srNo').value = repNextSrNo;
+    document.getElementById('repairIdDisplay').textContent = repRepairId;
+  });
+}
+
+function repUpdateSteps() {
+  for (let i = 1; i <= 3; i++) {
+    const b = document.getElementById('rStepBtn' + i);
+    b.className = 'step-btn';
+    if (i < repStep) b.classList.add('done'); else if (i === repStep) b.classList.add('active');
+  }
+}
+function repGoToStep(s) { if (s > repStep) return; document.getElementById('rSection' + repStep).classList.remove('active'); repStep = s; document.getElementById('rSection' + repStep).classList.add('active'); repUpdateSteps(); window.scrollTo(0, 0); }
+function repNextStep(from) { if (!repValidate('rSection' + from)) return; document.getElementById('rSection' + from).classList.remove('active'); repStep = from + 1; document.getElementById('rSection' + repStep).classList.add('active'); repUpdateSteps(); window.scrollTo(0, 0); }
+function repPrevStep(from) { document.getElementById('rSection' + from).classList.remove('active'); repStep = from - 1; document.getElementById('rSection' + repStep).classList.add('active'); repUpdateSteps(); window.scrollTo(0, 0); }
+
+function repSelectRadio(el, fieldId, val) {
+  const name = el.querySelector('input').name;
+  document.querySelectorAll('[name="' + name + '"]').forEach(i => { const o = i.closest('.radio-opt'); o.classList.remove('selected', 'selected-both'); });
+  el.classList.add(val === 'Battery+Charger' ? 'selected-both' : 'selected');
+  document.getElementById(fieldId).value = val;
+  if (fieldId === 'r_category') repApplyCategory(val);
+}
+
+function repApplyCategory(cat) {
+  const bSec = document.getElementById('grp_batterySection'), cSec = document.getElementById('grp_chargerSection');
+  const bQty = document.getElementById('grp_batteryQty'), cQty = document.getElementById('grp_chargerQty');
+  const bF = ['r_batteryType','r_batteryModel','r_batterySrNo','r_batteryReceivedQty'].map(id => document.getElementById(id));
+  const cF = ['r_chargerType','r_chargerModel','r_chargerSrNo','r_chargerReceivedQty'].map(id => document.getElementById(id));
+  const set = (sec, fields, on) => { sec.classList.toggle('disabled', !on); fields.forEach(f => { if (!f) return; f.disabled = !on; if (!on) f.value = ''; }); };
+  if (cat === 'Battery') { set(bSec, bF, true); set(cSec, cF, false); bQty.style.display = ''; cQty.style.display = 'none'; }
+  else if (cat === 'Charger') { set(bSec, bF, false); set(cSec, cF, true); bQty.style.display = 'none'; cQty.style.display = ''; }
+  else { set(bSec, bF, true); set(cSec, cF, true); bQty.style.display = ''; cQty.style.display = ''; }
+}
+
+function repValidate(sectionId) {
+  const req = document.querySelectorAll('#' + sectionId + ' [required]:not(:disabled)');
+  let ok = true, first = null;
+  req.forEach(el => {
+    const v = el.tagName === 'SELECT' ? el.value : el.value.trim();
+    if (!v) { el.style.borderColor = '#e94560'; if (!first) first = el; ok = false; } else el.style.borderColor = '';
+  });
+  // contact 10-digit check on step 1
+  const c = document.getElementById('r_contactNo');
+  if (sectionId === 'rSection1' && c.value && !/^\d{10}$/.test(c.value.trim())) { c.style.borderColor = '#e94560'; showToast('⚠️ Contact 10-digit hona chahiye'); return false; }
+  if (!ok) { if (first) first.focus(); showToast('⚠️ Sabhi required fields bharein'); }
+  return ok;
+}
+
+function repSubmitReceive() {
+  if (!repValidate('rSection3')) return;
+  const btn = document.querySelector('#rSection3 .btn-submit-receive');
+  btn.disabled = true; btn.textContent = '⏳ Submitting...';
+
+  const cat = document.getElementById('r_category').value;
+  const data = {
+    action: 'receive',
+    'Repair ID': repRepairId,
+    'Sr No': document.getElementById('r_srNo').value,
+    'Receiving Date': document.getElementById('r_receivingDate').value,
+    'Customer Name': document.getElementById('r_customerName').value,
+    'Contact No': document.getElementById('r_contactNo').value,
+    'Email': document.getElementById('r_email').value,
+    'Category': cat,
+    'Battery Type': document.getElementById('r_batteryType').value,
+    'Battery Model': document.getElementById('r_batteryModel').value,
+    'Battery Sr No': document.getElementById('r_batterySrNo').value,
+    'Battery Qty Received': document.getElementById('r_batteryReceivedQty').value || '0',
+    'Charger Model': document.getElementById('r_chargerModel').value,
+    'Charger Serial Number': document.getElementById('r_chargerSrNo').value,
+    'Charger Type': document.getElementById('r_chargerType').value,
+    'Charger Qty Received': document.getElementById('r_chargerReceivedQty').value || '0',
+    'Received Mode': document.getElementById('r_receivedMode').value,
+    'Problem Type': document.getElementById('r_problemType').value,
+    'Problem Description': document.getElementById('r_problemDesc').value,
+    'Warranty': document.getElementById('r_warranty').value,
+    'Warranty Claim Status': document.getElementById('r_claimStatus').value,
+    'Repair Status': 'Received',
+    'Received By': document.getElementById('r_receivedBy').value,
+    'Accepted By': document.getElementById('r_acceptedBy').value,
+    'Estimated Dispatch Date': document.getElementById('r_estimatedDispatchDate').value,
+    'Transport Details (Inward)': document.getElementById('r_transportInward').value,
+    'Receiving Remarks': document.getElementById('r_remarks').value
+  };
+
+  postNoCors(CONFIG.REPAIR_URL, data);
+  cacheSet('rep_pending', (cacheGet('rep_pending') || {}).val || { data: [], lastSrNo: 0 }); // mark stale-ish; will refresh next open
+  sessionStorage.removeItem('rep_pending'); // force fresh next time
+
+  document.getElementById('rSection3').classList.remove('active');
+  document.getElementById('repReceiveSuccess').style.display = 'block';
+  document.getElementById('successReceiveId').textContent = repRepairId;
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  document.getElementById('receiptDate').textContent = dateStr + ' ' + timeStr;
+  document.getElementById('receiptFooterDate').textContent = dateStr + ' ' + timeStr;
+
+  document.getElementById('receiveSummary').innerHTML =
+    '<div class="receipt-section">Customer Details</div>' +
+    '<table class="receipt-table">' +
+    '<tr><td>Customer Name</td><td>' + data['Customer Name'] + '</td></tr>' +
+    '<tr><td>Contact No.</td><td>' + data['Contact No'] + '</td></tr>' +
+    '<tr><td>Email</td><td>' + (data['Email'] || '—') + '</td></tr></table>' +
+    '<div class="receipt-section" style="margin-top:8px;">Product Details</div>' +
+    '<table class="receipt-table">' +
+    '<tr><td>Category</td><td>' + data['Category'] + '</td></tr>' +
+    '<tr><td>Battery Type</td><td>' + (data['Battery Type'] || '—') + '</td></tr>' +
+    '<tr><td>Battery Model</td><td>' + (data['Battery Model'] || '—') + '</td></tr>' +
+    '<tr><td>Battery Sr. No.</td><td>' + (data['Battery Sr No'] || '—') + '</td></tr>' +
+    '<tr><td>Battery Qty</td><td>' + data['Battery Qty Received'] + '</td></tr>' +
+    '<tr><td>Charger Model</td><td>' + (data['Charger Model'] || '—') + '</td></tr>' +
+    '<tr><td>Charger Serial No.</td><td>' + (data['Charger Serial Number'] || '—') + '</td></tr>' +
+    '<tr><td>Charger Type</td><td>' + (data['Charger Type'] || '—') + '</td></tr>' +
+    '<tr><td>Charger Qty</td><td>' + data['Charger Qty Received'] + '</td></tr>' +
+    '<tr><td>Received Mode</td><td>' + (data['Received Mode'] || '—') + '</td></tr></table>' +
+    '<div class="receipt-section" style="margin-top:8px;">Service Details</div>' +
+    '<table class="receipt-table">' +
+    '<tr><td>Problem Type</td><td>' + data['Problem Type'] + '</td></tr>' +
+    '<tr><td>Problem Description</td><td>' + (data['Problem Description'] || '—') + '</td></tr>' +
+    '<tr><td>Warranty</td><td>' + (data['Warranty'] || '—') + '</td></tr>' +
+    '<tr><td>Warranty Claim</td><td>' + (data['Warranty Claim Status'] || '—') + '</td></tr>' +
+    '<tr><td>Receiving Date</td><td>' + data['Receiving Date'] + '</td></tr>' +
+    '<tr><td>Est. Dispatch Date</td><td>' + (data['Estimated Dispatch Date'] || '—') + '</td></tr>' +
+    '<tr><td>Received By</td><td>' + data['Received By'] + '</td></tr>' +
+    '<tr><td>Accepted By</td><td>' + (data['Accepted By'] || '—') + '</td></tr></table>';
+
+  btn.disabled = false; btn.textContent = 'Submit Entry ✓';
+  window.scrollTo(0, 0);
+}
+
+function repResetReceive() {
+  document.getElementById('repReceiveSuccess').style.display = 'none';
+  document.querySelectorAll('#repReceiveScreen input:not([type=radio]),#repReceiveScreen select,#repReceiveScreen textarea').forEach(el => {
+    if (el.type === 'date') el.value = todayStr(); else el.value = '';
+  });
+  document.getElementById('r_category').value = 'Battery';
+  document.getElementById('r_warranty').value = '';
+  document.querySelectorAll('#repReceiveScreen .radio-opt').forEach((o, i) => { o.classList.remove('selected', 'selected-both'); if (i === 0) o.classList.add('selected'); });
+  document.querySelectorAll('#repReceiveScreen .tag-opt').forEach(o => o.classList.remove('selected'));
+  repApplyCategory('Battery');
+  repStep = 1;
+  document.querySelectorAll('#repReceiveScreen .form-section').forEach((s, i) => s.classList.toggle('active', i === 0));
+  repUpdateSteps();
+  repShowReceive();
+  window.scrollTo(0, 0);
+}
+
+/* ----- DISPATCH ----- */
+function repShowDispatch() {
+  repShowScreen('repDispatchScreen');
+  document.getElementById('errorBox').style.display = 'none';
+  document.getElementById('selectedInfoBox').style.display = 'none';
+  document.getElementById('d_selectedRepairId').value = '';
+  document.getElementById('dNextBtn').disabled = true; document.getElementById('dNextBtn').style.opacity = '.5';
+
+  const cached = cacheGet('rep_pending');
+  if (cached) { repPending = cached.val.data || []; repRenderPending(); if (cached.fresh) return; }
+  else { document.getElementById('pendingSkeleton').style.display = 'block'; document.getElementById('pendingList').innerHTML = ''; }
+
+  repLoadData(true, function (err) {
+    document.getElementById('pendingSkeleton').style.display = 'none';
+    if (err) { document.getElementById('errorBox').style.display = 'block'; return; }
+    repRenderPending();
+  });
+}
+
+function repRenderPending() {
+  document.getElementById('pendingSkeleton').style.display = 'none';
+  const list = document.getElementById('pendingList');
+  if (!repPending.length) { list.innerHTML = '<div class="no-results">Koi pending repair nahi hai ✅</div>'; return; }
+  list.innerHTML = '<div class="form-group"><label>Repair ID / Customer Name select karo</label>' +
+    '<select id="pendingDropdown" style="font-size:14px;padding:10px 14px;width:100%" onchange="repDispatchSelect(this)">' +
+    '<option value="">-- Select Repair ID --</option></select></div>';
+  const dd = document.getElementById('pendingDropdown');
+  repPending.forEach((row, idx) => {
+    const o = document.createElement('option');
+    o.value = idx;
+    o.textContent = row.repairId + ' — ' + row.customerName + ' (' + (row.category || '') + (row.batteryModel ? ' ' + row.batteryModel : '') + ') | Pending: ' + row.pendingQty;
+    dd.appendChild(o);
+  });
+}
+
+function repDispatchSelect(sel) {
+  if (!sel.value) { document.getElementById('selectedInfoBox').style.display = 'none'; document.getElementById('dNextBtn').disabled = true; document.getElementById('dNextBtn').style.opacity = '.5'; return; }
+  const row = repPending[parseInt(sel.value)];
+  repSelected = row;
+  document.getElementById('d_selectedRepairId').value = row.repairId;
+  document.getElementById('d_selectedRow').value = row.rowIndex;
+  document.getElementById('si_repairId').textContent = row.repairId;
+  document.getElementById('si_customer').textContent = row.customerName;
+  document.getElementById('si_contact').textContent = row.contactNo;
+  document.getElementById('si_product').textContent = (row.category || '') + (row.batteryModel ? ' — ' + row.batteryModel : '');
+  document.getElementById('si_batteryRcv').textContent = row.batteryQtyReceived || 0;
+  document.getElementById('si_chargerRcv').textContent = row.chargerQtyReceived || 0;
+  document.getElementById('si_batteryPending').textContent = row.batteryPending || 0;
+  document.getElementById('si_chargerPending').textContent = row.chargerPending || 0;
+  document.getElementById('si_pendingQty').textContent = row.pendingQty;
+  document.getElementById('si_receivedDate').textContent = row.receivingDate;
+  document.getElementById('selectedInfoBox').style.display = 'block';
+  document.getElementById('dNextBtn').disabled = false; document.getElementById('dNextBtn').style.opacity = '1';
+  repApplyDispatchCategory(row.category || 'Battery+Charger');
+  repCalcPending();
+}
+
+function repApplyDispatchCategory(cat) {
+  const bG = document.getElementById('grp_dBatteryQty'), cG = document.getElementById('grp_dChargerQty');
+  const bF = document.getElementById('d_batteryDispatchQty'), cF = document.getElementById('d_chargerDispatchQty');
+  if (cat === 'Battery') { bG.style.display = ''; cG.style.display = 'none'; bF.disabled = false; cF.disabled = true; cF.value = '0'; }
+  else if (cat === 'Charger') { bG.style.display = 'none'; cG.style.display = ''; bF.disabled = true; bF.value = '0'; cF.disabled = false; }
+  else { bG.style.display = ''; cG.style.display = ''; bF.disabled = false; cF.disabled = false; }
+}
+
+function repGoToDStep2() {
+  if (!document.getElementById('d_selectedRepairId').value) { showToast('⚠️ Pehle ek Repair ID select karo'); return; }
+  document.getElementById('dSection1').classList.remove('active');
+  document.getElementById('dSection2').classList.add('active');
+  window.scrollTo(0, 0);
+}
+function repBackToDStep1() { document.getElementById('dSection2').classList.remove('active'); document.getElementById('dSection1').classList.add('active'); window.scrollTo(0, 0); }
+
+function repCalcPending() {
+  const bP = parseInt(repSelected && repSelected.batteryPending) || 0;
+  const cP = parseInt(repSelected && repSelected.chargerPending) || 0;
+  const tP = parseInt(repSelected && repSelected.pendingQty) || 0;
+  const bF = document.getElementById('d_batteryDispatchQty'), cF = document.getElementById('d_chargerDispatchQty');
+  let b = parseInt(bF.value) || 0, c = parseInt(cF.value) || 0;
+  if (b > bP) { b = bP; bF.value = bP; showToast('⚠️ Battery qty ' + bP + ' se zyada nahi'); }
+  if (c > cP) { c = cP; cF.value = cP; showToast('⚠️ Charger qty ' + cP + ' se zyada nahi'); }
+  document.getElementById('d_pendingQty').value = Math.max(0, tP - (b + c));
+}
+
+function repSubmitDispatch() {
+  if (!repValidate('dSection2')) return;
+  const bP = parseInt(repSelected && repSelected.batteryPending) || 0;
+  const cP = parseInt(repSelected && repSelected.chargerPending) || 0;
+  const b = parseInt(document.getElementById('d_batteryDispatchQty').value) || 0;
+  const c = parseInt(document.getElementById('d_chargerDispatchQty').value) || 0;
+  if (b === 0 && c === 0) { showToast('⚠️ Battery ya Charger dispatch qty bharein'); return; }
+  if (b > bP) { showToast('⚠️ Battery dispatch qty pending (' + bP + ') se zyada'); return; }
+  if (c > cP) { showToast('⚠️ Charger dispatch qty pending (' + cP + ') se zyada'); return; }
+
+  const btn = document.querySelector('#dSection2 .btn-submit-dispatch');
+  btn.disabled = true; btn.textContent = '⏳ ...';
+
+  const data = {
+    action: 'dispatch',
+    rowIndex: document.getElementById('d_selectedRow').value,
+    'Repair ID': document.getElementById('d_selectedRepairId').value,
+    'Dispatch Date': document.getElementById('d_dispatchDate').value,
+    'Battery Dispatch Qty': b,
+    'Charger Dispatch Qty': c,
+    'Pending Qty': document.getElementById('d_pendingQty').value,
+    'Repair Status': document.getElementById('d_repairStatus').value,
+    'Actual Problem Found': document.getElementById('d_actualProblem').value,
+    'Transport Details (Outward)': document.getElementById('d_transportOutward').value,
+    'Dispatched By': document.getElementById('d_dispatchedBy').value,
+    'Any Cost': document.getElementById('d_anyCost').value,
+    'Dispatch Remarks': document.getElementById('d_remarks').value
+  };
+
+  postNoCors(CONFIG.REPAIR_URL, data);
+  sessionStorage.removeItem('rep_pending'); // force refresh next time
+
+  document.getElementById('dSection2').classList.remove('active');
+  document.getElementById('repDispatchSuccess').style.display = 'block';
+  document.getElementById('successDispatchId').textContent = data['Repair ID'];
+
+  const now = new Date();
+  const dStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const tStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
+  document.getElementById('dispatchSummary').innerHTML =
+    '<div style="background:white;border-radius:12px;border:1px solid #dde1f0;padding:24px;">' +
+    '<div class="receipt-header"><div><div class="receipt-logo">LITPAX</div><div class="receipt-title">Battery / Charger Service Center</div></div>' +
+    '<div style="text-align:right;"><div style="font-size:11px;color:#5a6080;">Dispatch Slip</div><div style="font-size:11px;color:#8890b0;">' + dStr + ' ' + tStr + '</div></div></div>' +
+    '<div style="background:#e8f8f4;border-radius:6px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;">' +
+    '<span style="font-size:11px;color:#00856e;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Repair ID</span>' +
+    '<span style="font-family:\'IBM Plex Mono\',monospace;font-size:15px;font-weight:700;color:#00856e;">' + data['Repair ID'] + '</span></div>' +
+    '<div class="receipt-section">Customer Details</div><table class="receipt-table">' +
+    '<tr><td>Customer Name</td><td>' + ((repSelected && repSelected.customerName) || '—') + '</td></tr>' +
+    '<tr><td>Contact No.</td><td>' + ((repSelected && repSelected.contactNo) || '—') + '</td></tr></table>' +
+    '<div class="receipt-section" style="margin-top:8px;">Dispatch Details</div><table class="receipt-table">' +
+    '<tr><td>Dispatch Date</td><td>' + data['Dispatch Date'] + '</td></tr>' +
+    '<tr><td>Battery Dispatched</td><td>' + b + '</td></tr>' +
+    '<tr><td>Charger Dispatched</td><td>' + c + '</td></tr>' +
+    '<tr><td>Pending Qty</td><td>' + data['Pending Qty'] + '</td></tr>' +
+    '<tr><td>Repair Status</td><td>' + data['Repair Status'] + '</td></tr>' +
+    '<tr><td>Actual Problem Found</td><td>' + (data['Actual Problem Found'] || '—') + '</td></tr>' +
+    '<tr><td>Any Cost</td><td>' + (data['Any Cost'] || '—') + '</td></tr>' +
+    '<tr><td>Transport (Outward)</td><td>' + (data['Transport Details (Outward)'] || '—') + '</td></tr>' +
+    '<tr><td>Dispatched By</td><td>' + data['Dispatched By'] + '</td></tr>' +
+    '<tr><td>Remarks</td><td>' + (data['Dispatch Remarks'] || '—') + '</td></tr></table>' +
+    '<div class="receipt-footer"><span>Litpax Technology — Service Management System</span><span>' + dStr + ' ' + tStr + '</span></div></div>';
+
+  btn.disabled = false; btn.textContent = 'Dispatch Karo 🚚';
+  window.scrollTo(0, 0);
+}
+
+function repResetDispatch() {
+  document.getElementById('repDispatchSuccess').style.display = 'none';
+  document.getElementById('dSection2').classList.remove('active');
+  document.getElementById('dSection1').classList.add('active');
+  document.querySelectorAll('#repDispatchScreen input:not([type=hidden]),#repDispatchScreen select,#repDispatchScreen textarea').forEach(el => { if (el.type === 'date') el.value = todayStr(); else el.value = ''; });
+  repSelected = null;
+  repShowDispatch();
+  window.scrollTo(0, 0);
+}
+
+function repPrint() { window.print(); }
+
+/* ============================================================
+   ENQUIRY MODULE
+   ============================================================ */
+let enqInited = false;
+let enqNextSrNo = 1;
+let enqOpen = [];
+let enqSelected = null;
+
+function enqInit() {
+  document.getElementById('entryDate').value = todayStr();
+  if (!enqInited) { loadConfig('enquiry', c => applyConfigToSelects('enquiryModule', c)); enqInited = true; }
+  enqSwitchTab('new');
+  enqFetchSrNo();
+}
+
+function enqFetchSrNo() {
+  document.getElementById('srNoDisplay').textContent = 'Loading...';
+  jsonp(CONFIG.ENQUIRY_URL, { action: 'getSrNo' }, function (res) {
+    enqNextSrNo = (res && res.lastSrNo) || 1;
+    document.getElementById('srNoDisplay').textContent = enqNextSrNo;
+  }, function () { enqNextSrNo = 1; document.getElementById('srNoDisplay').textContent = '1'; });
+}
+
+function enqSwitchTab(tab) {
+  document.getElementById('tab-new').classList.toggle('active', tab === 'new');
+  document.getElementById('tab-update').classList.toggle('active', tab === 'update');
+  ['enqFormScreen','enqUpdateSearchScreen','enqUpdateFormScreen','enqUpdateSuccessScreen','enqSuccessScreen'].forEach(id => document.getElementById(id).style.display = 'none');
+  if (tab === 'new') document.getElementById('enqFormScreen').style.display = 'block';
+  else { document.getElementById('enqUpdateSearchScreen').style.display = 'block'; enqLoadOpen(); }
+  window.scrollTo(0, 0);
+}
+
+function enqValidate() {
+  const req = document.querySelectorAll('#enqFormScreen [required]');
+  let ok = true, first = null;
+  req.forEach(el => { const v = el.tagName === 'SELECT' ? el.value : el.value.trim(); if (!v) { el.style.borderColor = '#e94560'; if (!first) first = el; ok = false; } else el.style.borderColor = ''; });
+  if (!document.getElementById('enquiryClosed').value) { showToast('⚠️ Enquiry Closed select karo'); return false; }
+  if (!ok) { if (first) first.focus(); showToast('⚠️ Sabhi required fields bharein'); }
+  return ok;
+}
+
+function enqSubmit() {
+  if (!enqValidate()) return;
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true; btn.textContent = '⏳ Submitting...';
+
+  const data = {
+    action: 'addEnquiry',
+    'Sr No': enqNextSrNo,
+    'Date': document.getElementById('entryDate').value,
+    'Customer Name': document.getElementById('customerName').value,
+    'OEMs': document.getElementById('oems').value,
+    'Company Name': document.getElementById('companyName').value,
+    'Contact': document.getElementById('contact').value,
+    'Enquiry About': document.getElementById('enquiryAbout').value,
+    'Response': document.getElementById('response').value,
+    'Solution': document.getElementById('solution').value,
+    'Attended By': document.getElementById('attendedBy').value,
+    'Enquiry Closed': document.getElementById('enquiryClosed').value,
+    'Remarks': document.getElementById('remarks').value
+  };
+
+  postNoCors(CONFIG.ENQUIRY_URL, data);
+  sessionStorage.removeItem('enq_open'); // list changed
+
+  document.getElementById('enqFormScreen').style.display = 'none';
+  document.getElementById('enqSuccessScreen').style.display = 'block';
+  document.getElementById('enqSuccessSrNo').textContent = 'Sr. No. — ' + enqNextSrNo;
+  document.getElementById('enqSummaryCard').innerHTML =
+    '<div class="summary-row"><span>Customer</span><span>' + data['Customer Name'] + '</span></div>' +
+    '<div class="summary-row"><span>OEM</span><span>' + data['OEMs'] + '</span></div>' +
+    '<div class="summary-row"><span>Contact</span><span>' + data['Contact'] + '</span></div>' +
+    '<div class="summary-row"><span>Enquiry About</span><span>' + data['Enquiry About'] + '</span></div>' +
+    '<div class="summary-row"><span>Enquiry Closed</span><span>' + data['Enquiry Closed'] + '</span></div>' +
+    '<div class="summary-row"><span>Attended By</span><span>' + data['Attended By'] + '</span></div>';
+  window.scrollTo(0, 0);
+}
+
+function enqReset() {
+  document.getElementById('enqFormScreen').style.display = 'block';
+  document.getElementById('enqSuccessScreen').style.display = 'none';
+  document.querySelectorAll('#enqFormScreen input:not([type=hidden]), #enqFormScreen select, #enqFormScreen textarea').forEach(el => { if (el.type === 'date') el.value = todayStr(); else el.value = ''; });
+  document.querySelectorAll('#enqFormScreen .tag-opt').forEach(o => o.classList.remove('selected'));
+  document.getElementById('enquiryClosed').value = '';
+  const btn = document.getElementById('submitBtn'); btn.disabled = false; btn.textContent = 'Submit Entry ✓';
+  enqFetchSrNo();
+  window.scrollTo(0, 0);
+}
+
+let enqLoadingOpen = false;
+function enqLoadOpen() {
+  const dd = document.getElementById('openEnquiryDropdown');
+  const cached = cacheGet('enq_open');
+  if (cached) { enqOpen = cached.val || []; enqFillOpen(); if (cached.fresh) return; }
+  else { document.getElementById('openSkeleton').style.display = 'block'; }
+
+  if (enqLoadingOpen) return; enqLoadingOpen = true;
+  jsonp(CONFIG.ENQUIRY_URL, { action: 'getOpenEnquiries' }, function (res) {
+    enqLoadingOpen = false;
+    document.getElementById('openSkeleton').style.display = 'none';
+    enqOpen = (res && res.rows) || [];
+    cacheSet('enq_open', enqOpen);
+    enqFillOpen();
+  }, function () { enqLoadingOpen = false; document.getElementById('openSkeleton').style.display = 'none'; showToast('❌ Network error'); });
+}
+
+function enqFillOpen() {
+  const dd = document.getElementById('openEnquiryDropdown');
+  if (!enqOpen.length) { dd.innerHTML = '<option value="">-- Koi open enquiry nahi --</option>'; return; }
+  dd.innerHTML = '<option value="">-- Select karo (' + enqOpen.length + ' open) --</option>' +
+    enqOpen.map((row, i) => '<option value="' + i + '">Sr.' + row.srNo + ' — ' + row.customerName + '</option>').join('');
+}
+
+function enqSelectFromDropdown(idx) {
+  if (idx === '') return;
+  const row = enqOpen[parseInt(idx)];
+  if (!row) return;
+  enqSelected = row;
+  document.getElementById('uf-title').textContent = row.customerName + ' — Sr No. ' + row.srNo;
+  document.getElementById('uf-sub').textContent = row.date + ' · ' + row.enquiryAbout;
+  document.getElementById('ro-grid').innerHTML =
+    '<div class="ro-item"><div class="ro-label">Sr No</div><div class="ro-value">' + row.srNo + '</div></div>' +
+    '<div class="ro-item"><div class="ro-label">Date</div><div class="ro-value">' + row.date + '</div></div>' +
+    '<div class="ro-item"><div class="ro-label">Customer</div><div class="ro-value">' + row.customerName + '</div></div>' +
+    '<div class="ro-item"><div class="ro-label">Contact</div><div class="ro-value">' + row.contact + '</div></div>' +
+    '<div class="ro-item"><div class="ro-label">OEM</div><div class="ro-value">' + row.oems + '</div></div>' +
+    '<div class="ro-item"><div class="ro-label">Enquiry About</div><div class="ro-value">' + row.enquiryAbout + '</div></div>';
+  document.getElementById('uEnquiryClosed').value = row.enquiryClosed || '';
+  document.getElementById('uResponse').value = row.response || '';
+  document.getElementById('uRemarks').value = row.remarks || '';
+  document.querySelectorAll('#enqUpdateFormScreen .tag-opt').forEach(o => o.classList.remove('selected'));
+  if (row.enquiryClosed === 'Yes') document.querySelector('#enqUpdateFormScreen .tag-opt.yes').classList.add('selected');
+  else if (row.enquiryClosed === 'No') document.querySelector('#enqUpdateFormScreen .tag-opt.no').classList.add('selected');
+  document.getElementById('enqUpdateSearchScreen').style.display = 'none';
+  document.getElementById('enqUpdateFormScreen').style.display = 'block';
+  window.scrollTo(0, 0);
+}
+
+function enqBackToSearch() { document.getElementById('enqUpdateFormScreen').style.display = 'none'; document.getElementById('enqUpdateSearchScreen').style.display = 'block'; }
+
+function enqSubmitUpdate() {
+  if (!enqSelected) return;
+  const closed = document.getElementById('uEnquiryClosed').value;
+  if (!closed) { showToast('⚠️ Enquiry Closed select karo'); return; }
+  const btn = document.getElementById('updateBtn'); btn.disabled = true; btn.textContent = '⏳ Updating...';
+  const data = { action: 'updateEnquiry', srNo: enqSelected.srNo, enquiryClosed: closed, response: document.getElementById('uResponse').value, remarks: document.getElementById('uRemarks').value };
+  postNoCors(CONFIG.ENQUIRY_URL, data);
+  sessionStorage.removeItem('enq_open');
+  setTimeout(() => {
+    document.getElementById('enqUpdateFormScreen').style.display = 'none';
+    document.getElementById('enqUpdateSuccessScreen').style.display = 'block';
+    document.getElementById('updateSrNoDisplay').textContent = 'Sr. No. — ' + enqSelected.srNo + ' Updated ✅';
+    btn.disabled = false; btn.textContent = '✅ Update Karo';
+    window.scrollTo(0, 0);
+  }, 300);
+}
+
+/* ============================================================
+   ADMIN — manage config options
+   ============================================================ */
+let adminApp = 'repair';
+let adminUnlocked = false;
+const ADMIN_CATS = {
+  repair:  ['BatteryType','ChargerType','ReceivedMode','ProblemType','ActualProblem','RepairStatus','WarrantyClaim'],
+  enquiry: ['OEM','AttendedBy','EnquiryAbout','Response']
+};
+const CAT_LABEL = {
+  BatteryType:'Battery Type', ChargerType:'Charger Type', ReceivedMode:'Received Mode',
+  ProblemType:'Problem Type', ActualProblem:'Actual Problem Found', RepairStatus:'Repair Status',
+  WarrantyClaim:'Warranty Claim Status', OEM:"OEM's", AttendedBy:'Attended By',
+  EnquiryAbout:'Enquiry About', Response:'Response'
+};
+
+function adminUnlock() {
+  const pin = document.getElementById('adminPinInput').value.trim();
+  if (pin !== String(CONFIG.ADMIN_PIN)) { showToast('❌ Galat PIN'); return; }
+  adminUnlocked = true;
+  document.getElementById('adminLockScreen').style.display = 'none';
+  document.getElementById('adminPanel').style.display = 'block';
+  adminSwitchApp('repair');
+}
+
+function adminSwitchApp(app) {
+  adminApp = app;
+  document.getElementById('cfgTabRepair').classList.toggle('active', app === 'repair');
+  document.getElementById('cfgTabEnquiry').classList.toggle('active', app === 'enquiry');
+  document.getElementById('adminGroups').innerHTML = '';
+  document.getElementById('adminLoading').style.display = 'block';
+  loadConfig(app, function (cfg) { document.getElementById('adminLoading').style.display = 'none'; adminRender(cfg || {}); });
+}
+
+function adminRender(cfg) {
+  const cats = ADMIN_CATS[adminApp];
+  const box = document.getElementById('adminGroups');
+  box.innerHTML = cats.map(cat => {
+    const opts = cfg[cat] || [];
+    const chips = opts.length ? opts.map(o =>
+      '<span class="cfg-chip ' + (o.active ? '' : 'off') + '">' + o.value +
+      '<button title="toggle" onclick="adminToggle(\'' + cat + '\',\'' + o.value.replace(/'/g, "\\'") + '\',' + (o.active ? 'false' : 'true') + ')">' + (o.active ? '✕' : '↺') + '</button></span>'
+    ).join('') : '<span style="color:var(--text3);font-size:12px">No options yet</span>';
+    return '<div class="cfg-group card">' +
+      '<div class="cfg-group-title">' + (CAT_LABEL[cat] || cat) + '</div>' +
+      '<div>' + chips + '</div>' +
+      '<div class="cfg-add"><input type="text" id="add_' + cat + '" placeholder="Add new option"><button class="btn-search" onclick="adminAddOption(\'' + cat + '\')">+ Add</button></div>' +
+      '</div>';
+  }).join('');
+}
+
+function adminAddOption(cat) {
+  const inp = document.getElementById('add_' + cat);
+  const val = inp.value.trim();
+  if (!val) { showToast('⚠️ Value likho'); return; }
+  adminSaveConfig(cat, val, 'true', 'add');
+  inp.value = '';
+}
+function adminToggle(cat, val, makeActive) { adminSaveConfig(cat, val, makeActive ? 'true' : 'false', 'toggle'); }
+
+function adminSaveConfig(category, value, active, op) {
+  const url = adminApp === 'repair' ? CONFIG.REPAIR_URL : CONFIG.ENQUIRY_URL;
+  showToast('⏳ Saving...');
+  postNoCors(url, { action: 'saveConfig', op: op, category: category, value: value, active: active });
+  // clear caches so app + admin refetch fresh
+  sessionStorage.removeItem('cfg_' + adminApp);
+  _configCache[adminApp] = null;
+  // give GAS a moment, then reload config for this app
+  setTimeout(function () {
+    loadConfig(adminApp, function (cfg) {
+      adminRender(cfg || {});
+      // also refresh live dropdowns if that module already inited
+      if (adminApp === 'repair' && repInited) applyConfigToSelects('repairModule', cfg);
+      if (adminApp === 'enquiry' && enqInited) applyConfigToSelects('enquiryModule', cfg);
+      showToast('✅ Saved');
+    });
+  }, 1200);
+}
