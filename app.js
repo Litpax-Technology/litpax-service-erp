@@ -58,6 +58,7 @@ window.onload = function () {
   document.getElementById('headerDate').innerHTML =
     now.toLocaleDateString('en-IN', opts) + '<br>' + now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
   if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(() => {}); }
+  authInit();
 };
 
 /* ---------- LAUNCHER NAV ---------- */
@@ -80,44 +81,103 @@ function showApp(id) {
   window.scrollTo(0, 0);
 }
 
+function currentRole() { return sessionStorage.getItem('hub_role') || ''; }
+function roleCan(mod) { const r = CONFIG.ROLES[currentRole()]; return r && r.modules.indexOf(mod) !== -1; }
+
 function openModule(mod) {
+  if (!roleCan(mod)) { showToast('⚠️ Is role ko iski permission nahi'); return; }
   if (mod === 'repair') { setHeader('repair'); showApp('repairModule'); repInit(); }
   else if (mod === 'enquiry') { setHeader('enquiry'); showApp('enquiryModule'); enqInit(); }
-  else if (mod === 'admin') { setHeader('admin'); showApp('adminModule'); }
+  // single-module role ke liye Menu button chhupao (launcher hai hi nahi)
+  const r = CONFIG.ROLES[currentRole()];
+  document.getElementById('hdrHome').style.display = (r && r.modules.length > 1) ? 'inline-block' : 'none';
 }
 
-function backToLauncher() { setHeader('launcher'); showApp('launcherScreen'); }
+// Menu button: multi-module role -> launcher; single-module role -> stay in its module
+function backToLauncher() {
+  const r = CONFIG.ROLES[currentRole()];
+  if (r && r.modules.length > 1) { setHeader('launcher'); showApp('launcherScreen'); }
+  else if (r && r.modules.length === 1) { openModule(r.modules[0]); }
+}
 
 /* ============================================================
-   CONFIG (sheet-driven dropdowns)
+   AUTH (sessionStorage-based, ERP-style — no GAS)
    ============================================================ */
-const _configCache = { repair: null, enquiry: null };
-
-function loadConfig(app, cb) {
-  const url = app === 'repair' ? CONFIG.REPAIR_URL : CONFIG.ENQUIRY_URL;
-  const ckey = 'cfg_' + app;
-
-  // instant from cache
-  const cached = cacheGet(ckey);
-  if (cached) { _configCache[app] = cached.val; cb && cb(cached.val); if (cached.fresh) return; }
-
-  jsonp(url, { action: 'getConfig' }, function (res) {
-    if (res && res.ok && res.config) { _configCache[app] = res.config; cacheSet(ckey, res.config); cb && cb(res.config); }
-  }, function () { /* keep cache/defaults silently */ });
+function authInit() {
+  // build role cards
+  const grid = document.getElementById('roleGrid');
+  if (grid && !grid.dataset.built) {
+    grid.innerHTML = Object.keys(CONFIG.ROLES).map(key => {
+      const r = CONFIG.ROLES[key];
+      return '<div class="role-card" onclick="authPick(\'' + key + '\')">' +
+             '<div class="role-icon">' + r.icon + '</div>' +
+             '<div class="role-name">' + r.label + '</div></div>';
+    }).join('');
+    grid.dataset.built = '1';
+  }
+  const role = currentRole();
+  if (role && CONFIG.ROLES[role]) enterApp(role);
+  else showLogin();
 }
 
-// Fill every <select data-cfg="X"> inside a module from config (active only)
-function applyConfigToSelects(moduleId, config) {
-  if (!config) return;
+function showLogin() {
+  document.getElementById('loginScreen').classList.add('active');
+  document.getElementById('appWrap').style.display = 'none';
+  document.getElementById('hdrHome').style.display = 'none';
+  document.getElementById('hdrLogout').style.display = 'none';
+  document.getElementById('rolePinBox').style.display = 'none';
+  document.querySelectorAll('.role-card').forEach(c => c.classList.remove('selected'));
+}
+
+let _pickedRole = '';
+function authPick(role) {
+  _pickedRole = role;
+  document.querySelectorAll('.role-card').forEach(c => c.classList.remove('selected'));
+  event.currentTarget.classList.add('selected');
+  document.getElementById('rolePinBox').style.display = 'block';
+  document.getElementById('rolePinLabel').textContent = CONFIG.ROLES[role].label + ' PIN';
+  const inp = document.getElementById('rolePin'); inp.value = ''; inp.focus();
+}
+
+function authLogin() {
+  const role = _pickedRole;
+  if (!role) { showToast('⚠️ Pehle role choose karo'); return; }
+  const pin = document.getElementById('rolePin').value.trim();
+  if (pin !== String(CONFIG.ROLES[role].pin)) { showToast('❌ Galat PIN'); return; }
+  sessionStorage.setItem('hub_role', role);
+  enterApp(role);
+}
+
+function enterApp(role) {
+  document.getElementById('loginScreen').classList.remove('active');
+  document.getElementById('appWrap').style.display = 'block';
+  document.getElementById('hdrLogout').style.display = 'inline-block';
+  document.getElementById('hdrRole').textContent = CONFIG.ROLES[role].icon + ' ' + CONFIG.ROLES[role].label;
+  const mods = CONFIG.ROLES[role].modules;
+  if (mods.length === 1) openModule(mods[0]);        // single-module role: straight in
+  else { setHeader('launcher'); showApp('launcherScreen'); applyLauncherPerms(); } // admin: launcher
+}
+
+function applyLauncherPerms() {
+  document.querySelectorAll('#launcherScreen [data-mod]').forEach(card => {
+    card.style.display = roleCan(card.getAttribute('data-mod')) ? '' : 'none';
+  });
+}
+
+function logout() { sessionStorage.removeItem('hub_role'); _pickedRole = ''; showLogin(); }
+
+/* ---------- Dropdowns (hardcoded from config.js — no GAS) ---------- */
+function fillDropdowns(moduleId, app) {
+  const map = (CONFIG.DROPDOWNS && CONFIG.DROPDOWNS[app]) || {};
   document.querySelectorAll('#' + moduleId + ' select[data-cfg]').forEach(sel => {
+    if (sel.dataset.filled) return; // fill once
     const cat = sel.getAttribute('data-cfg');
-    const opts = (config[cat] || []).filter(o => o.active).map(o => o.value);
+    const opts = map[cat] || [];
     const first = sel.querySelector('option'); // keep placeholder
-    const current = sel.value;
     sel.innerHTML = '';
     if (first) sel.appendChild(first);
     opts.forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
-    if (current) sel.value = current; // preserve selection if still valid
+    sel.dataset.filled = '1';
   });
 }
 
@@ -135,7 +195,7 @@ function repInit() {
   document.getElementById('r_receivingDate').value = todayStr();
   document.getElementById('d_dispatchDate').value = todayStr();
   if (!repInited) {
-    loadConfig('repair', c => applyConfigToSelects('repairModule', c));
+    fillDropdowns('repairModule', 'repair');
     repApplyCategory('Battery');
     repInited = true;
   }
@@ -505,7 +565,7 @@ let enqSelected = null;
 
 function enqInit() {
   document.getElementById('entryDate').value = todayStr();
-  if (!enqInited) { loadConfig('enquiry', c => applyConfigToSelects('enquiryModule', c)); enqInited = true; }
+  if (!enqInited) { fillDropdowns('enquiryModule', 'enquiry'); enqInited = true; }
   enqSwitchTab('new');
   enqFetchSrNo();
 }
@@ -650,83 +710,4 @@ function enqSubmitUpdate() {
     btn.disabled = false; btn.textContent = '✅ Update Karo';
     window.scrollTo(0, 0);
   }, 300);
-}
-
-/* ============================================================
-   ADMIN — manage config options
-   ============================================================ */
-let adminApp = 'repair';
-let adminUnlocked = false;
-const ADMIN_CATS = {
-  repair:  ['BatteryType','ChargerType','ReceivedMode','ProblemType','ActualProblem','RepairStatus','WarrantyClaim'],
-  enquiry: ['OEM','AttendedBy','EnquiryAbout','Response']
-};
-const CAT_LABEL = {
-  BatteryType:'Battery Type', ChargerType:'Charger Type', ReceivedMode:'Received Mode',
-  ProblemType:'Problem Type', ActualProblem:'Actual Problem Found', RepairStatus:'Repair Status',
-  WarrantyClaim:'Warranty Claim Status', OEM:"OEM's", AttendedBy:'Attended By',
-  EnquiryAbout:'Enquiry About', Response:'Response'
-};
-
-function adminUnlock() {
-  const pin = document.getElementById('adminPinInput').value.trim();
-  if (pin !== String(CONFIG.ADMIN_PIN)) { showToast('❌ Galat PIN'); return; }
-  adminUnlocked = true;
-  document.getElementById('adminLockScreen').style.display = 'none';
-  document.getElementById('adminPanel').style.display = 'block';
-  adminSwitchApp('repair');
-}
-
-function adminSwitchApp(app) {
-  adminApp = app;
-  document.getElementById('cfgTabRepair').classList.toggle('active', app === 'repair');
-  document.getElementById('cfgTabEnquiry').classList.toggle('active', app === 'enquiry');
-  document.getElementById('adminGroups').innerHTML = '';
-  document.getElementById('adminLoading').style.display = 'block';
-  loadConfig(app, function (cfg) { document.getElementById('adminLoading').style.display = 'none'; adminRender(cfg || {}); });
-}
-
-function adminRender(cfg) {
-  const cats = ADMIN_CATS[adminApp];
-  const box = document.getElementById('adminGroups');
-  box.innerHTML = cats.map(cat => {
-    const opts = cfg[cat] || [];
-    const chips = opts.length ? opts.map(o =>
-      '<span class="cfg-chip ' + (o.active ? '' : 'off') + '">' + o.value +
-      '<button title="toggle" onclick="adminToggle(\'' + cat + '\',\'' + o.value.replace(/'/g, "\\'") + '\',' + (o.active ? 'false' : 'true') + ')">' + (o.active ? '✕' : '↺') + '</button></span>'
-    ).join('') : '<span style="color:var(--text3);font-size:12px">No options yet</span>';
-    return '<div class="cfg-group card">' +
-      '<div class="cfg-group-title">' + (CAT_LABEL[cat] || cat) + '</div>' +
-      '<div>' + chips + '</div>' +
-      '<div class="cfg-add"><input type="text" id="add_' + cat + '" placeholder="Add new option"><button class="btn-search" onclick="adminAddOption(\'' + cat + '\')">+ Add</button></div>' +
-      '</div>';
-  }).join('');
-}
-
-function adminAddOption(cat) {
-  const inp = document.getElementById('add_' + cat);
-  const val = inp.value.trim();
-  if (!val) { showToast('⚠️ Value likho'); return; }
-  adminSaveConfig(cat, val, 'true', 'add');
-  inp.value = '';
-}
-function adminToggle(cat, val, makeActive) { adminSaveConfig(cat, val, makeActive ? 'true' : 'false', 'toggle'); }
-
-function adminSaveConfig(category, value, active, op) {
-  const url = adminApp === 'repair' ? CONFIG.REPAIR_URL : CONFIG.ENQUIRY_URL;
-  showToast('⏳ Saving...');
-  postNoCors(url, { action: 'saveConfig', op: op, category: category, value: value, active: active });
-  // clear caches so app + admin refetch fresh
-  sessionStorage.removeItem('cfg_' + adminApp);
-  _configCache[adminApp] = null;
-  // give GAS a moment, then reload config for this app
-  setTimeout(function () {
-    loadConfig(adminApp, function (cfg) {
-      adminRender(cfg || {});
-      // also refresh live dropdowns if that module already inited
-      if (adminApp === 'repair' && repInited) applyConfigToSelects('repairModule', cfg);
-      if (adminApp === 'enquiry' && enqInited) applyConfigToSelects('enquiryModule', cfg);
-      showToast('✅ Saved');
-    });
-  }, 1200);
 }
