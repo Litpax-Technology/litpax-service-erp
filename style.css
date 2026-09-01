@@ -341,3 +341,35 @@ body:not(.has-sidebar) .header{display:none;}
 .badge-blue{background:#e8f0fe;color:var(--blue);}
 .badge-red{background:#fdece8;color:#c0392b;}
 .sk-card{height:58px;border-radius:10px;margin-bottom:8px;}
+
+/* ============ LIGHT THEME OVERRIDES ============ */
+/* Topbar */
+.header{background:#fff;border-bottom:1px solid var(--border);box-shadow:0 1px 3px rgba(13,21,38,0.05);}
+.header-text h1{color:var(--primary);}
+.header-text p{color:var(--text2);}
+.header-date{color:var(--text3);}
+.sb-toggle{background:var(--surface3);color:var(--primary);}
+
+/* Sidebar */
+.sidebar{background:#fff;border-right:1px solid var(--border);color:var(--text);}
+.sb-brand{border-bottom-color:var(--border);}
+.sb-brand-name{color:var(--primary);}
+.sb-brand-sub{color:var(--text3);}
+.sb-item{color:var(--text2);}
+.sb-item:hover{background:var(--surface3);color:var(--primary);}
+.sb-item.active{background:var(--blue);color:#fff;box-shadow:0 6px 16px rgba(26,95,216,0.25);}
+.sb-foot{border-top-color:var(--border);}
+.sb-role{color:var(--text2);background:var(--surface3);}
+@media(max-width:900px){.sidebar{box-shadow:6px 0 30px rgba(13,21,38,0.12);}}
+
+/* Login left panel -> light */
+.login-left{background:linear-gradient(160deg,#eef2fb,#e4ecf9);color:var(--primary);}
+.login-brand-name{color:var(--primary);}
+.login-brand-sub{color:var(--text2);}
+.login-hero{color:var(--primary);}
+.login-hero-sub{color:var(--text2);}
+.login-steps{border-top-color:rgba(13,21,38,0.10);}
+.login-step{color:var(--text);border-bottom-color:rgba(13,21,38,0.08);}
+.login-step-num{background:rgba(26,95,216,0.12);color:var(--blue);}
+.login-stat-num{color:var(--primary);}
+.login-stat-lbl{color:var(--text2);}
