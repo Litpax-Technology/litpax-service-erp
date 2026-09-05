@@ -463,6 +463,52 @@
     </div>
   </div>
 
+  <!-- ============ RECORDS MODULE ============ -->
+  <div class="app-screen" id="recordsModule">
+    <div class="tabs" id="recTabs"></div>
+
+    <!-- Repairs records -->
+    <div id="recRepairPane">
+      <div class="rec-toolbar">
+        <div class="list-search"><span>🔍</span><input type="text" id="recRepSearch" placeholder="Repair ID, customer, contact..." oninput="recRepRender()"></div>
+        <button class="btn-search" onclick="recRepNew()">+ New Receive</button>
+      </div>
+      <div class="rec-filters" id="recRepFilters">
+        <button class="rec-chip active" onclick="recRepFilter(this,'all')">All</button>
+        <button class="rec-chip" onclick="recRepFilter(this,'pending')">Pending</button>
+        <button class="rec-chip" onclick="recRepFilter(this,'dispatched')">Dispatched</button>
+      </div>
+      <div id="recRepSkeleton" style="display:none;"><div class="skeleton sk-card"></div><div class="skeleton sk-card"></div><div class="skeleton sk-card"></div></div>
+      <div class="pick-list" id="recRepList"></div>
+    </div>
+
+    <!-- Enquiries records -->
+    <div id="recEnqPane" style="display:none;">
+      <div class="rec-toolbar">
+        <div class="list-search"><span>🔍</span><input type="text" id="recEnqSearch" placeholder="Sr No, customer, contact..." oninput="recEnqRender()"></div>
+        <button class="btn-search" onclick="recEnqNew()">+ New Enquiry</button>
+      </div>
+      <div class="rec-filters" id="recEnqFilters">
+        <button class="rec-chip active" onclick="recEnqFilter(this,'all')">All</button>
+        <button class="rec-chip" onclick="recEnqFilter(this,'open')">Open</button>
+        <button class="rec-chip" onclick="recEnqFilter(this,'closed')">Closed</button>
+      </div>
+      <div id="recEnqSkeleton" style="display:none;"><div class="skeleton sk-card"></div><div class="skeleton sk-card"></div></div>
+      <div class="pick-list" id="recEnqList"></div>
+    </div>
+
+    <!-- Detail drawer -->
+    <div class="rec-drawer-overlay" id="recDrawerOv" onclick="recCloseDrawer()"></div>
+    <div class="rec-drawer" id="recDrawer">
+      <div class="rec-drawer-head">
+        <div class="rec-drawer-title" id="recDrawerTitle">Detail</div>
+        <button class="rec-drawer-close" onclick="recCloseDrawer()">✕</button>
+      </div>
+      <div class="rec-drawer-body" id="recDrawerBody"></div>
+      <div class="rec-drawer-foot" id="recDrawerFoot"></div>
+    </div>
+  </div>
+
   </div><!-- /appWrap -->
 </div><!-- /main -->
 
