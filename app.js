@@ -1043,18 +1043,18 @@ function recEnqOpen(idx) {
   document.getElementById('recDrawerTitle').textContent = 'Sr.' + sr + ' — ' + recF(r, ['Customer Name', 'customerName']);
   const kv = [
     ['Sr No', sr],
-    ['Date', recF(r, ['Date'])],
+    ['Date', recF(r, ['Date', 'date'])],
     ['Status', st === 'closed' ? 'Closed' : 'Open'],
-    ['Customer Name', recF(r, ['Customer Name'])],
-    ['Contact', recF(r, ['Contact'])],
-    ['OEMs', recF(r, ['OEMs'])],
-    ['Company Name', recF(r, ['Company Name'])],
-    ['Enquiry About', recF(r, ['Enquiry About'])],
-    ['Response', recF(r, ['Response'])],
-    ['Solution', recF(r, ['Solution'])],
-    ['Attended By', recF(r, ['Attended By'])],
-    ['Enquiry Closed', recF(r, ['Enquiry Closed'])],
-    ['Remarks', recF(r, ['Remarks'])]
+    ['Customer Name', recF(r, ['Customer Name', 'customerName'])],
+    ['Contact', recF(r, ['Contact', 'contact'])],
+    ['OEMs', recF(r, ['OEMs', 'oems'])],
+    ['Company Name', recF(r, ['Company Name', 'companyName'])],
+    ['Enquiry About', recF(r, ['Enquiry About', 'enquiryAbout'])],
+    ['Response', recF(r, ['Response', 'response'])],
+    ['Solution', recF(r, ['Solution', 'solution'])],
+    ['Attended By', recF(r, ['Attended By', 'attendedBy'])],
+    ['Enquiry Closed', recF(r, ['Enquiry Closed', 'enquiryClosed'])],
+    ['Remarks', recF(r, ['Remarks', 'remarks'])]
   ];
   document.getElementById('recDrawerBody').innerHTML = kv.map(x =>
     '<div class="info-row"><span>' + x[0] + '</span><span>' + (x[1] || '—') + '</span></div>').join('');
