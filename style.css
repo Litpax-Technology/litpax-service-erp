@@ -396,3 +396,20 @@ body:not(.has-sidebar) .header{display:none;}
 .rec-drawer-foot{padding:16px 20px;border-top:1px solid var(--border);}
 .rec-drawer-foot:empty{display:none;}
 @media(max-width:520px){.rec-drawer{width:100%;max-width:100%;}}
+
+/* ============ RECORDS — ERP TABLE ============ */
+.rec-table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:var(--shadow);}
+.rec-table{width:100%;border-collapse:collapse;min-width:760px;font-size:13px;}
+.rec-table thead th{text-align:left;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);padding:13px 14px;background:var(--surface2);border-bottom:1px solid var(--border);white-space:nowrap;}
+.rec-table tbody td{padding:13px 14px;border-bottom:1px solid var(--surface3);color:var(--text2);white-space:nowrap;}
+.rec-table tbody tr{cursor:pointer;transition:background .14s;}
+.rec-table tbody tr:hover{background:#f7faff;}
+.rec-table tbody tr:last-child td{border-bottom:none;}
+.rec-id{font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--blue);}
+.rec-strong{font-weight:600;color:var(--text);}
+.rec-center{text-align:center;}
+.rec-pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:4px 11px;border-radius:20px;white-space:nowrap;}
+.rec-pill.amber{background:#fff4dc;color:#9a7b00;}
+.rec-pill.green{background:#e2f7f0;color:#00856e;}
+.rec-pill.blue{background:#e8f0fe;color:var(--blue);}
+.rec-pill.red{background:#fdece8;color:#c0392b;}
