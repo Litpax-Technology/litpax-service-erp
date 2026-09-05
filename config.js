@@ -4,7 +4,7 @@
    ============================================================ */
 const CONFIG = {
   // --- Backend URLs (existing, untouched) ---
-  REPAIR_URL:  'https://script.google.com/macros/s/AKfycbz05ys0ja2A0uqDJyoHc_oblv8jljmKZaZkrdez0z1RwTpMIou0CN2SIIqLnPcOEZYo/exec',
+  REPAIR_URL:  'https://script.google.com/macros/s/AKfycbx0CmcFVbcG_A4Pzz7z6wddQfZ4UWsOZ_V6JWbvgXUkevyI_bRoKSDplI3cHXl5w9GO/exec',
   ENQUIRY_URL: 'https://script.google.com/macros/s/AKfycbzTZU0YyV8wTfaPcUhUj7C041nxgZz2nrVIlJEiVE9adF35-KuwoBczI22DXbLa7B2z/exec',
 
   // --- Login roles (ERP-jaisa, sessionStorage-based — koi GAS nahi) ---
