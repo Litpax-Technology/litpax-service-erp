@@ -415,3 +415,12 @@ body:not(.has-sidebar) .header{display:none;}
 .rec-pill.green{background:#e2f7f0;color:#00856e;}
 .rec-pill.blue{background:#e8f0fe;color:var(--blue);}
 .rec-pill.red{background:#fdece8;color:#c0392b;}
+
+/* ============ CONTENT CENTERING FIX ============ */
+@media(min-width:901px){
+  body.has-sidebar .main{margin-left:240px;margin-right:0;}
+  body.has-sidebar .main > *{max-width:860px;margin-left:auto;margin-right:auto;}
+  /* Records full-width rahe */
+  body.has-sidebar .main:has(#recordsModule.active){max-width:none;}
+  body.has-sidebar .main:has(#recordsModule.active) > *{max-width:none;padding:0 28px;}
+}
