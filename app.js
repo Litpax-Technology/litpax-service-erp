@@ -65,12 +65,14 @@ window.onload = function () {
 const HEADERS = {
   dashboard: ['Dashboard', 'Aaj ka overview'],
   repair:   ['Service Management', 'Battery / Charger — Receive & Dispatch'],
-  enquiry:  ['Enquiry Management', 'Customer Enquiry — Log & Track']
+  enquiry:  ['Enquiry Management', 'Customer Enquiry — Log & Track'],
+  records:  ['Records', 'Saari entries — dekho aur action lo']
 };
 const NAV_ITEMS = [
   { key: 'dashboard', icon: '📊', label: 'Dashboard', mod: null },
   { key: 'repair',    icon: '🛠️', label: 'Repair',    mod: 'repair' },
-  { key: 'enquiry',   icon: '📞', label: 'Enquiry',   mod: 'enquiry' }
+  { key: 'enquiry',   icon: '📞', label: 'Enquiry',   mod: 'enquiry' },
+  { key: 'records',   icon: '📁', label: 'Records',   mod: 'records' }
 ];
 
 function setHeader(mod) {
@@ -87,14 +89,14 @@ function roleCan(mod) { const r = CONFIG.ROLES[currentRole()]; return r && r.mod
 
 function buildSidebar() {
   const nav = document.getElementById('sbNav');
-  nav.innerHTML = NAV_ITEMS.filter(it => it.mod === null || roleCan(it.mod)).map(it =>
+  nav.innerHTML = NAV_ITEMS.filter(it => it.mod === null || (it.mod === 'records' ? recCanAny() : roleCan(it.mod))).map(it =>
     '<button class="sb-item" data-nav="' + it.key + '" onclick="navGo(\'' + it.key + '\')"><span class="sb-ico">' + it.icon + '</span>' + it.label + '</button>'
   ).join('');
 }
 function setActiveNav(key) {
   document.querySelectorAll('.sb-item').forEach(b => b.classList.toggle('active', b.getAttribute('data-nav') === key));
 }
-function navGo(key) { if (key === 'dashboard') openDashboard(); else openModule(key); toggleSidebar(false); }
+function navGo(key) { if (key === 'dashboard') openDashboard(); else if (key === 'records') openRecords(); else openModule(key); toggleSidebar(false); }
 function toggleSidebar(force) {
   const sb = document.getElementById('sidebar'), ov = document.getElementById('sbOverlay');
   const open = (typeof force === 'boolean') ? force : !sb.classList.contains('open');
@@ -404,6 +406,7 @@ function repSubmitReceive() {
   postNoCors(CONFIG.REPAIR_URL, data);
   cacheSet('rep_pending', (cacheGet('rep_pending') || {}).val || { data: [], lastSrNo: 0 }); // mark stale-ish; will refresh next open
   sessionStorage.removeItem('rep_pending'); // force fresh next time
+  sessionStorage.removeItem('rec_rep_all');
 
   document.getElementById('rSection3').classList.remove('active');
   document.getElementById('repReceiveSuccess').style.display = 'block';
@@ -466,7 +469,7 @@ function repResetReceive() {
 }
 
 /* ----- DISPATCH ----- */
-function repShowDispatch() {
+function repShowDispatch(preselectId) {
   repShowScreen('repDispatchScreen');
   document.getElementById('errorBox').style.display = 'none';
   document.getElementById('selectedInfoBox').style.display = 'none';
@@ -474,14 +477,22 @@ function repShowDispatch() {
   document.getElementById('dNextBtn').disabled = true; document.getElementById('dNextBtn').style.opacity = '.5';
 
   const cached = cacheGet('rep_pending');
-  if (cached) { repPending = cached.val.data || []; repRenderPending(); if (cached.fresh) return; }
+  if (cached) { repPending = cached.val.data || []; repRenderPending(); if (cached.fresh) { repPreselect(preselectId); return; } }
   else { document.getElementById('pendingSkeleton').style.display = 'block'; document.getElementById('pendingList').innerHTML = ''; }
 
   repLoadData(true, function (err) {
     document.getElementById('pendingSkeleton').style.display = 'none';
     if (err) { document.getElementById('errorBox').style.display = 'block'; return; }
     repRenderPending();
+    repPreselect(preselectId);
   });
+}
+
+function repPreselect(repairId) {
+  if (!repairId) return;
+  const idx = repPending.findIndex(function (r) { return String(r.repairId) === String(repairId); });
+  if (idx !== -1) repPickPending(idx);
+  else showToast('⚠️ Ye entry ab pending nahi hai');
 }
 
 function repRenderPending() {
@@ -584,6 +595,7 @@ function repSubmitDispatch() {
 
   postNoCors(CONFIG.REPAIR_URL, data);
   sessionStorage.removeItem('rep_pending'); // force refresh next time
+  sessionStorage.removeItem('rec_rep_all');
 
   document.getElementById('dSection2').classList.remove('active');
   document.getElementById('repDispatchSuccess').style.display = 'block';
@@ -656,12 +668,12 @@ function enqFetchSrNo() {
   }, function () { enqNextSrNo = 1; document.getElementById('srNoDisplay').textContent = '1'; });
 }
 
-function enqSwitchTab(tab) {
+function enqSwitchTab(tab, onOpenLoaded) {
   document.getElementById('tab-new').classList.toggle('active', tab === 'new');
   document.getElementById('tab-update').classList.toggle('active', tab === 'update');
   ['enqFormScreen','enqUpdateSearchScreen','enqUpdateFormScreen','enqUpdateSuccessScreen','enqSuccessScreen'].forEach(id => document.getElementById(id).style.display = 'none');
   if (tab === 'new') document.getElementById('enqFormScreen').style.display = 'block';
-  else { document.getElementById('enqUpdateSearchScreen').style.display = 'block'; enqLoadOpen(); }
+  else { document.getElementById('enqUpdateSearchScreen').style.display = 'block'; enqLoadOpen(onOpenLoaded); }
   window.scrollTo(0, 0);
 }
 
@@ -697,6 +709,7 @@ function enqSubmit() {
 
   postNoCors(CONFIG.ENQUIRY_URL, data);
   sessionStorage.removeItem('enq_open'); // list changed
+  sessionStorage.removeItem('rec_enq_all');
 
   document.getElementById('enqFormScreen').style.display = 'none';
   document.getElementById('enqSuccessScreen').style.display = 'block';
@@ -723,9 +736,9 @@ function enqReset() {
 }
 
 let enqLoadingOpen = false;
-function enqLoadOpen() {
+function enqLoadOpen(cb) {
   const cached = cacheGet('enq_open');
-  if (cached) { enqOpen = cached.val || []; enqFillOpen(); if (cached.fresh) return; }
+  if (cached) { enqOpen = cached.val || []; enqFillOpen(); if (cached.fresh) { cb && cb(); return; } }
   else { document.getElementById('openSkeleton').style.display = 'block'; document.getElementById('openList').innerHTML = ''; }
 
   if (enqLoadingOpen) return; enqLoadingOpen = true;
@@ -735,6 +748,7 @@ function enqLoadOpen() {
     enqOpen = (res && res.rows) || [];
     cacheSet('enq_open', enqOpen);
     enqFillOpen();
+    cb && cb();
   }, function () { enqLoadingOpen = false; document.getElementById('openSkeleton').style.display = 'none'; showToast('❌ Network error'); });
 }
 
@@ -796,3 +810,244 @@ function enqSubmitUpdate() {
     window.scrollTo(0, 0);
   }, 300);
 }
+
+/* ============================================================
+   RECORDS MODULE (view-all + list se action)
+   Read-only browser over getDashboard (repair) + getAllEnquiries.
+   ============================================================ */
+let recTab = 'repair';
+let recRepAll = [];
+let recEnqAll = [];
+let recRepFilterVal = 'all';
+let recEnqFilterVal = 'all';
+
+function recCanAny() { return roleCan('repair') || roleCan('enquiry'); }
+
+// resilient field reader — raw column key OR camelCase, jo bhi mile
+function recF(row, keys) {
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys[i];
+    if (row[k] !== undefined && row[k] !== null && row[k] !== '') return row[k];
+  }
+  return '';
+}
+
+function openRecords() { setActiveNav('records'); setHeader('records'); showApp('recordsModule'); recInit(); }
+
+function recInit() {
+  const canRep = roleCan('repair'), canEnq = roleCan('enquiry');
+  const tabs = [];
+  if (canRep) tabs.push({ k: 'repair', label: '🛠️ Repairs' });
+  if (canEnq) tabs.push({ k: 'enquiry', label: '📞 Enquiries' });
+  document.getElementById('recTabs').innerHTML = tabs.map(t =>
+    '<button class="tab-btn" id="recTab-' + t.k + '" onclick="recSwitchTab(\'' + t.k + '\')">' + t.label + '</button>'
+  ).join('');
+  recTab = tabs.length ? tabs[0].k : 'repair';
+  recSwitchTab(recTab);
+}
+
+function recSwitchTab(tab) {
+  recTab = tab;
+  document.querySelectorAll('#recTabs .tab-btn').forEach(b => b.classList.remove('active'));
+  const tb = document.getElementById('recTab-' + tab); if (tb) tb.classList.add('active');
+  document.getElementById('recRepairPane').style.display = tab === 'repair' ? 'block' : 'none';
+  document.getElementById('recEnqPane').style.display = tab === 'enquiry' ? 'block' : 'none';
+  if (tab === 'repair') recRepLoad(false); else recEnqLoad(false);
+}
+
+/* ---------- REPAIRS records ---------- */
+function recRepLoad(force) {
+  const cached = cacheGet('rec_rep_all');
+  if (cached && !force) { recRepAll = cached.val || []; recRepRender(); if (cached.fresh) return; }
+  else { document.getElementById('recRepSkeleton').style.display = 'block'; document.getElementById('recRepList').innerHTML = ''; }
+  jsonp(CONFIG.REPAIR_URL, { action: 'getDashboard' }, function (r) {
+    document.getElementById('recRepSkeleton').style.display = 'none';
+    recRepAll = (r && r.data) || [];
+    cacheSet('rec_rep_all', recRepAll);
+    recRepRender();
+  }, function () { document.getElementById('recRepSkeleton').style.display = 'none'; document.getElementById('recRepList').innerHTML = '<div class="no-results">Data load nahi hua ❌</div>'; });
+}
+
+function recRepStatus(row) {
+  const s = String(recF(row, ['Repair Status', 'repairStatus'])).toLowerCase();
+  if (s.indexOf('dispatch') !== -1) return 'dispatched';
+  const pend = parseInt(recF(row, ['Pending Qty', 'pendingQty']));
+  if (!isNaN(pend) && pend === 0 && s) return 'dispatched';
+  return 'pending';
+}
+
+function recRepFilter(el, f) {
+  recRepFilterVal = f;
+  document.querySelectorAll('#recRepFilters .rec-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  recRepRender();
+}
+
+function recRepRender() {
+  const list = document.getElementById('recRepList');
+  if (!recRepAll.length) { list.innerHTML = '<div class="no-results">Koi record nahi ✅</div>'; return; }
+  const q = (document.getElementById('recRepSearch').value || '').toLowerCase().trim();
+  const rows = recRepAll.map((r, i) => ({ r, i })).filter(({ r }) => {
+    const st = recRepStatus(r);
+    if (recRepFilterVal !== 'all' && st !== recRepFilterVal) return false;
+    if (!q) return true;
+    const hay = (recF(r, ['Repair ID', 'repairId']) + ' ' + recF(r, ['Customer Name', 'customerName']) + ' ' +
+      recF(r, ['Contact No', 'contactNo']) + ' ' + recF(r, ['Battery Model', 'batteryModel'])).toLowerCase();
+    return hay.indexOf(q) !== -1;
+  });
+  if (!rows.length) { list.innerHTML = '<div class="no-results">Kuch nahi mila 🔍</div>'; return; }
+  list.innerHTML = rows.map(({ r, i }) => {
+    const st = recRepStatus(r);
+    const badge = st === 'dispatched' ? '<span class="badge badge-green">Dispatched</span>' : '<span class="badge badge-amber">Pending</span>';
+    return '<div class="pick-card" onclick="recRepOpen(' + i + ')">' +
+      '<div class="pick-main"><div class="pick-title">' + recF(r, ['Repair ID', 'repairId']) + ' · ' + recF(r, ['Customer Name', 'customerName']) + '</div>' +
+      '<div class="pick-sub">' + recF(r, ['Category', 'category']) + ' — ' + (recF(r, ['Battery Model', 'batteryModel']) || '—') + ' · ' + recF(r, ['Receiving Date', 'receivingDate']) + '</div></div>' +
+      badge + '</div>';
+  }).join('');
+}
+
+function recRepOpen(idx) {
+  const r = recRepAll[idx]; if (!r) return;
+  const st = recRepStatus(r);
+  const rid = recF(r, ['Repair ID', 'repairId']);
+  document.getElementById('recDrawerTitle').textContent = rid + ' — ' + recF(r, ['Customer Name', 'customerName']);
+  const kv = [
+    ['Repair ID', rid],
+    ['Status', recF(r, ['Repair Status', 'repairStatus'])],
+    ['Receiving Date', recF(r, ['Receiving Date', 'receivingDate'])],
+    ['Customer', recF(r, ['Customer Name', 'customerName'])],
+    ['Contact', recF(r, ['Contact No', 'contactNo'])],
+    ['Email', recF(r, ['Email', 'email'])],
+    ['Category', recF(r, ['Category', 'category'])],
+    ['Battery Model', recF(r, ['Battery Model', 'batteryModel'])],
+    ['Battery Sr No', recF(r, ['Battery Sr No', 'batterySrNo'])],
+    ['Battery Qty Recv', recF(r, ['Battery Qty Received', 'batteryQtyReceived'])],
+    ['Charger Model', recF(r, ['Charger Model', 'chargerModel'])],
+    ['Charger Qty Recv', recF(r, ['Charger Qty Received', 'chargerQtyReceived'])],
+    ['Problem Type', recF(r, ['Problem Type', 'problemType'])],
+    ['Problem Desc', recF(r, ['Problem Description', 'problemDescription'])],
+    ['Warranty', recF(r, ['Warranty', 'warranty'])],
+    ['Pending Qty', recF(r, ['Pending Qty', 'pendingQty'])],
+    ['Received By', recF(r, ['Received By', 'receivedBy'])]
+  ];
+  document.getElementById('recDrawerBody').innerHTML = kv.map(x =>
+    '<div class="info-row"><span>' + x[0] + '</span><span>' + (x[1] || '—') + '</span></div>').join('');
+  document.getElementById('recDrawerFoot').innerHTML =
+    (st === 'pending' && roleCan('repair'))
+      ? '<button class="btn-submit-dispatch" style="width:100%" onclick="recDispatch(\'' + rid + '\')">🚚 Dispatch Karo</button>'
+      : '';
+  recOpenDrawer();
+}
+
+function recDispatch(repairId) {
+  recCloseDrawer();
+  setActiveNav('repair'); setHeader('repair'); showApp('repairModule');
+  if (!repInited) { fillDropdowns('repairModule', 'repair'); repApplyCategory('Battery'); repInited = true; }
+  document.getElementById('d_dispatchDate').value = todayStr();
+  repShowDispatch(repairId);
+}
+
+function recRepNew() {
+  setActiveNav('repair'); setHeader('repair'); showApp('repairModule');
+  if (!repInited) { fillDropdowns('repairModule', 'repair'); repApplyCategory('Battery'); repInited = true; }
+  document.getElementById('r_receivingDate').value = todayStr();
+  repShowReceive();
+}
+
+/* ---------- ENQUIRIES records ---------- */
+function recEnqLoad(force) {
+  const cached = cacheGet('rec_enq_all');
+  if (cached && !force) { recEnqAll = cached.val || []; recEnqRender(); if (cached.fresh) return; }
+  else { document.getElementById('recEnqSkeleton').style.display = 'block'; document.getElementById('recEnqList').innerHTML = ''; }
+  jsonp(CONFIG.ENQUIRY_URL, { action: 'getAllEnquiries' }, function (r) {
+    document.getElementById('recEnqSkeleton').style.display = 'none';
+    recEnqAll = (r && r.rows) || [];
+    cacheSet('rec_enq_all', recEnqAll);
+    recEnqRender();
+  }, function () { document.getElementById('recEnqSkeleton').style.display = 'none'; document.getElementById('recEnqList').innerHTML = '<div class="no-results">Data load nahi hua ❌</div>'; });
+}
+
+function recEnqStatus(r) {
+  return String(recF(r, ['Enquiry Closed', 'enquiryClosed'])).toLowerCase() === 'yes' ? 'closed' : 'open';
+}
+
+function recEnqFilter(el, f) {
+  recEnqFilterVal = f;
+  document.querySelectorAll('#recEnqFilters .rec-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  recEnqRender();
+}
+
+function recEnqRender() {
+  const list = document.getElementById('recEnqList');
+  if (!recEnqAll.length) { list.innerHTML = '<div class="no-results">Koi record nahi ✅</div>'; return; }
+  const q = (document.getElementById('recEnqSearch').value || '').toLowerCase().trim();
+  const rows = recEnqAll.map((r, i) => ({ r, i })).filter(({ r }) => {
+    const st = recEnqStatus(r);
+    if (recEnqFilterVal !== 'all' && st !== recEnqFilterVal) return false;
+    if (!q) return true;
+    const hay = ('sr.' + recF(r, ['Sr No', 'srNo']) + ' ' + recF(r, ['Customer Name', 'customerName']) + ' ' +
+      recF(r, ['Contact', 'contact']) + ' ' + recF(r, ['OEMs', 'oems'])).toLowerCase();
+    return hay.indexOf(q) !== -1;
+  });
+  if (!rows.length) { list.innerHTML = '<div class="no-results">Kuch nahi mila 🔍</div>'; return; }
+  list.innerHTML = rows.map(({ r, i }) => {
+    const st = recEnqStatus(r);
+    const badge = st === 'closed' ? '<span class="badge badge-green">Closed</span>' : '<span class="badge badge-amber">Open</span>';
+    return '<div class="pick-card" onclick="recEnqOpen(' + i + ')">' +
+      '<div class="pick-main"><div class="pick-title">Sr.' + recF(r, ['Sr No', 'srNo']) + ' · ' + recF(r, ['Customer Name', 'customerName']) + '</div>' +
+      '<div class="pick-sub">' + (recF(r, ['Enquiry About', 'enquiryAbout']) || '—') + ' · ' + recF(r, ['Date', 'date']) + '</div></div>' +
+      badge + '</div>';
+  }).join('');
+}
+
+function recEnqOpen(idx) {
+  const r = recEnqAll[idx]; if (!r) return;
+  const st = recEnqStatus(r);
+  const sr = recF(r, ['Sr No', 'srNo']);
+  document.getElementById('recDrawerTitle').textContent = 'Sr.' + sr + ' — ' + recF(r, ['Customer Name', 'customerName']);
+  const kv = [
+    ['Sr No', sr],
+    ['Date', recF(r, ['Date', 'date'])],
+    ['Status', st === 'closed' ? 'Closed' : 'Open'],
+    ['Customer', recF(r, ['Customer Name', 'customerName'])],
+    ['Contact', recF(r, ['Contact', 'contact'])],
+    ['OEM', recF(r, ['OEMs', 'oems'])],
+    ['Company', recF(r, ['Company Name', 'companyName'])],
+    ['Enquiry About', recF(r, ['Enquiry About', 'enquiryAbout'])],
+    ['Response', recF(r, ['Response', 'response'])],
+    ['Solution', recF(r, ['Solution', 'solution'])],
+    ['Attended By', recF(r, ['Attended By', 'attendedBy'])],
+    ['Remarks', recF(r, ['Remarks', 'remarks'])]
+  ];
+  document.getElementById('recDrawerBody').innerHTML = kv.map(x =>
+    '<div class="info-row"><span>' + x[0] + '</span><span>' + (x[1] || '—') + '</span></div>').join('');
+  document.getElementById('recDrawerFoot').innerHTML =
+    (st === 'open' && roleCan('enquiry'))
+      ? '<button class="btn-update" style="width:100%" onclick="recUpdateEnq(\'' + sr + '\')">✏️ Update Karo</button>'
+      : '';
+  recOpenDrawer();
+}
+
+function recUpdateEnq(srNo) {
+  recCloseDrawer();
+  setActiveNav('enquiry'); setHeader('enquiry'); showApp('enquiryModule');
+  if (!enqInited) { fillDropdowns('enquiryModule', 'enquiry'); enqInited = true; }
+  document.getElementById('entryDate').value = todayStr();
+  enqSwitchTab('update', function () {
+    const idx = enqOpen.findIndex(r => String(r.srNo) === String(srNo));
+    if (idx !== -1) enqSelectFromDropdown(idx);
+    else showToast('⚠️ Ye enquiry ab open nahi hai');
+  });
+}
+
+function recEnqNew() {
+  setActiveNav('enquiry'); setHeader('enquiry'); showApp('enquiryModule');
+  if (!enqInited) { fillDropdowns('enquiryModule', 'enquiry'); enqInited = true; }
+  document.getElementById('entryDate').value = todayStr();
+  enqSwitchTab('new');
+}
+
+/* ---------- shared drawer ---------- */
+function recOpenDrawer() { document.getElementById('recDrawer').classList.add('open'); document.getElementById('recDrawerOv').classList.add('show'); }
+function recCloseDrawer() { document.getElementById('recDrawer').classList.remove('open'); document.getElementById('recDrawerOv').classList.remove('show'); }
