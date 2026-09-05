@@ -17,6 +17,8 @@ body{font-family:'IBM Plex Sans',sans-serif;background:var(--surface2);color:var
 .header-home:hover{background:rgba(255,255,255,0.22);}
 
 .main{max-width:860px;margin:0 auto;padding:20px;}
+/* Records ko full-width — ERP grid feel */
+body.has-sidebar .main:has(#recordsModule.active){max-width:none;}
 
 /* ── APP SCREENS ── */
 .app-screen{display:none;animation:fadeIn .3s ease;}
