@@ -896,14 +896,23 @@ function recRepRender() {
     return hay.indexOf(q) !== -1;
   });
   if (!rows.length) { list.innerHTML = '<div class="no-results">Kuch nahi mila 🔍</div>'; return; }
-  list.innerHTML = rows.map(({ r, i }) => {
+  const body = rows.map(({ r, i }) => {
     const st = recRepStatus(r);
-    const badge = st === 'dispatched' ? '<span class="badge badge-green">Dispatched</span>' : '<span class="badge badge-amber">Pending</span>';
-    return '<div class="pick-card" onclick="recRepOpen(' + i + ')">' +
-      '<div class="pick-main"><div class="pick-title">' + recF(r, ['Repair ID', 'repairId']) + ' · ' + recF(r, ['Customer Name', 'customerName']) + '</div>' +
-      '<div class="pick-sub">' + recF(r, ['Category', 'category']) + ' — ' + (recF(r, ['Battery Model', 'batteryModel']) || '—') + ' · ' + recF(r, ['Receiving Date', 'receivingDate']) + '</div></div>' +
-      badge + '</div>';
+    const badge = st === 'dispatched' ? '<span class="rec-pill green">● Dispatched</span>' : '<span class="rec-pill amber">● Pending</span>';
+    return '<tr onclick="recRepOpen(' + i + ')">' +
+      '<td class="rec-id">' + (recF(r, ['Repair ID', 'repairId']) || '—') + '</td>' +
+      '<td>' + (recF(r, ['Receiving Date', 'receivingDate']) || '—') + '</td>' +
+      '<td class="rec-strong">' + (recF(r, ['Customer Name', 'customerName']) || '—') + '</td>' +
+      '<td>' + (recF(r, ['Contact No', 'contactNo']) || '—') + '</td>' +
+      '<td>' + (recF(r, ['Category', 'category']) || '—') + '</td>' +
+      '<td>' + (recF(r, ['Battery Model', 'batteryModel']) || '—') + '</td>' +
+      '<td class="rec-center">' + (recF(r, ['Pending Qty', 'pendingQty']) || '0') + '</td>' +
+      '<td>' + badge + '</td></tr>';
   }).join('');
+  list.innerHTML =
+    '<table class="rec-table"><thead><tr>' +
+    '<th>Repair ID</th><th>Date</th><th>Customer</th><th>Contact</th><th>Category</th><th>Battery Model</th><th>Pending</th><th>Status</th>' +
+    '</tr></thead><tbody>' + body + '</tbody></table>';
 }
 
 function recRepOpen(idx) {
@@ -991,14 +1000,22 @@ function recEnqRender() {
     return hay.indexOf(q) !== -1;
   });
   if (!rows.length) { list.innerHTML = '<div class="no-results">Kuch nahi mila 🔍</div>'; return; }
-  list.innerHTML = rows.map(({ r, i }) => {
+  const body = rows.map(({ r, i }) => {
     const st = recEnqStatus(r);
-    const badge = st === 'closed' ? '<span class="badge badge-green">Closed</span>' : '<span class="badge badge-amber">Open</span>';
-    return '<div class="pick-card" onclick="recEnqOpen(' + i + ')">' +
-      '<div class="pick-main"><div class="pick-title">Sr.' + recF(r, ['Sr No', 'srNo']) + ' · ' + recF(r, ['Customer Name', 'customerName']) + '</div>' +
-      '<div class="pick-sub">' + (recF(r, ['Enquiry About', 'enquiryAbout']) || '—') + ' · ' + recF(r, ['Date', 'date']) + '</div></div>' +
-      badge + '</div>';
+    const badge = st === 'closed' ? '<span class="rec-pill green">● Closed</span>' : '<span class="rec-pill amber">● Open</span>';
+    return '<tr onclick="recEnqOpen(' + i + ')">' +
+      '<td class="rec-id">Sr.' + (recF(r, ['Sr No', 'srNo']) || '—') + '</td>' +
+      '<td>' + (recF(r, ['Date', 'date']) || '—') + '</td>' +
+      '<td class="rec-strong">' + (recF(r, ['Customer Name', 'customerName']) || '—') + '</td>' +
+      '<td>' + (recF(r, ['Contact', 'contact']) || '—') + '</td>' +
+      '<td>' + (recF(r, ['OEMs', 'oems']) || '—') + '</td>' +
+      '<td>' + (recF(r, ['Enquiry About', 'enquiryAbout']) || '—') + '</td>' +
+      '<td>' + badge + '</td></tr>';
   }).join('');
+  list.innerHTML =
+    '<table class="rec-table"><thead><tr>' +
+    '<th>Sr No</th><th>Date</th><th>Customer</th><th>Contact</th><th>OEM</th><th>Enquiry About</th><th>Status</th>' +
+    '</tr></thead><tbody>' + body + '</tbody></table>';
 }
 
 function recEnqOpen(idx) {
