@@ -418,9 +418,19 @@ body:not(.has-sidebar) .header{display:none;}
 
 /* ============ CONTENT CENTERING FIX ============ */
 @media(min-width:901px){
-  body.has-sidebar .main{margin-left:240px;margin-right:0;}
-  body.has-sidebar .main > *{max-width:860px;margin-left:auto;margin-right:auto;}
-  /* Records full-width rahe */
-  body.has-sidebar .main:has(#recordsModule.active){max-width:none;}
-  body.has-sidebar .main:has(#recordsModule.active) > *{max-width:none;padding:0 28px;}
+  body.has-sidebar .main{
+    margin-left:240px;
+    max-width:none;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+  }
+  body.has-sidebar .main > *{
+    width:100%;
+    max-width:860px;
+  }
+  /* Records full-width */
+  body.has-sidebar .main:has(#recordsModule.active) > *{
+    max-width:none;
+  }
 }
