@@ -576,6 +576,7 @@ function repSubmitDispatch() {
     'Repair Status': document.getElementById('d_repairStatus').value,
     'Actual Problem Found': document.getElementById('d_actualProblem').value,
     'Transport Details (Outward)': document.getElementById('d_transportOutward').value,
+    'Dispatch Address': document.getElementById('d_dispatchAddress').value,
     'Dispatched By': document.getElementById('d_dispatchedBy').value,
     'Any Cost': document.getElementById('d_anyCost').value,
     'Dispatch Remarks': document.getElementById('d_remarks').value
@@ -601,7 +602,8 @@ function repSubmitDispatch() {
     '<span style="font-family:\'IBM Plex Mono\',monospace;font-size:15px;font-weight:700;color:#00856e;">' + data['Repair ID'] + '</span></div>' +
     '<div class="receipt-section">Customer Details</div><table class="receipt-table">' +
     '<tr><td>Customer Name</td><td>' + ((repSelected && repSelected.customerName) || '—') + '</td></tr>' +
-    '<tr><td>Contact No.</td><td>' + ((repSelected && repSelected.contactNo) || '—') + '</td></tr></table>' +
+    '<tr><td>Contact No.</td><td>' + ((repSelected && repSelected.contactNo) || '—') + '</td></tr>' +
+    '<tr><td>Dispatch Address</td><td>' + (data['Dispatch Address'] || '—') + '</td></tr></table>' +
     '<div class="receipt-section" style="margin-top:8px;">Dispatch Details</div><table class="receipt-table">' +
     '<tr><td>Dispatch Date</td><td>' + data['Dispatch Date'] + '</td></tr>' +
     '<tr><td>Battery Dispatched</td><td>' + b + '</td></tr>' +
