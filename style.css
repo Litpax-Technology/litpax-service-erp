@@ -222,7 +222,9 @@ body{font-family:'IBM Plex Sans',sans-serif;background:var(--surface2);color:var
   .main{padding:0!important;max-width:100%!important;}
   .app-screen,.screen{display:none!important;}
   .app-screen.active,.screen{display:block!important;}
-  .success-screen{display:block!important;padding:20px!important;text-align:left!important;}
+  .form-section{display:none!important;}
+  .success-screen{display:none!important;}
+  .success-screen[style*="block"]{display:block!important;padding:20px!important;text-align:left!important;}
   .card{box-shadow:none!important;border:1px solid #ddd!important;break-inside:avoid;}
   .receipt-header{display:flex!important;}
   .big-id{font-size:14px!important;padding:6px 12px!important;}
