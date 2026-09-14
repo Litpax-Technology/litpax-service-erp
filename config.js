@@ -3,9 +3,11 @@
    Sab settings yahan. Backend/GAS ko haath nahi lagta.
    ============================================================ */
 const CONFIG = {
-  // --- Backend URLs (existing, untouched) ---
-  REPAIR_URL:  'https://script.google.com/macros/s/AKfycbx0CmcFVbcG_A4Pzz7z6wddQfZ4UWsOZ_V6JWbvgXUkevyI_bRoKSDplI3cHXl5w9GO/exec',
-  ENQUIRY_URL: 'https://script.google.com/macros/s/AKfycbzTZU0YyV8wTfaPcUhUj7C041nxgZz2nrVIlJEiVE9adF35-KuwoBczI22DXbLa7B2z/exec',
+  // --- Backend URL (ek hi unified GAS — teeno tabs: Repairs, Repair_Items, Service Calls) ---
+  // Naya deploy URL sirf yahan daalo; Repair aur Enquiry dono isi ko use karte hain.
+  HUB_URL: https://script.google.com/macros/s/AKfycbwUBZgM2fxmbX2Y_xf9WmrkvrRK_X5UPXWdqQvsMt5qeNwyZHREjPRk65Cje90gp3eo9w/exec',
+  get REPAIR_URL()  { return this.HUB_URL; },
+  get ENQUIRY_URL() { return this.HUB_URL; },
 
   // --- Login roles (ERP-jaisa, sessionStorage-based — koi GAS nahi) ---
   // Har role kya-kya dekh sakta:
