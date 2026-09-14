@@ -358,12 +358,31 @@ function repSelectRadio(el, fieldId, val) {
 function repApplyCategory(cat) {
   const bSec = document.getElementById('grp_batterySection'), cSec = document.getElementById('grp_chargerSection');
   const bQty = document.getElementById('grp_batteryQty'), cQty = document.getElementById('grp_chargerQty');
-  const bF = ['r_batteryType','r_batteryModel','r_batterySrNo','r_batteryReceivedQty'].map(id => document.getElementById(id));
-  const cF = ['r_chargerType','r_chargerModel','r_chargerSrNo','r_chargerReceivedQty'].map(id => document.getElementById(id));
+  const bSer = document.getElementById('grp_batterySerials'), cSer = document.getElementById('grp_chargerSerials');
+  const bF = ['r_batteryType','r_batteryModel','r_batteryReceivedQty'].map(id => document.getElementById(id));
+  const cF = ['r_chargerType','r_chargerModel','r_chargerReceivedQty'].map(id => document.getElementById(id));
   const set = (sec, fields, on) => { sec.classList.toggle('disabled', !on); fields.forEach(f => { if (!f) return; f.disabled = !on; if (!on) f.value = ''; }); };
-  if (cat === 'Battery') { set(bSec, bF, true); set(cSec, cF, false); bQty.style.display = ''; cQty.style.display = 'none'; }
-  else if (cat === 'Charger') { set(bSec, bF, false); set(cSec, cF, true); bQty.style.display = 'none'; cQty.style.display = ''; }
-  else { set(bSec, bF, true); set(cSec, cF, true); bQty.style.display = ''; cQty.style.display = ''; }
+  if (cat === 'Battery')      { set(bSec, bF, true);  set(cSec, cF, false); bQty.style.display=''; cQty.style.display='none'; bSer.style.display=''; cSer.style.display='none'; }
+  else if (cat === 'Charger') { set(bSec, bF, false); set(cSec, cF, true);  bQty.style.display='none'; cQty.style.display=''; bSer.style.display='none'; cSer.style.display=''; }
+  else                        { set(bSec, bF, true);  set(cSec, cF, true);  bQty.style.display=''; cQty.style.display=''; bSer.style.display=''; cSer.style.display=''; }
+  repRenderSerials('battery'); repRenderSerials('charger');
+}
+
+function repRenderSerials(kind) {
+  const qtyEl = document.getElementById(kind === 'battery' ? 'r_batteryReceivedQty' : 'r_chargerReceivedQty');
+  const box   = document.getElementById(kind === 'battery' ? 'batterySerials' : 'chargerSerials');
+  if (!qtyEl || !box) return;
+  let n = parseInt(qtyEl.value) || 0;
+  if (n < 0) n = 0;
+  if (n > 50) { n = 50; qtyEl.value = 50; showToast('⚠️ Max 50 units ek entry me'); }
+  const old = []; box.querySelectorAll('input').forEach(i => old.push(i.value));
+  let html = '';
+  for (let i = 0; i < n; i++) {
+    html += '<div class="serial-row"><span class="serial-num">' + (i + 1) + '</span>' +
+      '<input type="text" class="serial-inp" placeholder="' +
+      (kind === 'battery' ? 'Battery' : 'Charger') + ' #' + (i + 1) + ' serial" value="' + (old[i] || '') + '"></div>';
+  }
+  box.innerHTML = html;
 }
 
 function repValidate(sectionId) {
@@ -382,86 +401,103 @@ function repValidate(sectionId) {
 
 function repSubmitReceive() {
   if (!repValidate('rSection3')) return;
+  const cat  = document.getElementById('r_category').value;
+  const bQty = parseInt(document.getElementById('r_batteryReceivedQty').value) || 0;
+  const cQty = parseInt(document.getElementById('r_chargerReceivedQty').value) || 0;
+  const wantsB = (cat === 'Battery' || cat === 'Battery+Charger');
+  const wantsC = (cat === 'Charger' || cat === 'Battery+Charger');
+  if (wantsB && bQty < 1) { showToast('⚠️ Battery Qty daalein'); return; }
+  if (wantsC && cQty < 1) { showToast('⚠️ Charger Qty daalein'); return; }
+
+  const problemType = document.getElementById('r_problemType').value;
+  const problemDesc = document.getElementById('r_problemDesc').value;
+  const warranty    = document.getElementById('r_warranty').value;
+  const claimStatus = document.getElementById('r_claimStatus').value;
+
+  const bSerials = Array.from(document.querySelectorAll('#batterySerials input')).map(i => i.value.trim());
+  const cSerials = Array.from(document.querySelectorAll('#chargerSerials input')).map(i => i.value.trim());
+
+  const items = [];
+  if (wantsB) {
+    const model = document.getElementById('r_batteryModel').value, type = document.getElementById('r_batteryType').value;
+    for (let i = 0; i < bQty; i++) items.push({ itemType:'Battery', model:model, serialNo:bSerials[i]||'',
+      problemType:problemType, problemDescription:problemDesc, warranty:warranty, warrantyClaimStatus:claimStatus,
+      itemRemarks: type ? ('Type: ' + type) : '' });
+  }
+  if (wantsC) {
+    const model = document.getElementById('r_chargerModel').value, type = document.getElementById('r_chargerType').value;
+    for (let i = 0; i < cQty; i++) items.push({ itemType:'Charger', model:model, serialNo:cSerials[i]||'',
+      problemType:problemType, problemDescription:problemDesc, warranty:warranty, warrantyClaimStatus:claimStatus,
+      itemRemarks: type ? ('Type: ' + type) : '' });
+  }
+  if (!items.length) { showToast('⚠️ Kam se kam ek item chahiye'); return; }
+
   const btn = document.querySelector('#rSection3 .btn-submit-receive');
   btn.disabled = true; btn.textContent = '⏳ Submitting...';
 
-  const cat = document.getElementById('r_category').value;
   const data = {
     action: 'receive',
-    'Repair ID': repRepairId,
-    'Sr No': document.getElementById('r_srNo').value,
+    items: JSON.stringify(items),
     'Receiving Date': document.getElementById('r_receivingDate').value,
     'Customer Name': document.getElementById('r_customerName').value,
     'Contact No': document.getElementById('r_contactNo').value,
     'Email': document.getElementById('r_email').value,
     'Category': cat,
-    'Battery Type': document.getElementById('r_batteryType').value,
-    'Battery Model': document.getElementById('r_batteryModel').value,
-    'Battery Sr No': document.getElementById('r_batterySrNo').value,
-    'Battery Qty Received': document.getElementById('r_batteryReceivedQty').value || '0',
-    'Charger Model': document.getElementById('r_chargerModel').value,
-    'Charger Serial Number': document.getElementById('r_chargerSrNo').value,
-    'Charger Type': document.getElementById('r_chargerType').value,
-    'Charger Qty Received': document.getElementById('r_chargerReceivedQty').value || '0',
     'Received Mode': document.getElementById('r_receivedMode').value,
-    'Problem Type': document.getElementById('r_problemType').value,
-    'Problem Description': document.getElementById('r_problemDesc').value,
-    'Warranty': document.getElementById('r_warranty').value,
-    'Warranty Claim Status': document.getElementById('r_claimStatus').value,
-    'Repair Status': 'Received',
     'Received By': document.getElementById('r_receivedBy').value,
     'Accepted By': document.getElementById('r_acceptedBy').value,
     'Estimated Dispatch Date': document.getElementById('r_estimatedDispatchDate').value,
-    'Transport Details (Inward)': document.getElementById('r_transportInward').value,
+    'Transport (Inward)': document.getElementById('r_transportInward').value,
     'Receiving Remarks': document.getElementById('r_remarks').value
   };
 
-  postNoCors(CONFIG.REPAIR_URL, data);
-  cacheSet('rep_pending', (cacheGet('rep_pending') || {}).val || { data: [], lastSrNo: 0 }); // mark stale-ish; will refresh next open
-  sessionStorage.removeItem('rep_pending'); // force fresh next time
-  sessionStorage.removeItem('rec_rep_all');
+  jsonp(CONFIG.REPAIR_URL, data, function (res) {
+    if (!res || !res.ok) {
+      btn.disabled = false; btn.textContent = 'Submit Entry ✓';
+      showToast('❌ Save nahi hua' + (res && res.msg ? ' — ' + res.msg : '') + '. Dobara try karo');
+      return;
+    }
+    repRepairId = res.id;
+    sessionStorage.removeItem('rep_pending');
+    sessionStorage.removeItem('rec_rep_all');
 
-  document.getElementById('rSection3').classList.remove('active');
-  document.getElementById('repReceiveSuccess').style.display = 'block';
-  document.getElementById('successReceiveId').textContent = repRepairId;
+    document.getElementById('rSection3').classList.remove('active');
+    document.getElementById('repReceiveSuccess').style.display = 'block';
+    document.getElementById('successReceiveId').textContent = res.id;
 
-  const now = new Date();
-  const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-  const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-  document.getElementById('receiptDate').textContent = dateStr + ' ' + timeStr;
-  document.getElementById('receiptFooterDate').textContent = dateStr + ' ' + timeStr;
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+    const timeStr = now.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
+    document.getElementById('receiptDate').textContent = dateStr + ' ' + timeStr;
+    document.getElementById('receiptFooterDate').textContent = dateStr + ' ' + timeStr;
 
-  document.getElementById('receiveSummary').innerHTML =
-    '<div class="receipt-section">Customer Details</div>' +
-    '<table class="receipt-table">' +
-    '<tr><td>Customer Name</td><td>' + data['Customer Name'] + '</td></tr>' +
-    '<tr><td>Contact No.</td><td>' + data['Contact No'] + '</td></tr>' +
-    '<tr><td>Email</td><td>' + (data['Email'] || '—') + '</td></tr></table>' +
-    '<div class="receipt-section" style="margin-top:8px;">Product Details</div>' +
-    '<table class="receipt-table">' +
-    '<tr><td>Category</td><td>' + data['Category'] + '</td></tr>' +
-    '<tr><td>Battery Type</td><td>' + (data['Battery Type'] || '—') + '</td></tr>' +
-    '<tr><td>Battery Model</td><td>' + (data['Battery Model'] || '—') + '</td></tr>' +
-    '<tr><td>Battery Sr. No.</td><td>' + (data['Battery Sr No'] || '—') + '</td></tr>' +
-    '<tr><td>Battery Qty</td><td>' + data['Battery Qty Received'] + '</td></tr>' +
-    '<tr><td>Charger Model</td><td>' + (data['Charger Model'] || '—') + '</td></tr>' +
-    '<tr><td>Charger Serial No.</td><td>' + (data['Charger Serial Number'] || '—') + '</td></tr>' +
-    '<tr><td>Charger Type</td><td>' + (data['Charger Type'] || '—') + '</td></tr>' +
-    '<tr><td>Charger Qty</td><td>' + data['Charger Qty Received'] + '</td></tr>' +
-    '<tr><td>Received Mode</td><td>' + (data['Received Mode'] || '—') + '</td></tr></table>' +
-    '<div class="receipt-section" style="margin-top:8px;">Service Details</div>' +
-    '<table class="receipt-table">' +
-    '<tr><td>Problem Type</td><td>' + data['Problem Type'] + '</td></tr>' +
-    '<tr><td>Problem Description</td><td>' + (data['Problem Description'] || '—') + '</td></tr>' +
-    '<tr><td>Warranty</td><td>' + (data['Warranty'] || '—') + '</td></tr>' +
-    '<tr><td>Warranty Claim</td><td>' + (data['Warranty Claim Status'] || '—') + '</td></tr>' +
-    '<tr><td>Receiving Date</td><td>' + data['Receiving Date'] + '</td></tr>' +
-    '<tr><td>Est. Dispatch Date</td><td>' + (data['Estimated Dispatch Date'] || '—') + '</td></tr>' +
-    '<tr><td>Received By</td><td>' + data['Received By'] + '</td></tr>' +
-    '<tr><td>Accepted By</td><td>' + (data['Accepted By'] || '—') + '</td></tr></table>';
+    const itemRows = (res.itemIds || []).map((iid, i) => {
+      const it = items[i] || {};
+      return '<tr><td>' + iid + '</td><td>' + it.itemType + '</td><td>' + (it.model || '—') + '</td><td>' + (it.serialNo || '—') + '</td></tr>';
+    }).join('');
 
-  btn.disabled = false; btn.textContent = 'Submit Entry ✓';
-  window.scrollTo(0, 0);
+    document.getElementById('receiveSummary').innerHTML =
+      '<div class="receipt-section">Customer Details</div><table class="receipt-table">' +
+      '<tr><td>Customer Name</td><td>' + data['Customer Name'] + '</td></tr>' +
+      '<tr><td>Contact No.</td><td>' + data['Contact No'] + '</td></tr>' +
+      '<tr><td>Email</td><td>' + (data['Email'] || '—') + '</td></tr>' +
+      '<tr><td>Category</td><td>' + data['Category'] + '</td></tr>' +
+      '<tr><td>Total Items</td><td>' + items.length + '</td></tr></table>' +
+      '<div class="receipt-section" style="margin-top:8px;">Items (' + items.length + ')</div>' +
+      '<table class="receipt-table"><tr><th>Item ID</th><th>Type</th><th>Model</th><th>Serial</th></tr>' + itemRows + '</table>' +
+      '<div class="receipt-section" style="margin-top:8px;">Service Details</div><table class="receipt-table">' +
+      '<tr><td>Problem Type</td><td>' + problemType + '</td></tr>' +
+      '<tr><td>Problem Description</td><td>' + (problemDesc || '—') + '</td></tr>' +
+      '<tr><td>Warranty</td><td>' + (warranty || '—') + '</td></tr>' +
+      '<tr><td>Receiving Date</td><td>' + data['Receiving Date'] + '</td></tr>' +
+      '<tr><td>Received By</td><td>' + data['Received By'] + '</td></tr></table>';
+
+    btn.disabled = false; btn.textContent = 'Submit Entry ✓';
+    window.scrollTo(0, 0);
+  }, function () {
+    btn.disabled = false; btn.textContent = 'Submit Entry ✓';
+    showToast('❌ Network error — save confirm nahi hua, dobara try karo');
+  });
 }
 
 function repResetReceive() {
