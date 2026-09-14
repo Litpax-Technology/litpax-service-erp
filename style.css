@@ -441,3 +441,14 @@ body:not(.has-sidebar) .header{display:none;}
   background:#e8f0fe; color:#1a5fd8; border-radius:6px; font-size:12px; font-weight:600;
   font-family:'IBM Plex Mono',monospace; }
 .serial-inp { flex:1; }
+
+/* item cards */
+.item-card { border-left:3px solid #1a5fd8; }
+.item-card-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.item-badge { font-size:13px; font-weight:600; padding:4px 10px; border-radius:6px; }
+.item-badge.bat { background:#e8f0fe; color:#1a5fd8; }
+.item-badge.chg { background:#fff3e0; color:#e07b00; }
+.copy-all-btn { font-size:12px; font-weight:600; color:#1a5fd8; background:#f0f6ff;
+  border:1px solid #b3d0f7; border-radius:6px; padding:5px 10px; cursor:pointer; }
+.copy-all-btn:hover { background:#e0edff; }
+.items-hint { font-size:12px; color:#5a6080; margin-top:10px; line-height:1.5; }
