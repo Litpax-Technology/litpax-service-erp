@@ -139,11 +139,24 @@ function loginTogglePass(el) {
 function authLogin() {
   const user = (document.getElementById('loginUser').value || '').trim().toLowerCase();
   const pass = (document.getElementById('loginPass').value || '').trim();
-  if (!user || !pass) { showToast('⚠️ Username aur password bharein'); return; }
-  const match = (CONFIG.USERS || []).find(u => u.username.toLowerCase() === user && String(u.password) === pass);
-  if (!match) { showToast('❌ Galat username ya password'); return; }
-  sessionStorage.setItem('hub_role', match.role);
-  enterApp(match.role);
+  if (!user || !pass) { showToast('⚠️ Username aur PIN bharein'); return; }
+
+  const btn = document.querySelector('#loginScreen .btn-login, #loginScreen button');
+  const oldTxt = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Checking...'; }
+
+  jsonp(CONFIG.REPAIR_URL, { action: 'login', username: user, pin: pass }, function (res) {
+    if (btn) { btn.disabled = false; btn.textContent = oldTxt; }
+    if (!res || !res.ok || !res.role || !CONFIG.ROLES[res.role]) {
+      showToast('❌ ' + ((res && res.msg) || 'Galat username ya PIN'));
+      return;
+    }
+    sessionStorage.setItem('hub_role', res.role);
+    enterApp(res.role);
+  }, function () {
+    if (btn) { btn.disabled = false; btn.textContent = oldTxt; }
+    showToast('❌ Network error — login nahi ho paya, dobara try karo');
+  });
 }
 
 function enterApp(role) {
