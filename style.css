@@ -434,3 +434,10 @@ body:not(.has-sidebar) .header{display:none;}
     max-width:none;
   }
 }
+/* item-level serial inputs */
+.serials-box { display:flex; flex-direction:column; gap:8px; }
+.serial-row { display:flex; align-items:center; gap:10px; }
+.serial-num { flex:0 0 26px; height:26px; display:flex; align-items:center; justify-content:center;
+  background:#e8f0fe; color:#1a5fd8; border-radius:6px; font-size:12px; font-weight:600;
+  font-family:'IBM Plex Mono',monospace; }
+.serial-inp { flex:1; }
