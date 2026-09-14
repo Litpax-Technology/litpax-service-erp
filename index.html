@@ -180,68 +180,33 @@
       <!-- Step 2 -->
       <div class="form-section" id="rSection2">
         <div class="card">
-          <div class="card-label">Product Category <span class="req">*</span></div>
-          <div class="radio-group">
-            <label class="radio-opt selected" onclick="repSelectRadio(this,'r_category','Battery')"><input type="radio" name="rcat" checked><span class="radio-dot"></span> 🔋 Battery</label>
-            <label class="radio-opt" onclick="repSelectRadio(this,'r_category','Charger')"><input type="radio" name="rcat"><span class="radio-dot"></span> ⚡ Charger</label>
-            <label class="radio-opt" onclick="repSelectRadio(this,'r_category','Battery+Charger')"><input type="radio" name="rcat"><span class="radio-dot"></span> 🔋+⚡ Battery+Charger</label>
+          <div class="card-label">Items — kitne aur kaunse</div>
+          <div class="form-grid">
+            <div class="form-group"><label>🔋 Battery Qty</label><input type="number" id="r_batteryReceivedQty" placeholder="0" min="0" value="0" oninput="repBuildItems()"></div>
+            <div class="form-group"><label>⚡ Charger Qty</label><input type="number" id="r_chargerReceivedQty" placeholder="0" min="0" value="0" oninput="repBuildItems()"></div>
           </div>
-          <input type="hidden" id="r_category" value="Battery">
+          <div class="items-hint">Qty daalte hi neeche har item ka apna card khulega — model, serial, problem, warranty, transport sab alag-alag bhar sakte ho. Pehla card bhar ke <b>“⬇ Copy to all”</b> se baaki me copy kar do.</div>
+          <input type="hidden" id="r_category" value="">
         </div>
 
+        <div id="itemsWrap"></div>
+
         <div class="card">
-          <div class="card-label">Product Info</div>
-          <div class="form-grid">
-            <div style="grid-column:1/-1;" id="grp_batterySection" class="product-section">
-              <div class="section-divider battery">🔋 Battery Details</div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
-                <div class="form-group">
-                  <label>Battery Type</label>
-                  <select id="r_batteryType" data-cfg="BatteryType"><option value="">-- Select --</option></select>
-                </div>
-                                <div class="form-group"><label>Battery Model (Voltage)</label><input type="text" id="r_batteryModel" placeholder="e.g. LFP-48V-100AH"></div>
-                <div class="form-group" id="grp_batteryQty"><label>Battery Received Qty <span class="req">*</span></label><input type="number" id="r_batteryReceivedQty" placeholder="0" min="1" required oninput="repRenderSerials('battery')"></div>
-                <div class="form-group" style="grid-column:1/-1" id="grp_batterySerials"><label>Battery Serial Numbers (har unit ka — optional)</label><div class="serials-box" id="batterySerials"></div></div>
-              </div>
-            </div>
-            <div style="grid-column:1/-1;" id="grp_chargerSection" class="product-section disabled">
-              <div class="section-divider charger">⚡ Charger Details</div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
-                <div class="form-group"><label>Charger Type</label><select id="r_chargerType" data-cfg="ChargerType" disabled><option value="">-- Select --</option></select></div>
-                <div class="form-group"><label>Charger Model</label><input type="text" id="r_chargerModel" placeholder="e.g. CHR-48V-20A" disabled></div>
-                                <div class="form-group" id="grp_chargerQty" style="display:none;"><label>Charger Received Qty <span class="req">*</span></label><input type="number" id="r_chargerReceivedQty" placeholder="0" min="1" disabled oninput="repRenderSerials('charger')"></div>
-                <div class="form-group" style="grid-column:1/-1" id="grp_chargerSerials"><label>Charger Serial Numbers (har unit ka — optional)</label><div class="serials-box" id="chargerSerials"></div></div>
-              </div>
-            </div>
-            <div class="form-group"><label>Received Mode</label><select id="r_receivedMode" data-cfg="ReceivedMode"><option value="">-- Select --</option></select></div>
-            <div class="form-group full"><label>Problem Type <span class="req">*</span></label><select id="r_problemType" data-cfg="ProblemType" required><option value="">-- Select Problem Type --</option></select></div>
-            <div class="form-group full"><label>Problem Description <span class="req">*</span></label><textarea id="r_problemDesc" placeholder="Customer ne kya bataya..." required></textarea></div>
-          </div>
+          <div class="card-label">Received Mode (common)</div>
+          <div class="form-group"><select id="r_receivedMode" data-cfg="ReceivedMode"><option value="">-- Select --</option></select></div>
         </div>
+
         <div class="nav-btns"><button class="btn-back-nav" onclick="repPrevStep(2)">← Back</button><button class="btn-next" onclick="repNextStep(2)">More Details →</button></div>
       </div>
 
       <!-- Step 3 -->
       <div class="form-section" id="rSection3">
         <div class="card">
-          <div class="card-label">Warranty</div>
-          <div class="tag-group">
-            <div class="tag-opt yes" onclick="selectTag(this,'r_warranty','Yes')">✅ Yes</div>
-            <div class="tag-opt no" onclick="selectTag(this,'r_warranty','No')">❌ No</div>
-            <div class="tag-opt partial" onclick="selectTag(this,'r_warranty','Partial')">⚠️ Partial</div>
-          </div>
-          <input type="hidden" id="r_warranty" value="">
-          <div style="margin-top:14px">
-            <div class="form-group"><label>Warranty Claim Status</label><select id="r_claimStatus" data-cfg="WarrantyClaim"><option value="">-- Select --</option></select></div>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-label">Staff &amp; Transport</div>
+          <div class="card-label">Staff &amp; Handover (common)</div>
           <div class="form-grid">
             <div class="form-group"><label>Received By <span class="req">*</span></label><input type="text" id="r_receivedBy" placeholder="Staff name" required></div>
             <div class="form-group"><label>Accepted By</label><input type="text" id="r_acceptedBy" placeholder="Manager name"></div>
             <div class="form-group"><label>Estimated Dispatch Date</label><input type="date" id="r_estimatedDispatchDate"></div>
-            <div class="form-group full"><label>Transport Details (Inward)</label><input type="text" id="r_transportInward" placeholder="e.g. BlueDart AWB 123456"></div>
             <div class="form-group full"><label>Receiving Remarks</label><textarea id="r_remarks" placeholder="Additional info..."></textarea></div>
           </div>
         </div>
