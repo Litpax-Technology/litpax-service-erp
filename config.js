@@ -5,7 +5,7 @@
 const CONFIG = {
   // --- Backend URL (ek hi unified GAS — teeno tabs: Repairs, Repair_Items, Service Calls) ---
   // Naya deploy URL sirf yahan daalo; Repair aur Enquiry dono isi ko use karte hain.
-  HUB_URL: https://script.google.com/macros/s/AKfycbwUBZgM2fxmbX2Y_xf9WmrkvrRK_X5UPXWdqQvsMt5qeNwyZHREjPRk65Cje90gp3eo9w/exec',
+  HUB_URL: 'https://script.google.com/macros/s/AKfycbyai0SZxuByWyvBoGvdnGYVepIzfYfwYYV8yeZWM7fc9yxVwl16LynYIelvR3xeDsvj1g/exec',
   get REPAIR_URL()  { return this.HUB_URL; },
   get ENQUIRY_URL() { return this.HUB_URL; },
 
@@ -18,11 +18,7 @@ const CONFIG = {
   },
 
   // --- Login credentials (username + password -> role). Yahin se add/change ---
-  USERS: [
-    { username: 'repair',  password: '1111', role: 'repair'  },
-    { username: 'service', password: '2222', role: 'service' },
-    { username: 'admin',   password: '2468', role: 'admin'   }
-  ],
+
 
   // --- Dropdown options (hardcoded — add/remove yahin se) ---
   DROPDOWNS: {
