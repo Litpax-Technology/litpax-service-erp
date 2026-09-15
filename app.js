@@ -69,10 +69,9 @@ const HEADERS = {
   records:  ['Records', 'Saari entries — dekho aur action lo']
 };
 const NAV_ITEMS = [
-  { key: 'dashboard', icon: '📊', label: 'Dashboard', mod: null },
+  { key: 'records',   icon: '📁', label: 'Records',   mod: 'records' },
   { key: 'repair',    icon: '🛠️', label: 'Repair',    mod: 'repair' },
-  { key: 'enquiry',   icon: '📞', label: 'Enquiry',   mod: 'enquiry' },
-  { key: 'records',   icon: '📁', label: 'Records',   mod: 'records' }
+  { key: 'enquiry',   icon: '📞', label: 'Enquiry',   mod: 'enquiry' }
 ];
 
 function setHeader(mod) {
@@ -96,7 +95,7 @@ function buildSidebar() {
 function setActiveNav(key) {
   document.querySelectorAll('.sb-item').forEach(b => b.classList.toggle('active', b.getAttribute('data-nav') === key));
 }
-function navGo(key) { if (key === 'dashboard') openDashboard(); else if (key === 'records') openRecords(); else openModule(key); toggleSidebar(false); }
+function navGo(key) { if (key === 'records') openRecords(); else openModule(key); toggleSidebar(false); }
 function toggleSidebar(force) {
   const sb = document.getElementById('sidebar'), ov = document.getElementById('sbOverlay');
   const open = (typeof force === 'boolean') ? force : !sb.classList.contains('open');
@@ -165,7 +164,7 @@ function enterApp(role) {
   document.body.classList.add('has-sidebar');
   document.getElementById('sbRole').innerHTML = CONFIG.ROLES[role].icon + ' ' + CONFIG.ROLES[role].label;
   buildSidebar();
-  openDashboard();
+  openRecords();
 }
 
 function logout() { sessionStorage.removeItem('hub_role'); toggleSidebar(false); showLogin(); }
@@ -951,20 +950,49 @@ function recRepLoad(force) {
   const cached = cacheGet('rec_rep_all');
   if (cached && !force) { recRepAll = cached.val || []; recRepRender(); if (cached.fresh) return; }
   else { document.getElementById('recRepSkeleton').style.display = 'block'; document.getElementById('recRepList').innerHTML = ''; }
-  jsonp(CONFIG.REPAIR_URL, { action: 'getDashboard' }, function (r) {
+  jsonp(CONFIG.REPAIR_URL, { action: 'getAll' }, function (r) {
     document.getElementById('recRepSkeleton').style.display = 'none';
-    recRepAll = (r && r.data) || [];
+    const repairs = (r && r.repairs) || [];
+    const items   = (r && r.items) || [];
+    // repair id -> parent (customer etc.)
+    const pmap = {};
+    repairs.forEach(rp => { pmap[String(rp['Repair ID']).trim()] = rp; });
+    // har item ek row, parent info merge
+    recRepAll = items.map(it => {
+      const p = pmap[String(it['Repair ID']).trim()] || {};
+      return {
+        itemId:        it['Item ID'],
+        repairId:      it['Repair ID'],
+        itemType:      it['Item Type'],
+        model:         it['Model'],
+        serialNo:      it['Serial No'],
+        problemType:   it['Problem Type'],
+        problemDesc:   it['Problem Description'],
+        warranty:      it['Warranty'],
+        warrantyClaim: it['Warranty Claim Status'],
+        transportIn:   it['Transport (Inward)'],
+        transportOut:  it['Transport (Outward)'],
+        itemStatus:    it['Item Status'],
+        dispatchDate:  it['Dispatch Date'],
+        actualProblem: it['Actual Problem Found'],
+        anyCost:       it['Any Cost'],
+        itemRemarks:   it['Item Remarks'],
+        // parent
+        customerName:  p['Customer Name'] || '',
+        contactNo:     p['Contact No'] || '',
+        email:         p['Email'] || '',
+        receivingDate: p['Receiving Date'] || '',
+        receivedBy:    p['Received By'] || '',
+        receivedMode:  p['Received Mode'] || ''
+      };
+    });
     cacheSet('rec_rep_all', recRepAll);
     recRepRender();
   }, function () { document.getElementById('recRepSkeleton').style.display = 'none'; document.getElementById('recRepList').innerHTML = '<div class="no-results">Data load nahi hua ❌</div>'; });
 }
 
 function recRepStatus(row) {
-  const s = String(recF(row, ['Repair Status', 'repairStatus'])).toLowerCase();
-  if (s.indexOf('dispatch') !== -1) return 'dispatched';
-  const pend = parseInt(recF(row, ['Pending Qty', 'pendingQty']));
-  if (!isNaN(pend) && pend === 0 && s) return 'dispatched';
-  return 'pending';
+  return String(row.itemStatus || '').toLowerCase() === 'dispatched' ? 'dispatched' : 'pending';
 }
 
 function recRepFilter(el, f) {
@@ -982,78 +1010,62 @@ function recRepRender() {
     const st = recRepStatus(r);
     if (recRepFilterVal !== 'all' && st !== recRepFilterVal) return false;
     if (!q) return true;
-    const hay = (recF(r, ['Repair ID', 'repairId']) + ' ' + recF(r, ['Customer Name', 'customerName']) + ' ' +
-      recF(r, ['Contact No', 'contactNo']) + ' ' + recF(r, ['Battery Model', 'batteryModel'])).toLowerCase();
+    const hay = (r.itemId + ' ' + r.repairId + ' ' + r.customerName + ' ' + (r.contactNo || '') + ' ' + (r.model || '') + ' ' + (r.serialNo || '')).toLowerCase();
     return hay.indexOf(q) !== -1;
   });
   if (!rows.length) { list.innerHTML = '<div class="no-results">Kuch nahi mila 🔍</div>'; return; }
   const body = rows.map(({ r, i }) => {
     const st = recRepStatus(r);
     const badge = st === 'dispatched' ? '<span class="rec-pill green">● Dispatched</span>' : '<span class="rec-pill amber">● Pending</span>';
+    const typeIco = String(r.itemType).toLowerCase().indexOf('charg') !== -1 ? '⚡' : '🔋';
     return '<tr onclick="recRepOpen(' + i + ')">' +
-      '<td class="rec-id">' + (recF(r, ['Repair ID', 'repairId']) || '—') + '</td>' +
-      '<td>' + (recF(r, ['Receiving Date', 'receivingDate']) || '—') + '</td>' +
-      '<td class="rec-strong">' + (recF(r, ['Customer Name', 'customerName']) || '—') + '</td>' +
-      '<td>' + (recF(r, ['Contact No', 'contactNo']) || '—') + '</td>' +
-      '<td>' + (recF(r, ['Category', 'category']) || '—') + '</td>' +
-      '<td>' + (recF(r, ['Battery Model', 'batteryModel']) || '—') + '</td>' +
-      '<td class="rec-center">' + (recF(r, ['Pending Qty', 'pendingQty']) || '0') + '</td>' +
+      '<td class="rec-id">' + (r.itemId || '—') + '</td>' +
+      '<td>' + (r.receivingDate || '—') + '</td>' +
+      '<td class="rec-strong">' + (r.customerName || '—') + '</td>' +
+      '<td>' + typeIco + ' ' + (r.itemType || '—') + '</td>' +
+      '<td>' + (r.model || '—') + '</td>' +
+      '<td>' + (r.serialNo || '—') + '</td>' +
+      '<td>' + (r.problemType || '—') + '</td>' +
       '<td>' + badge + '</td></tr>';
   }).join('');
   list.innerHTML =
     '<table class="rec-table"><thead><tr>' +
-    '<th>Repair ID</th><th>Date</th><th>Customer</th><th>Contact</th><th>Category</th><th>Battery Model</th><th>Pending</th><th>Status</th>' +
+    '<th>Item ID</th><th>Date</th><th>Customer</th><th>Type</th><th>Model</th><th>Serial</th><th>Problem</th><th>Status</th>' +
     '</tr></thead><tbody>' + body + '</tbody></table>';
 }
 
 function recRepOpen(idx) {
   const r = recRepAll[idx]; if (!r) return;
-  const st = recRepStatus(r);
-  const rid = recF(r, ['Repair ID', 'repairId']);
-  document.getElementById('recDrawerTitle').textContent = rid + ' — ' + recF(r, ['Customer Name', 'customerName']);
+  document.getElementById('recDrawerTitle').textContent = (r.itemId || '') + ' — ' + (r.customerName || '');
   const kv = [
-    ['Repair ID', rid],
-    ['Repair Status', recF(r, ['Repair Status'])],
-    ['Receiving Date', recF(r, ['Receiving Date'])],
-    ['Customer Name', recF(r, ['Customer Name'])],
-    ['Contact No', recF(r, ['Contact No'])],
-    ['Email', recF(r, ['Email'])],
-    ['Category', recF(r, ['Category'])],
-    ['Battery Type', recF(r, ['Battery Type'])],
-    ['Battery Model', recF(r, ['Battery Model'])],
-    ['Battery Sr No', recF(r, ['Battery Sr No'])],
-    ['Charger Model', recF(r, ['Charger Model'])],
-    ['Charger Serial Number', recF(r, ['Charger Serial Number'])],
-    ['Charger Type', recF(r, ['Charger Type'])],
-    ['Battery Qty Received', recF(r, ['Battery Qty Received'])],
-    ['Charger Qty Received', recF(r, ['Charger Qty Received'])],
-    ['Total Received Qty', recF(r, ['Total Received Qty'])],
-    ['Received Mode', recF(r, ['Received Mode'])],
-    ['Problem Type', recF(r, ['Problem Type'])],
-    ['Problem Description', recF(r, ['Problem Description'])],
-    ['Warranty', recF(r, ['Warranty'])],
-    ['Warranty Claim Status', recF(r, ['Warranty Claim Status'])],
-    ['Received By', recF(r, ['Received By'])],
-    ['Accepted By', recF(r, ['Accepted By'])],
-    ['Estimated Dispatch Date', recF(r, ['Estimated Dispatch Date'])],
-    ['Receiving Remarks', recF(r, ['Receiving Remarks'])],
-    ['Transport (Inward)', recF(r, ['Transport Details (Inward)'])],
-    ['Transport (Outward)', recF(r, ['Transport Details (Outward)'])],
-    ['Dispatch Date', recF(r, ['Dispatch Date'])],
-    ['Battery Dispatch Qty', recF(r, ['Battery Dispatch Qty'])],
-    ['Charger Dispatch Qty', recF(r, ['Charger Dispatch Qty'])],
-    ['Total Dispatched Qty', recF(r, ['Total Dispatched Qty'])],
-    ['Pending Qty', recF(r, ['Pending Qty'])],
-    ['Any Cost', recF(r, ['Any Cost'])],
-    ['Actual Problem Found', recF(r, ['Actual Problem Found'])],
-    ['Dispatch Remarks', recF(r, ['Dispatch Remarks'])]
+    ['Item ID', r.itemId],
+    ['Repair ID', r.repairId],
+    ['Item Status', r.itemStatus],
+    ['Item Type', r.itemType],
+    ['Model', r.model],
+    ['Serial No', r.serialNo],
+    ['Problem Type', r.problemType],
+    ['Problem Description', r.problemDesc],
+    ['Warranty', r.warranty],
+    ['Warranty Claim', r.warrantyClaim],
+    ['Transport (Inward)', r.transportIn],
+    ['— Customer —', ''],
+    ['Customer Name', r.customerName],
+    ['Contact No', r.contactNo],
+    ['Email', r.email],
+    ['Receiving Date', r.receivingDate],
+    ['Received By', r.receivedBy],
+    ['Received Mode', r.receivedMode],
+    ['— Dispatch —', ''],
+    ['Dispatch Date', r.dispatchDate],
+    ['Actual Problem Found', r.actualProblem],
+    ['Any Cost', r.anyCost],
+    ['Transport (Outward)', r.transportOut],
+    ['Item Remarks', r.itemRemarks]
   ];
   document.getElementById('recDrawerBody').innerHTML = kv.map(x =>
     '<div class="info-row"><span>' + x[0] + '</span><span>' + (x[1] || '—') + '</span></div>').join('');
-  document.getElementById('recDrawerFoot').innerHTML =
-    (st === 'pending' && roleCan('repair'))
-      ? '<button class="btn-submit-dispatch" style="width:100%" onclick="recDispatch(\'' + rid + '\')">🚚 Dispatch Karo</button>'
-      : '';
+  document.getElementById('recDrawerFoot').innerHTML = ''; // dispatch abhi disabled (agle step me item-wise)
   recOpenDrawer();
 }
 
@@ -1067,7 +1079,7 @@ function recDispatch(repairId) {
 
 function recRepNew() {
   setActiveNav('repair'); setHeader('repair'); showApp('repairModule');
-  if (!repInited) { fillDropdowns('repairModule', 'repair'); repApplyCategory('Battery'); repInited = true; }
+  if (!repInited) { fillDropdowns('repairModule', 'repair'); repInited = true; }
   document.getElementById('r_receivingDate').value = todayStr();
   repShowReceive();
 }
