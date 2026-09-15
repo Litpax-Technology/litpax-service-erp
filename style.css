@@ -530,3 +530,4 @@ body:not(.has-sidebar) .header{display:none;}
   }
   #boardModule .board-sec{ margin-bottom:0; }
 }
+.header-date{ display:none; }
