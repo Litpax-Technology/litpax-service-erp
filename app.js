@@ -560,179 +560,199 @@ function repResetReceive() {
   window.scrollTo(0, 0);
 }
 
-/* ----- DISPATCH ----- */
-function repShowDispatch(preselectId) {
+/* ----- DISPATCH (item-level, Final QC & Pack ready) ----- */
+let dispReady = [];       // sirf Final QC & Pack items (+ parent info)
+let dispSel = {};         // itemId -> true
+
+function repShowDispatch() {
   repShowScreen('repDispatchScreen');
-  document.getElementById('errorBox').style.display = 'none';
-  document.getElementById('selectedInfoBox').style.display = 'none';
-  document.getElementById('d_selectedRepairId').value = '';
-  document.getElementById('dNextBtn').disabled = true; document.getElementById('dNextBtn').style.opacity = '.5';
+  document.getElementById('dSection1').classList.add('active');
+  document.getElementById('dSection2').classList.remove('active');
+  document.getElementById('repDispatchSuccess').style.display = 'none';
+  document.getElementById('dErrorBox').style.display = 'none';
+  dispSel = {};
+  document.getElementById('d_dispatchDate').value = todayStr();
+  dispLoadReady(false);
+}
 
-  const cached = cacheGet('rep_pending');
-  if (cached) { repPending = cached.val.data || []; repRenderPending(); if (cached.fresh) { repPreselect(preselectId); return; } }
-  else { document.getElementById('pendingSkeleton').style.display = 'block'; document.getElementById('pendingList').innerHTML = ''; }
+function dispLoadReady(force) {
+  const cached = cacheGet('rec_rep_all');
+  if (cached && !force) { dispBuildReady(cached.val); dispRenderReady(); }
+  else { document.getElementById('dReadySkeleton').style.display = 'block'; document.getElementById('dReadyList').innerHTML = ''; }
 
-  repLoadData(true, function (err) {
-    document.getElementById('pendingSkeleton').style.display = 'none';
-    if (err) { document.getElementById('errorBox').style.display = 'block'; return; }
-    repRenderPending();
-    repPreselect(preselectId);
+  jsonp(CONFIG.REPAIR_URL, { action: 'getAll' }, function (r) {
+    document.getElementById('dReadySkeleton').style.display = 'none';
+    const repairs = (r && r.repairs) || [];
+    const items   = (r && r.items) || [];
+    const pmap = {};
+    repairs.forEach(rp => { pmap[String(rp['Repair ID']).trim()] = rp; });
+    const merged = items.map(it => {
+      const p = pmap[String(it['Repair ID']).trim()] || {};
+      return {
+        itemId:    it['Item ID'],
+        repairId:  it['Repair ID'],
+        itemType:  it['Item Type'],
+        model:     it['Model'],
+        serialNo:  it['Serial No'],
+        status:    it['Item Status'],
+        customer:  p['Customer Name'] || '',
+        contactNo: p['Contact No'] || ''
+      };
+    });
+    cacheSet('rec_rep_all', merged); // records ke saath share
+    dispBuildReady(merged);
+    dispRenderReady();
+  }, function () {
+    document.getElementById('dReadySkeleton').style.display = 'none';
+    document.getElementById('dErrorBox').style.display = 'block';
   });
 }
 
-function repPreselect(repairId) {
-  if (!repairId) return;
-  const idx = repPending.findIndex(function (r) { return String(r.repairId) === String(repairId); });
-  if (idx !== -1) repPickPending(idx);
-  else showToast('⚠️ Ye entry ab pending nahi hai');
+function dispBuildReady(merged) {
+  // sirf "Final QC & Pack" wale (dispatched nahi)
+  dispReady = (merged || []).filter(it => String(it.status).trim() === 'Final QC & Pack');
 }
 
-function repRenderPending() {
-  document.getElementById('pendingSkeleton').style.display = 'none';
-  const list = document.getElementById('pendingList');
-  if (!repPending.length) { list.innerHTML = '<div class="no-results">Koi pending repair nahi hai ✅</div>'; return; }
-  const q = (document.getElementById('pendingSearch').value || '').toLowerCase().trim();
-  const rows = repPending.map((r, i) => ({ r, i })).filter(({ r }) =>
-    !q || (r.repairId + ' ' + r.customerName + ' ' + (r.contactNo || '') + ' ' + (r.batteryModel || '')).toLowerCase().indexOf(q) !== -1);
+function dispRenderReady() {
+  document.getElementById('dReadySkeleton').style.display = 'none';
+  const list = document.getElementById('dReadyList');
+  if (!dispReady.length) { list.innerHTML = '<div class="no-results">Koi item "Final QC & Pack" pe nahi ✅ (pehle Repair Board me Final QC tak le jao)</div>'; dispUpdCount(); return; }
+  const q = (document.getElementById('dReadySearch').value || '').toLowerCase().trim();
+  const rows = dispReady.map((r, i) => ({ r, i })).filter(({ r }) =>
+    !q || (r.itemId + ' ' + r.repairId + ' ' + r.customer + ' ' + (r.model || '')).toLowerCase().indexOf(q) !== -1);
   if (!rows.length) { list.innerHTML = '<div class="no-results">Kuch nahi mila 🔍</div>'; return; }
-  const selId = document.getElementById('d_selectedRepairId').value;
   list.innerHTML = rows.map(({ r, i }) =>
-    '<div class="pick-card' + (r.repairId === selId ? ' selected' : '') + '" onclick="repPickPending(' + i + ')">' +
-    '<div class="pick-main"><div class="pick-title">' + r.repairId + '</div>' +
-    '<div class="pick-sub">' + r.customerName + ' · ' + (r.category || '') + (r.batteryModel ? ' — ' + r.batteryModel : '') + '</div></div>' +
-    '<span class="badge badge-amber">' + r.pendingQty + ' pending</span></div>'
+    '<label class="pick-card disp-pick' + (dispSel[r.itemId] ? ' selected' : '') + '">' +
+    '<input type="checkbox" class="disp-chk"' + (dispSel[r.itemId] ? ' checked' : '') + ' onchange="dispToggle(\'' + r.itemId + '\')">' +
+    '<div class="pick-main"><div class="pick-title">' + r.itemId + ' <span class="bc-rid">· ' + r.repairId + '</span></div>' +
+    '<div class="pick-sub">' + (r.customer || '') + ' · ' +
+      (String(r.itemType).toLowerCase().indexOf('charg') !== -1 ? '⚡' : '🔋') + ' ' + (r.itemType || '') +
+      (r.model ? ' · ' + r.model : '') + (r.serialNo ? ' · ' + r.serialNo : '') + '</div></div>' +
+    '<span class="badge badge-green">Ready</span></label>'
   ).join('');
+  dispUpdCount();
 }
 
-function repPickPending(idx) {
-  const row = repPending[idx];
-  if (!row) return;
-  repSelected = row;
-  document.getElementById('d_selectedRepairId').value = row.repairId;
-  document.getElementById('d_selectedRow').value = row.rowIndex;
-  document.getElementById('si_repairId').textContent = row.repairId;
-  document.getElementById('si_customer').textContent = row.customerName;
-  document.getElementById('si_contact').textContent = row.contactNo;
-  document.getElementById('si_product').textContent = (row.category || '') + (row.batteryModel ? ' — ' + row.batteryModel : '');
-  document.getElementById('si_batteryRcv').textContent = row.batteryQtyReceived || 0;
-  document.getElementById('si_chargerRcv').textContent = row.chargerQtyReceived || 0;
-  document.getElementById('si_batteryPending').textContent = row.batteryPending || 0;
-  document.getElementById('si_chargerPending').textContent = row.chargerPending || 0;
-  document.getElementById('si_pendingQty').textContent = row.pendingQty;
-  document.getElementById('si_receivedDate').textContent = row.receivingDate;
-  document.getElementById('selectedInfoBox').style.display = 'block';
-  document.getElementById('dNextBtn').disabled = false; document.getElementById('dNextBtn').style.opacity = '1';
-  repApplyDispatchCategory(row.category || 'Battery+Charger');
-  repCalcPending();
-  repRenderPending(); // re-highlight selected card
-  document.getElementById('selectedInfoBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+function dispToggle(itemId) {
+  dispSel[itemId] = !dispSel[itemId];
+  dispRenderReady();
 }
 
-function repApplyDispatchCategory(cat) {
-  const bG = document.getElementById('grp_dBatteryQty'), cG = document.getElementById('grp_dChargerQty');
-  const bF = document.getElementById('d_batteryDispatchQty'), cF = document.getElementById('d_chargerDispatchQty');
-  if (cat === 'Battery') { bG.style.display = ''; cG.style.display = 'none'; bF.disabled = false; cF.disabled = true; cF.value = '0'; }
-  else if (cat === 'Charger') { bG.style.display = 'none'; cG.style.display = ''; bF.disabled = true; bF.value = '0'; cF.disabled = false; }
-  else { bG.style.display = ''; cG.style.display = ''; bF.disabled = false; cF.disabled = false; }
+function dispUpdCount() {
+  const n = Object.keys(dispSel).filter(k => dispSel[k]).length;
+  const c = document.getElementById('dSelCount'); if (c) c.textContent = n;
+  const btn = document.getElementById('dNextBtn');
+  if (btn) { btn.disabled = !n; btn.style.opacity = n ? '1' : '.5'; }
 }
 
-function repGoToDStep2() {
-  if (!document.getElementById('d_selectedRepairId').value) { showToast('⚠️ Pehle ek Repair ID select karo'); return; }
+function dispGoStep2() {
+  const ids = Object.keys(dispSel).filter(k => dispSel[k]);
+  if (!ids.length) { showToast('⚠️ Kam se kam ek item chuno'); return; }
+  // selected summary
+  const sel = dispReady.filter(r => dispSel[r.itemId]);
+  document.getElementById('dSelectedSummary').innerHTML =
+    '<table class="receipt-table"><tr><th>Item ID</th><th>Repair ID</th><th>Type</th><th>Model</th></tr>' +
+    sel.map(r => '<tr><td>' + r.itemId + '</td><td>' + r.repairId + '</td><td>' + (r.itemType || '') + '</td><td>' + (r.model || '—') + '</td></tr>').join('') +
+    '</table>';
   document.getElementById('dSection1').classList.remove('active');
   document.getElementById('dSection2').classList.add('active');
   window.scrollTo(0, 0);
 }
-function repBackToDStep1() { document.getElementById('dSection2').classList.remove('active'); document.getElementById('dSection1').classList.add('active'); window.scrollTo(0, 0); }
+function dispBackStep1() { document.getElementById('dSection2').classList.remove('active'); document.getElementById('dSection1').classList.add('active'); window.scrollTo(0, 0); }
 
-function repCalcPending() {
-  const bP = parseInt(repSelected && repSelected.batteryPending) || 0;
-  const cP = parseInt(repSelected && repSelected.chargerPending) || 0;
-  const tP = parseInt(repSelected && repSelected.pendingQty) || 0;
-  const bF = document.getElementById('d_batteryDispatchQty'), cF = document.getElementById('d_chargerDispatchQty');
-  let b = parseInt(bF.value) || 0, c = parseInt(cF.value) || 0;
-  if (b > bP) { b = bP; bF.value = bP; showToast('⚠️ Battery qty ' + bP + ' se zyada nahi'); }
-  if (c > cP) { c = cP; cF.value = cP; showToast('⚠️ Charger qty ' + cP + ' se zyada nahi'); }
-  document.getElementById('d_pendingQty').value = Math.max(0, tP - (b + c));
-}
+function dispSubmit() {
+  const ids = Object.keys(dispSel).filter(k => dispSel[k]);
+  if (!ids.length) { showToast('⚠️ Koi item selected nahi'); return; }
+  const dispDate = document.getElementById('d_dispatchDate').value;
+  const by = document.getElementById('d_dispatchedBy').value.trim();
+  if (!dispDate) { showToast('⚠️ Dispatch Date bharein'); return; }
+  if (!by) { showToast('⚠️ Dispatched By bharein'); return; }
 
-function repSubmitDispatch() {
-  if (!repValidate('dSection2')) return;
-  const bP = parseInt(repSelected && repSelected.batteryPending) || 0;
-  const cP = parseInt(repSelected && repSelected.chargerPending) || 0;
-  const b = parseInt(document.getElementById('d_batteryDispatchQty').value) || 0;
-  const c = parseInt(document.getElementById('d_chargerDispatchQty').value) || 0;
-  if (b === 0 && c === 0) { showToast('⚠️ Battery ya Charger dispatch qty bharein'); return; }
-  if (b > bP) { showToast('⚠️ Battery dispatch qty pending (' + bP + ') se zyada'); return; }
-  if (c > cP) { showToast('⚠️ Charger dispatch qty pending (' + cP + ') se zyada'); return; }
+  // items ko repair-id ke hisaab se group karo (backend ek repairId leta hai)
+  const sel = dispReady.filter(r => dispSel[r.itemId]);
+  const byRepair = {};
+  sel.forEach(r => { (byRepair[r.repairId] = byRepair[r.repairId] || []).push(r.itemId); });
+  const repairIds = Object.keys(byRepair);
 
   const btn = document.querySelector('#dSection2 .btn-submit-dispatch');
   btn.disabled = true; btn.textContent = '⏳ ...';
 
-  const data = {
-    action: 'dispatch',
-    rowIndex: document.getElementById('d_selectedRow').value,
-    'Repair ID': document.getElementById('d_selectedRepairId').value,
-    'Dispatch Date': document.getElementById('d_dispatchDate').value,
-    'Battery Dispatch Qty': b,
-    'Charger Dispatch Qty': c,
-    'Pending Qty': document.getElementById('d_pendingQty').value,
-    'Repair Status': document.getElementById('d_repairStatus').value,
+  const common = {
+    'Dispatch Date': dispDate,
+    'Dispatched By': by,
+    'Transport (Outward)': document.getElementById('d_transportOutward').value,
     'Actual Problem Found': document.getElementById('d_actualProblem').value,
-    'Transport Details (Outward)': document.getElementById('d_transportOutward').value,
-    'Dispatch Address': document.getElementById('d_dispatchAddress').value,
-    'Dispatched By': document.getElementById('d_dispatchedBy').value,
     'Any Cost': document.getElementById('d_anyCost').value,
     'Dispatch Remarks': document.getElementById('d_remarks').value
   };
 
-  postNoCors(CONFIG.REPAIR_URL, data);
-  sessionStorage.removeItem('rep_pending'); // force refresh next time
+  let pendingCalls = repairIds.length, anyFail = false, completedRepairs = [];
+
+  repairIds.forEach(rid => {
+    const params = Object.assign({}, common, {
+      action: 'dispatch',
+      'Repair ID': rid,
+      itemIds: JSON.stringify(byRepair[rid])
+    });
+    jsonp(CONFIG.REPAIR_URL, params, function (res) {
+      if (!res || !res.ok) anyFail = true;
+      else if (res.pending === 0) completedRepairs.push(rid);
+      if (--pendingCalls === 0) dispDone(anyFail, sel, common, completedRepairs);
+    }, function () {
+      anyFail = true;
+      if (--pendingCalls === 0) dispDone(anyFail, sel, common, completedRepairs);
+    });
+  });
+}
+
+function dispDone(anyFail, sel, common, completedRepairs) {
+  const btn = document.querySelector('#dSection2 .btn-submit-dispatch');
+  btn.disabled = false; btn.textContent = 'Dispatch Karo 🚚';
+
   sessionStorage.removeItem('rec_rep_all');
+  sessionStorage.removeItem('board_items');
+
+  if (anyFail) { showToast('❌ Kuch items dispatch nahi hue — refresh karke dekho'); }
 
   document.getElementById('dSection2').classList.remove('active');
   document.getElementById('repDispatchSuccess').style.display = 'block';
-  document.getElementById('successDispatchId').textContent = data['Repair ID'];
+
+  const repairSet = [...new Set(sel.map(r => r.repairId))];
+  document.getElementById('successDispatchId').textContent = repairSet.join(', ');
+  document.getElementById('dispatchCompleteNote').textContent =
+    completedRepairs.length ? ('✅ Poore complete: ' + completedRepairs.join(', ')) : (sel.length + ' item dispatched');
 
   const now = new Date();
-  const dStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-  const tStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  const dStr = now.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+  const tStr = now.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
 
   document.getElementById('dispatchSummary').innerHTML =
     '<div style="background:white;border-radius:12px;border:1px solid #dde1f0;padding:24px;">' +
     '<div class="receipt-header"><div><div class="receipt-logo">LITPAX</div><div class="receipt-title">Battery / Charger Service Center</div></div>' +
     '<div style="text-align:right;"><div style="font-size:11px;color:#5a6080;">Dispatch Slip</div><div style="font-size:11px;color:#8890b0;">' + dStr + ' ' + tStr + '</div></div></div>' +
-    '<div style="background:#e8f8f4;border-radius:6px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;">' +
-    '<span style="font-size:11px;color:#00856e;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Repair ID</span>' +
-    '<span style="font-family:\'IBM Plex Mono\',monospace;font-size:15px;font-weight:700;color:#00856e;">' + data['Repair ID'] + '</span></div>' +
-    '<div class="receipt-section">Customer Details</div><table class="receipt-table">' +
-    '<tr><td>Customer Name</td><td>' + ((repSelected && repSelected.customerName) || '—') + '</td></tr>' +
-    '<tr><td>Contact No.</td><td>' + ((repSelected && repSelected.contactNo) || '—') + '</td></tr>' +
-    '<tr><td>Dispatch Address</td><td>' + (data['Dispatch Address'] || '—') + '</td></tr></table>' +
-    '<div class="receipt-section" style="margin-top:8px;">Dispatch Details</div><table class="receipt-table">' +
-    '<tr><td>Dispatch Date</td><td>' + data['Dispatch Date'] + '</td></tr>' +
-    '<tr><td>Battery Dispatched</td><td>' + b + '</td></tr>' +
-    '<tr><td>Charger Dispatched</td><td>' + c + '</td></tr>' +
-    '<tr><td>Pending Qty</td><td>' + data['Pending Qty'] + '</td></tr>' +
-    '<tr><td>Repair Status</td><td>' + data['Repair Status'] + '</td></tr>' +
-    '<tr><td>Actual Problem Found</td><td>' + (data['Actual Problem Found'] || '—') + '</td></tr>' +
-    '<tr><td>Any Cost</td><td>' + (data['Any Cost'] || '—') + '</td></tr>' +
-    '<tr><td>Transport (Outward)</td><td>' + (data['Transport Details (Outward)'] || '—') + '</td></tr>' +
-    '<tr><td>Dispatched By</td><td>' + data['Dispatched By'] + '</td></tr>' +
-    '<tr><td>Remarks</td><td>' + (data['Dispatch Remarks'] || '—') + '</td></tr></table>' +
+    '<div class="receipt-section">Dispatch Details</div><table class="receipt-table">' +
+    '<tr><td>Dispatch Date</td><td>' + common['Dispatch Date'] + '</td></tr>' +
+    '<tr><td>Dispatched By</td><td>' + common['Dispatched By'] + '</td></tr>' +
+    '<tr><td>Transport (Outward)</td><td>' + (common['Transport (Outward)'] || '—') + '</td></tr>' +
+    '<tr><td>Address</td><td>' + (document.getElementById('d_dispatchAddress').value || '—') + '</td></tr>' +
+    '<tr><td>Any Cost</td><td>' + (common['Any Cost'] || '—') + '</td></tr></table>' +
+    '<div class="receipt-section" style="margin-top:8px;">Items (' + sel.length + ')</div>' +
+    '<table class="receipt-table"><tr><th>Item ID</th><th>Repair ID</th><th>Type</th><th>Model</th></tr>' +
+    sel.map(r => '<tr><td>' + r.itemId + '</td><td>' + r.repairId + '</td><td>' + (r.itemType || '') + '</td><td>' + (r.model || '—') + '</td></tr>').join('') +
+    '</table>' +
     '<div class="receipt-footer"><span>Litpax Technology — Service Management System</span><span>' + dStr + ' ' + tStr + '</span></div></div>';
 
-  btn.disabled = false; btn.textContent = 'Dispatch Karo 🚚';
   window.scrollTo(0, 0);
 }
 
-function repResetDispatch() {
+function dispReset() {
   document.getElementById('repDispatchSuccess').style.display = 'none';
-  document.getElementById('dSection2').classList.remove('active');
-  document.getElementById('dSection1').classList.add('active');
-  document.querySelectorAll('#repDispatchScreen input:not([type=hidden]),#repDispatchScreen select,#repDispatchScreen textarea').forEach(el => { if (el.type === 'date') el.value = todayStr(); else el.value = ''; });
-  repSelected = null;
+  document.querySelectorAll('#repDispatchScreen input:not([type=hidden]),#repDispatchScreen textarea,#repDispatchScreen select').forEach(el => { if (el.type === 'date') el.value = todayStr(); else el.value = ''; });
+  dispSel = {};
   repShowDispatch();
-  window.scrollTo(0, 0);
+}
+
+function repPrint() { window.print(); }
 }
 
 function repPrint() { window.print(); }
@@ -1100,9 +1120,8 @@ function recRepOpen(idx) {
 function recDispatch(repairId) {
   recCloseDrawer();
   setActiveNav('repair'); setHeader('repair'); showApp('repairModule');
-  if (!repInited) { fillDropdowns('repairModule', 'repair'); repApplyCategory('Battery'); repInited = true; }
-  document.getElementById('d_dispatchDate').value = todayStr();
-  repShowDispatch(repairId);
+  if (!repInited) { fillDropdowns('repairModule', 'repair'); repInited = true; }
+  repShowDispatch();
 }
 
 function recRepNew() {
