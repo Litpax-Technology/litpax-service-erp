@@ -1014,24 +1014,49 @@ function recRepRender() {
     return hay.indexOf(q) !== -1;
   });
   if (!rows.length) { list.innerHTML = '<div class="no-results">Kuch nahi mila 🔍</div>'; return; }
-  const body = rows.map(({ r, i }) => {
-    const st = recRepStatus(r);
-    const badge = st === 'dispatched' ? '<span class="rec-pill green">● Dispatched</span>' : '<span class="rec-pill amber">● Pending</span>';
-    const typeIco = String(r.itemType).toLowerCase().indexOf('charg') !== -1 ? '⚡' : '🔋';
-    return '<tr onclick="recRepOpen(' + i + ')">' +
-      '<td class="rec-id">' + (r.itemId || '—') + '</td>' +
-      '<td class="rec-id" style="color:var(--text2)">' + (r.repairId || '—') + '</td>' +
-      '<td>' + (r.receivingDate || '—') + '</td>' +
-      '<td class="rec-strong">' + (r.customerName || '—') + '</td>' +
-      '<td>' + typeIco + ' ' + (r.itemType || '—') + '</td>' +
-      '<td>' + (r.model || '—') + '</td>' +
-      '<td>' + (r.serialNo || '—') + '</td>' +
-      '<td>' + (r.problemType || '—') + '</td>' +
-      '<td>' + badge + '</td></tr>';
-  }).join('');
+
+  // Repair ID ke hisaab se group karo
+  const groups = {}, seq = [];
+  rows.forEach(({ r, i }) => {
+    const rid = r.repairId || '—';
+    if (!groups[rid]) { groups[rid] = []; seq.push(rid); }
+    groups[rid].push({ r, i });
+  });
+
+  let body = '';
+  seq.forEach(rid => {
+    const items = groups[rid];
+    const count = items.length;
+    const first = items[0].r;
+    items.forEach(({ r, i }, idx) => {
+      const isFirst = idx === 0;
+      const bt = (isFirst && body) ? 'border-top:2px solid var(--border);' : '';
+      const st = recRepStatus(r);
+      const badge = st === 'dispatched' ? '<span class="rec-pill green">● Dispatched</span>' : '<span class="rec-pill amber">● Pending</span>';
+      const typeIco = String(r.itemType).toLowerCase().indexOf('charg') !== -1 ? '⚡' : '🔋';
+
+      // Repair-level cells (Repair ID, Date, Customer) sirf pehli row me — rowspan
+      const groupCells = isFirst ? (
+        '<td class="rec-id" rowspan="' + count + '" style="vertical-align:middle;' + bt + '">' + rid + '</td>' +
+        '<td rowspan="' + count + '" style="vertical-align:middle;' + bt + '">' + (first.receivingDate || '—') + '</td>' +
+        '<td class="rec-strong" rowspan="' + count + '" style="vertical-align:middle;' + bt + '">' + (first.customerName || '—') + '</td>'
+      ) : '';
+
+      body +=
+        '<tr onclick="recRepOpen(' + i + ')">' +
+        groupCells +
+        '<td class="rec-id" style="color:var(--text2);' + bt + '">' + (r.itemId || '—') + '</td>' +
+        '<td style="' + bt + '">' + typeIco + ' ' + (r.itemType || '—') + '</td>' +
+        '<td style="' + bt + '">' + (r.model || '—') + '</td>' +
+        '<td style="' + bt + '">' + (r.serialNo || '—') + '</td>' +
+        '<td style="' + bt + '">' + (r.problemType || '—') + '</td>' +
+        '<td style="' + bt + '">' + badge + '</td></tr>';
+    });
+  });
+
   list.innerHTML =
     '<table class="rec-table"><thead><tr>' +
-    '<th>Item ID</th><th>Date</th><th>Customer</th><th>Type</th><th>Model</th><th>Serial</th><th>Problem</th><th>Status</th>' +
+    '<th>Repair ID</th><th>Date</th><th>Customer</th><th>Item ID</th><th>Type</th><th>Model</th><th>Serial</th><th>Problem</th><th>Status</th>' +
     '</tr></thead><tbody>' + body + '</tbody></table>';
 }
 
