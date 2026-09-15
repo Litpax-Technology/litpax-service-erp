@@ -5,7 +5,7 @@
 const CONFIG = {
   // --- Backend URL (ek hi unified GAS — teeno tabs: Repairs, Repair_Items, Service Calls) ---
   // Naya deploy URL sirf yahan daalo; Repair aur Enquiry dono isi ko use karte hain.
-  HUB_URL: 'https://script.google.com/a/macros/litpaxtechnology.com/s/AKfycbybviVkDJftPN2e6YnZpCM5Znr8TFkMWTuM4I2z1u5Aasy2q2_VsRIH5FixY7xhOOLpmQ/exec',
+  HUB_URL: 'https://script.google.com/a/macros/litpaxtechnology.com/s/AKfycbxXQxq8N9-H4Ee6fBs2qcjl1nRlWDQ_GOZz0f1rMg0_eiZAVKYWyJoNHvrcreGlfG5nIg/exec',
   get REPAIR_URL()  { return this.HUB_URL; },
   get ENQUIRY_URL() { return this.HUB_URL; },
 
@@ -29,7 +29,8 @@ const CONFIG = {
       ProblemType:  ['Voltage Issue', 'Average Issue', 'Charger Issue', 'Connectivity / App Issue', 'Cell Issue', 'BMS Issue', 'Parameter / Calibration', 'Hardware Issue (Physical)', 'Inverter Issue', 'General Inquiry', 'Dispatch / Tracking', 'Internal / Handover', 'Battery Issue', 'Other'],
       ActualProblem:['No issue', 'Disbalance', 'Water damage', 'BMS fault', 'BMS + cell change', 'Dead cell', 'Low capacity', 'Seal opened', 'Series wire', 'Spot / laser issue', 'Output wire +ve , -ve', 'Thimble short / burnt', 'Transportation damage', 'Battery burnt (fire case)', 'Cells leak', 'Not repair / Rejected', 'Out of warranty'],
       RepairStatus: ['Repaired \u2014 Full', 'Repaired \u2014 Partial', 'Not Repairable', 'Replaced'],
-      WarrantyClaim:['Claim Approved', 'Claim Rejected', 'Claim Pending', 'No Claim']
+      WarrantyClaim:['Claim Approved', 'Claim Rejected', 'Claim Pending', 'No Claim'],
+      Stages:       ['Inward & Visual Check', 'Initial Testing', 'Cell Diagnosis & Balancing', 'Repairing & Assembly', 'Capacity & Load Testing', 'Final QC & Pack']
     },
     enquiry: {
       OEM:          ['Wariwo', 'Zelio', 'Urban', 'Other'],
