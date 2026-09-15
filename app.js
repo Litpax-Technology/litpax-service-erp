@@ -1261,7 +1261,7 @@ function boardLoad(force) {
   else if (!cached) {
     document.getElementById('boardPlanning').innerHTML = '<div class="skeleton sk-card"></div><div class="skeleton sk-card"></div>';
     document.getElementById('boardActive').innerHTML = '';
-  }
+  
   }
   jsonp(CONFIG.REPAIR_URL, { action: 'getAll' }, function (r) {
     const repairs = (r && r.repairs) || [];
