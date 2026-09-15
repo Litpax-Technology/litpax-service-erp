@@ -484,6 +484,11 @@ body:not(.has-sidebar) .header{display:none;}
 .board-plan-btn { margin-left:auto; padding:7px 14px; border:none; border-radius:8px; background:var(--success); color:#fff; font-size:12.5px; font-weight:600; cursor:pointer; font-family:'IBM Plex Sans',sans-serif; }
 .board-plan-btn:hover { background:#00a07a; }
 .board-plan-btn:disabled { opacity:.6; cursor:not-allowed; }
+.board-pick { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.board-pick-sel { flex:1; min-width:220px; padding:11px 12px; border:1.5px solid var(--border); border-radius:8px; font-size:14px; font-family:'IBM Plex Sans',sans-serif; background:var(--surface2); color:var(--text); cursor:pointer; }
+.board-pick-sel:focus { border-color:var(--blue); outline:none; }
+.board-pick-btn { padding:11px 18px; border:none; border-radius:8px; background:var(--success); color:#fff; font-size:14px; font-weight:600; cursor:pointer; font-family:'IBM Plex Sans',sans-serif; white-space:nowrap; }
+.board-pick-btn:hover { background:#00a07a; }
 
 /* Repair/Receive full-page fix — Records se aane par narrow na dikhe */
 @media(min-width:901px){
