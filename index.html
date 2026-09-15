@@ -220,77 +220,58 @@
       </div>
     </div>
 
-    <!-- Dispatch -->
+    <!-- Dispatch (item-level, sirf Final QC & Pack ready items) -->
     <div class="screen" id="repDispatchScreen">
       <div class="screen-header">
         <button class="back-btn" onclick="repGoHome()">← Back</button>
-        <div><div class="screen-title">🚚 Dispatch Battery</div><div class="screen-sub">Pending repairs se select karo</div></div>
+        <div><div class="screen-title">🚚 Dispatch Battery</div><div class="screen-sub">Sirf "Final QC & Pack" ready items</div></div>
       </div>
 
       <div class="form-section active" id="dSection1">
         <div class="card">
-          <div class="card-label">Pending Repairs</div>
-          <div id="pendingListContainer">
-            <div class="list-search"><span>🔍</span><input type="text" id="pendingSearch" placeholder="Repair ID ya customer search karo..." oninput="repRenderPending()"></div>
-            <div id="pendingSkeleton" style="display:none;">
-              <div class="skeleton sk-card"></div><div class="skeleton sk-card"></div><div class="skeleton sk-card"></div>
+          <div class="card-label">Ready Items (Final QC & Pack)</div>
+          <div id="dReadyContainer">
+            <div class="list-search"><span>🔍</span><input type="text" id="dReadySearch" placeholder="Item ID, Repair ID ya customer search..." oninput="dispRenderReady()"></div>
+            <div id="dReadySkeleton" style="display:none;">
+              <div class="skeleton sk-card"></div><div class="skeleton sk-card"></div>
             </div>
-            <div class="error-box" id="errorBox">Sheet se data load nahi ho paya.</div>
-            <div class="pick-list" id="pendingList"></div>
-          </div>
-          <input type="hidden" id="d_selectedRepairId" value="">
-          <input type="hidden" id="d_selectedRow" value="">
-        </div>
-
-        <div id="selectedInfoBox" style="display:none">
-          <div class="selected-info">
-            <div class="selected-info-title">Selected Entry</div>
-            <div class="info-row"><span>Repair ID</span><span id="si_repairId" style="font-family:'IBM Plex Mono',monospace;color:var(--blue);font-weight:700"></span></div>
-            <div class="info-row"><span>Customer</span><span id="si_customer"></span></div>
-            <div class="info-row"><span>Contact</span><span id="si_contact"></span></div>
-            <div class="info-row"><span>Product</span><span id="si_product"></span></div>
-            <div class="info-row"><span>Battery Qty Received</span><span id="si_batteryRcv"></span></div>
-            <div class="info-row"><span>Charger Qty Received</span><span id="si_chargerRcv"></span></div>
-            <div class="info-row"><span>🔋 Battery Pending</span><span id="si_batteryPending" style="color:var(--danger);font-weight:600"></span></div>
-            <div class="info-row"><span>⚡ Charger Pending</span><span id="si_chargerPending" style="color:var(--warning);font-weight:600"></span></div>
-            <div class="info-row"><span style="font-weight:600">Total Pending</span><span id="si_pendingQty" style="color:var(--danger);font-weight:600;font-family:'IBM Plex Mono',monospace"></span></div>
-            <div class="info-row"><span>Received On</span><span id="si_receivedDate"></span></div>
+            <div class="error-box" id="dErrorBox">Data load nahi ho paya.</div>
+            <div class="pick-list" id="dReadyList"></div>
           </div>
         </div>
-
-        <div class="nav-btns"><span></span><button class="btn-next" onclick="repGoToDStep2()" id="dNextBtn" disabled style="opacity:.5">Dispatch Details →</button></div>
+        <div class="nav-btns"><span></span><button class="btn-next" onclick="dispGoStep2()" id="dNextBtn" disabled style="opacity:.5">Dispatch Details → (<span id="dSelCount">0</span>)</button></div>
       </div>
 
       <div class="form-section" id="dSection2">
         <div class="card">
-          <div class="card-label">Dispatch Details</div>
+          <div class="card-label">Selected Items</div>
+          <div id="dSelectedSummary"></div>
+        </div>
+        <div class="card">
+          <div class="card-label">Dispatch Details (common)</div>
           <div class="form-grid">
             <div class="form-group"><label>Dispatch Date <span class="req">*</span></label><input type="date" id="d_dispatchDate" required></div>
-            <div class="form-group" id="grp_dBatteryQty"><label>🔋 Battery Dispatch Qty</label><input type="number" id="d_batteryDispatchQty" placeholder="0" min="0" value="0" oninput="repCalcPending()"></div>
-            <div class="form-group" id="grp_dChargerQty"><label>⚡ Charger Dispatch Qty</label><input type="number" id="d_chargerDispatchQty" placeholder="0" min="0" value="0" oninput="repCalcPending()"></div>
-            <div class="form-group"><label>Pending Qty (Auto)</label><input type="text" id="d_pendingQty" readonly style="background:#f0f6ff;border-color:#b3d0f7;color:var(--blue);font-weight:600;font-family:'IBM Plex Mono',monospace"></div>
-            <div class="form-group"><label>Repair Status <span class="req">*</span></label><select id="d_repairStatus" data-cfg="RepairStatus" required><option value="">-- Select --</option></select></div>
-            <div class="form-group full"><label>Actual Problem Found</label><select id="d_actualProblem" data-cfg="ActualProblem"><option value="">-- Select --</option></select></div>
+            <div class="form-group"><label>Dispatched By <span class="req">*</span></label><input type="text" id="d_dispatchedBy" placeholder="Staff name" required></div>
             <div class="form-group full"><label>Transport Details (Outward)</label><input type="text" id="d_transportOutward" placeholder="e.g. DTDC Tracking No. 789012"></div>
             <div class="form-group full"><label>Dispatch Address</label><textarea id="d_dispatchAddress" placeholder="Customer delivery address..."></textarea></div>
-            <div class="form-group full"><label>Dispatched By <span class="req">*</span></label><input type="text" id="d_dispatchedBy" placeholder="Staff name" required></div>
-            <div class="form-group"><label>Any Cost / Repair Cost</label><input type="text" id="d_anyCost" placeholder="e.g. ₹500 (parts replaced)"></div>
+            <div class="form-group"><label>Any Cost / Repair Cost</label><input type="text" id="d_anyCost" placeholder="e.g. ₹500"></div>
+            <div class="form-group full"><label>Actual Problem Found</label><select id="d_actualProblem" data-cfg="ActualProblem"><option value="">-- Select --</option></select></div>
             <div class="form-group full"><label>Dispatch Remarks</label><textarea id="d_remarks" placeholder="Additional info..."></textarea></div>
           </div>
         </div>
-        <div class="nav-btns"><button class="btn-back-nav" onclick="repBackToDStep1()">← Back</button><button class="btn-submit-dispatch" onclick="repSubmitDispatch()">Dispatch Karo 🚚</button></div>
+        <div class="nav-btns"><button class="btn-back-nav" onclick="dispBackStep1()">← Back</button><button class="btn-submit-dispatch" onclick="dispSubmit()">Dispatch Karo 🚚</button></div>
       </div>
 
       <div class="success-screen" id="repDispatchSuccess">
         <div class="success-icon dispatch">🚚</div>
-        <h2>Battery Dispatched!</h2>
+        <h2>Dispatched!</h2>
         <p>Sheet mein record update ho gaya:</p>
         <div class="big-id dispatch" id="successDispatchId"></div>
-        <p class="id-note">Entry successfully updated</p>
+        <p class="id-note" id="dispatchCompleteNote"></p>
         <div class="card" style="text-align:left;margin-bottom:20px;" id="dispatchSummary"></div>
         <button class="btn-pdf" onclick="repPrint()">🖨️ Print / Save PDF</button>
         <button class="btn-home" onclick="repGoHome()">🏠 Home</button>
-        <button class="btn-new-entry" onclick="repResetDispatch()">+ Aur Dispatch</button>
+        <button class="btn-new-entry" onclick="dispReset()">+ Aur Dispatch</button>
       </div>
     </div>
   </div>
