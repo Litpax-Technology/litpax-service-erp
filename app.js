@@ -1020,6 +1020,7 @@ function recRepRender() {
     const typeIco = String(r.itemType).toLowerCase().indexOf('charg') !== -1 ? '⚡' : '🔋';
     return '<tr onclick="recRepOpen(' + i + ')">' +
       '<td class="rec-id">' + (r.itemId || '—') + '</td>' +
+      '<td class="rec-id" style="color:var(--text2)">' + (r.repairId || '—') + '</td>' +
       '<td>' + (r.receivingDate || '—') + '</td>' +
       '<td class="rec-strong">' + (r.customerName || '—') + '</td>' +
       '<td>' + typeIco + ' ' + (r.itemType || '—') + '</td>' +
@@ -1135,7 +1136,7 @@ function recEnqRender() {
   }).join('');
   list.innerHTML =
     '<table class="rec-table"><thead><tr>' +
-    '<th>Sr No</th><th>Date</th><th>Customer</th><th>Contact</th><th>OEM</th><th>Enquiry About</th><th>Status</th>' +
+    '<th>Item ID</th><th>Repair ID</th><th>Date</th><th>Customer</th><th>Type</th><th>Model</th><th>Serial</th><th>Problem</th><th>Status</th>' +
     '</tr></thead><tbody>' + body + '</tbody></table>';
 }
 
