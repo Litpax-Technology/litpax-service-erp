@@ -1263,6 +1263,18 @@ function boardLoad(force) {
 
 let boardSel = {}; // itemId -> true (pending me select kiye hue)
 
+// kisi bhi format ki date ko yyyy-mm-dd me badlo
+function boardNormDate(v) {
+  if (!v) return '';
+  const s = String(v).trim();
+  // already yyyy-mm-dd
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
+  // dd-mm-yyyy ya dd/mm/yyyy
+  let m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+  if (m) return m[3] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2);
+  return s;
+}
+
 function boardRender() {
   const pending = boardItems.filter(it => {
     const s = String(it.status).toLowerCase();
@@ -1274,8 +1286,8 @@ function boardRender() {
   const _set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
 
   // date filter (active pe)
-  const df = (document.getElementById('boardDateFilter') || {}).value || '';
-  if (df) active = active.filter(it => String(it.planDate || '').indexOf(df) !== -1);
+  const df = (document.getElementById('boardDateFilter') || {}).value || ''; // yyyy-mm-dd
+  if (df) active = active.filter(it => boardNormDate(it.planDate) === df);
 
   _set('pendCount', pending.length);
   _set('repairCount', active.length);
@@ -1317,7 +1329,7 @@ function boardRender() {
       '<div class="bc-cust">' + (it.customer || '—') + ' <span class="bc-rid">· ' + it.repairId + '</span></div>' +
       '<div class="bc-meta">' + (String(it.itemType).toLowerCase().indexOf('charg') !== -1 ? '⚡' : '🔋') + ' ' +
         (it.itemType || '') + (it.model ? ' · ' + it.model : '') + '</div>' +
-      (it.planDate ? '<div class="bc-plandate">📅 ' + it.planDate + '</div>' : '') +
+      (it.planDate ? '<div class="bc-plandate">📅 ' + boardNormDate(it.planDate) + '</div>' : '') +
       '<div class="bc-prog"><div class="bc-prog-bar" style="width:' + pct + '%"></div></div>' +
       '<div class="bc-stage-lbl">' + stageLbl + '</div>' + sel +
       (it.stageAt ? '<div class="bc-at">Updated: ' + it.stageAt + '</div>' : '') +
