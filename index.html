@@ -463,12 +463,17 @@
   <div class="app-screen" id="boardModule">
     <div class="board-sec">
       <div class="board-sec-head">📥 Pending <span class="board-count" id="pendCount">0</span></div>
-      <div class="board-sec-sub">Jo repair karni hai unhe select karo, phir "In Planning" me daalo</div>
+      <div class="board-sec-sub">Item chuno + kis din repair karni hai (Plan Date), phir "In Planning" me daalo</div>
       <div id="boardPending" class="board-grid"></div>
     </div>
     <div class="board-sec">
       <div class="board-sec-head">🔧 In Planning / Under Repair <span class="board-count" id="repairCount">0</span></div>
       <div class="board-sec-sub">Stage dropdown se aage badhao</div>
+      <div class="board-filter">
+        <label>📅 Plan Date filter:</label>
+        <input type="date" id="boardDateFilter" onchange="boardRender()">
+        <button class="board-filter-clear" onclick="document.getElementById('boardDateFilter').value='';boardRender()">Clear</button>
+      </div>
       <div id="boardActive" class="board-grid"></div>
     </div>
   </div>
