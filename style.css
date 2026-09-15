@@ -456,6 +456,29 @@ body:not(.has-sidebar) .header{display:none;}
 .copy-all-btn:hover { background:#e0edff; }
 .items-hint { font-size:12px; color:#5a6080; margin-top:10px; line-height:1.5; }
 
+/* Repair Board */
+.board-sec { margin-bottom:26px; }
+.board-sec-head { font-size:15px; font-weight:700; color:var(--primary); display:flex; align-items:center; gap:8px; margin-bottom:2px; }
+.board-count { background:var(--blue); color:#fff; font-size:12px; font-weight:600; padding:1px 9px; border-radius:12px; }
+.board-sec-sub { font-size:12px; color:var(--text2); margin-bottom:12px; }
+.board-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:12px; }
+.board-card { background:#fff; border:1px solid var(--border); border-left:3px solid var(--text3); border-radius:10px; padding:14px; box-shadow:var(--shadow); }
+.board-card.active { border-left-color:var(--blue); }
+.bc-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+.bc-id { font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:13px; color:var(--blue); }
+.bc-rid { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text3); }
+.bc-cust { font-size:14px; font-weight:600; color:var(--text); margin-bottom:4px; }
+.bc-meta { font-size:12px; color:var(--text2); margin-bottom:4px; }
+.bc-prob { font-size:12px; color:var(--text3); margin-bottom:10px; }
+.bc-plan-btn { width:100%; padding:9px; border:none; border-radius:8px; background:var(--blue); color:#fff; font-size:13px; font-weight:600; cursor:pointer; font-family:'IBM Plex Sans',sans-serif; }
+.bc-plan-btn:hover { background:#1550c0; }
+.bc-prog { height:6px; background:var(--surface3); border-radius:4px; overflow:hidden; margin-bottom:6px; }
+.bc-prog-bar { height:100%; background:linear-gradient(90deg,#1a5fd8,#4b8bf5); transition:width .3s; }
+.bc-stage-lbl { font-size:11px; font-weight:600; color:var(--text2); margin-bottom:8px; }
+.bc-stage-sel { width:100%; padding:9px 10px; border:1.5px solid var(--border); border-radius:8px; font-size:13px; font-family:'IBM Plex Sans',sans-serif; background:var(--surface2); color:var(--text); cursor:pointer; }
+.bc-stage-sel:focus { border-color:var(--blue); outline:none; }
+.bc-at { font-size:10px; color:var(--text3); margin-top:6px; }
+
 /* Repair/Receive full-page fix — Records se aane par narrow na dikhe */
 @media(min-width:901px){
   body.has-sidebar .main:has(#repairModule.active) > *{
