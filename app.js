@@ -1260,32 +1260,53 @@ function boardLoad(force) {
   });
 }
 
-function boardRender() {
-  const planning = boardItems.filter(it => String(it.status).toLowerCase() === 'in planning');
-  const active   = boardItems.filter(it => REPAIR_STAGES.indexOf(it.status) !== -1);
+let boardSel = {}; // itemId -> true (pending me select kiye hue)
 
-  document.getElementById('planCount').textContent = planning.length;
+function boardRender() {
+  // Pending = Received (na In Planning, na kisi stage pe, na dispatched)
+  const pending = boardItems.filter(it => {
+    const s = String(it.status).toLowerCase();
+    return s !== 'in planning' && s !== 'dispatched' && REPAIR_STAGES.indexOf(it.status) === -1;
+  });
+  // Active = In Planning + koi bhi stage
+  const active = boardItems.filter(it =>
+    String(it.status).toLowerCase() === 'in planning' || REPAIR_STAGES.indexOf(it.status) !== -1);
+
+  document.getElementById('pendCount').textContent = pending.length;
   document.getElementById('repairCount').textContent = active.length;
 
-  const pWrap = document.getElementById('boardPlanning');
-  pWrap.innerHTML = planning.length ? planning.map(it =>
-    '<div class="board-card">' +
-    '<div class="bc-top"><span class="bc-id">' + it.itemId + '</span>' +
-      '<span class="bc-rid">' + it.repairId + '</span></div>' +
+  // --- Pending cards (checkbox select) ---
+  const pWrap = document.getElementById('boardPending');
+  pWrap.innerHTML = pending.length ? pending.map(it =>
+    '<div class="board-card pend' + (boardSel[it.itemId] ? ' sel' : '') + '" onclick="boardToggleSel(\'' + it.itemId + '\')">' +
+    '<div class="bc-top"><span class="bc-id">' +
+      '<input type="checkbox" class="bc-chk"' + (boardSel[it.itemId] ? ' checked' : '') + ' onclick="event.stopPropagation();boardToggleSel(\'' + it.itemId + '\')"> ' +
+      it.itemId + '</span><span class="bc-rid">' + it.repairId + '</span></div>' +
     '<div class="bc-cust">' + (it.customer || '—') + '</div>' +
     '<div class="bc-meta">' + (String(it.itemType).toLowerCase().indexOf('charg') !== -1 ? '⚡' : '🔋') + ' ' +
       (it.itemType || '') + (it.model ? ' · ' + it.model : '') + (it.serialNo ? ' · ' + it.serialNo : '') + '</div>' +
     '<div class="bc-prob">' + (it.problem || '') + '</div>' +
-    '<button class="bc-plan-btn" onclick="boardStartPlan(\'' + it.itemId + '\')">▶ Plan me lo</button>' +
     '</div>'
-  ).join('') : '<div class="no-results">Koi item planning me nahi ✅</div>';
+  ).join('') : '<div class="no-results">Koi pending item nahi ✅</div>';
 
+  // select button show/hide + count
+  const selIds = Object.keys(boardSel).filter(k => boardSel[k]);
+  const btn = document.getElementById('boardPlanBtn');
+  document.getElementById('selCount').textContent = selIds.length;
+  btn.style.display = selIds.length ? 'inline-block' : 'none';
+
+  // --- Active cards (stage dropdown) ---
   const aWrap = document.getElementById('boardActive');
   aWrap.innerHTML = active.length ? active.map(it => {
+    const inPlan = String(it.status).toLowerCase() === 'in planning';
     const opts = REPAIR_STAGES.map(s => '<option value="' + s + '"' + (s === it.status ? ' selected' : '') + '>' + s + '</option>').join('');
     const idx = REPAIR_STAGES.indexOf(it.status);
-    const pct = Math.round(((idx + 1) / REPAIR_STAGES.length) * 100);
+    const pct = inPlan ? 0 : Math.round(((idx + 1) / REPAIR_STAGES.length) * 100);
     const last = REPAIR_STAGES.length - 1;
+    const stageLbl = inPlan ? 'In Planning — start karo' :
+      ('Stage ' + (idx + 1) + '/' + REPAIR_STAGES.length + (idx === last ? ' · Ready ✅' : ''));
+    const sel = '<select class="bc-stage-sel" onchange="boardSetStage(\'' + it.itemId + '\', this.value)">' +
+      (inPlan ? '<option value="" selected disabled>-- Stage select karo --</option>' : '') + opts + '</select>';
     return '<div class="board-card active">' +
       '<div class="bc-top"><span class="bc-id">' + it.itemId + '</span>' +
         '<span class="bc-rid">' + it.repairId + '</span></div>' +
@@ -1293,16 +1314,35 @@ function boardRender() {
       '<div class="bc-meta">' + (String(it.itemType).toLowerCase().indexOf('charg') !== -1 ? '⚡' : '🔋') + ' ' +
         (it.itemType || '') + (it.model ? ' · ' + it.model : '') + '</div>' +
       '<div class="bc-prog"><div class="bc-prog-bar" style="width:' + pct + '%"></div></div>' +
-      '<div class="bc-stage-lbl">Stage ' + (idx + 1) + '/' + REPAIR_STAGES.length + (idx === last ? ' · Ready ✅' : '') + '</div>' +
-      '<select class="bc-stage-sel" onchange="boardSetStage(\'' + it.itemId + '\', this.value)">' + opts + '</select>' +
+      '<div class="bc-stage-lbl">' + stageLbl + '</div>' + sel +
       (it.stageAt ? '<div class="bc-at">Updated: ' + it.stageAt + '</div>' : '') +
     '</div>';
-  }).join('') : '<div class="no-results">Koi item repair me nahi</div>';
+  }).join('') : '<div class="no-results">Koi item planning me nahi</div>';
 }
 
-function boardStartPlan(itemId) { boardSetStage(itemId, REPAIR_STAGES[0]); }
+function boardToggleSel(itemId) {
+  boardSel[itemId] = !boardSel[itemId];
+  boardRender();
+}
+
+function boardMarkPlanning() {
+  const ids = Object.keys(boardSel).filter(k => boardSel[k]);
+  if (!ids.length) return;
+  const btn = document.getElementById('boardPlanBtn');
+  btn.disabled = true; btn.textContent = '⏳ ...';
+  jsonp(CONFIG.REPAIR_URL, { action: 'markPlanning', itemIds: JSON.stringify(ids) }, function (res) {
+    btn.disabled = false;
+    if (!res || !res.ok) { showToast('❌ Fail' + (res && res.msg ? ' — ' + res.msg : '')); boardLoad(true); return; }
+    boardSel = {};
+    sessionStorage.removeItem('board_items');
+    sessionStorage.removeItem('rec_rep_all');
+    showToast('✅ ' + res.updated + ' item In Planning me');
+    boardLoad(true);
+  }, function () { btn.disabled = false; showToast('❌ Network error'); boardLoad(true); });
+}
 
 function boardSetStage(itemId, stage) {
+  if (!stage) return;
   const it = boardItems.find(x => x.itemId === itemId);
   if (it) { it.status = stage; it.stageAt = 'saving...'; }
   boardRender();
