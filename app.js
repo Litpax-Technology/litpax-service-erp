@@ -751,10 +751,6 @@ function dispReset() {
   dispSel = {};
   repShowDispatch();
 }
-
-function repPrint() { window.print(); }
-}
-
 function repPrint() { window.print(); }
 
 /* ============================================================
