@@ -1272,8 +1272,9 @@ function boardRender() {
   const active = boardItems.filter(it =>
     String(it.status).toLowerCase() === 'in planning' || REPAIR_STAGES.indexOf(it.status) !== -1);
 
-  document.getElementById('pendCount').textContent = pending.length;
-  document.getElementById('repairCount').textContent = active.length;
+  const _set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  _set('pendCount', pending.length);
+  _set('repairCount', active.length);
 
   // --- Pending cards (checkbox select) ---
   const pWrap = document.getElementById('boardPending');
@@ -1292,8 +1293,8 @@ function boardRender() {
   // select button show/hide + count
   const selIds = Object.keys(boardSel).filter(k => boardSel[k]);
   const btn = document.getElementById('boardPlanBtn');
-  document.getElementById('selCount').textContent = selIds.length;
-  btn.style.display = selIds.length ? 'inline-block' : 'none';
+  _set('selCount', selIds.length);
+  if (btn) btn.style.display = selIds.length ? 'inline-block' : 'none';
 
   // --- Active cards (stage dropdown) ---
   const aWrap = document.getElementById('boardActive');
