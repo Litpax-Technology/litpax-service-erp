@@ -519,3 +519,14 @@ body:not(.has-sidebar) .header{display:none;}
     max-width:720px;
   }
 }
+
+/* Board — desktop pe side-by-side (Pending left, In Planning right) */
+@media(min-width:901px){
+  #boardModule.active{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:22px;
+    align-items:start;
+  }
+  #boardModule .board-sec{ margin-bottom:0; }
+}
