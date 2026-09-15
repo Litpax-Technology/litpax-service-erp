@@ -491,6 +491,15 @@ body:not(.has-sidebar) .header{display:none;}
 .board-pick-sel:focus { border-color:var(--blue); outline:none; }
 .board-pick-btn { padding:11px 18px; border:none; border-radius:8px; background:var(--success); color:#fff; font-size:14px; font-weight:600; cursor:pointer; font-family:'IBM Plex Sans',sans-serif; white-space:nowrap; }
 .board-pick-btn:hover { background:#00a07a; }
+.board-pick-date { padding:11px 12px; border:1.5px solid var(--border); border-radius:8px; font-size:14px; font-family:'IBM Plex Sans',sans-serif; background:var(--surface2); color:var(--text); }
+.board-filter { display:flex; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+.board-filter label { font-size:13px; font-weight:600; color:var(--text2); }
+.board-filter input { padding:9px 11px; border:1.5px solid var(--border); border-radius:8px; font-size:13px; font-family:'IBM Plex Sans',sans-serif; background:#fff; }
+.board-filter-clear { padding:8px 14px; border:1.5px solid var(--border); background:#fff; border-radius:8px; font-size:12.5px; font-weight:600; color:var(--text2); cursor:pointer; font-family:'IBM Plex Sans',sans-serif; }
+.board-filter-clear:hover { border-color:var(--blue); color:var(--blue); }
+.bc-remove { background:#fff0ec; border:none; color:#c0392b; width:24px; height:24px; border-radius:6px; font-size:13px; cursor:pointer; font-weight:600; }
+.bc-remove:hover { background:#ffd9cf; }
+.bc-plandate { font-size:12px; font-weight:600; color:var(--blue); background:#e8f0fe; display:inline-block; padding:2px 8px; border-radius:6px; margin-bottom:8px; }
 
 /* Repair/Receive full-page fix — Records se aane par narrow na dikhe */
 @media(min-width:901px){
