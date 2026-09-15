@@ -1302,7 +1302,7 @@ function boardRender() {
 
   // date filter (active pe)
   const df = (document.getElementById('boardDateFilter') || {}).value || ''; // yyyy-mm-dd
-  if (df) active = active.filter(it => boardNormDate(it.planDate).substring(0, 10) === df.substring(0, 10));
+   if (df) active = active.filter(it => boardNormDate(it.planDate) === df);
 
   _set('pendCount', pending.length);
   _set('repairCount', active.length);
