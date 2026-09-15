@@ -1010,7 +1010,13 @@ function recRepLoad(force) {
 }
 
 function recRepStatus(row) {
-  return String(row.itemStatus || '').toLowerCase() === 'dispatched' ? 'dispatched' : 'pending';
+  const s = String(row.itemStatus || '').trim();
+  if (s.toLowerCase() === 'dispatched') return 'dispatched';
+  return 'pending'; // filter ke liye (All/Pending/Dispatched)
+}
+// actual live status (jo sheet me hai)
+function recRepStatusLabel(row) {
+  return String(row.itemStatus || '').trim() || '—';
 }
 
 function recRepFilter(el, f) {
@@ -1050,7 +1056,14 @@ function recRepRender() {
       const isFirst = idx === 0;
       const bt = (isFirst && body) ? 'border-top:2px solid var(--border);' : '';
       const st = recRepStatus(r);
-      const badge = st === 'dispatched' ? '<span class="rec-pill green">● Dispatched</span>' : '<span class="rec-pill amber">● Pending</span>';
+      const lbl = recRepStatusLabel(r);
+      const ls = lbl.toLowerCase();
+      let pillCls = 'amber';
+      if (ls === 'dispatched') pillCls = 'green';
+      else if (ls === 'received') pillCls = 'blue';
+      else if (ls === 'in planning') pillCls = 'amber';
+      else if (REPAIR_STAGES.indexOf(lbl) !== -1) pillCls = 'blue'; // koi stage
+      const badge = '<span class="rec-pill ' + pillCls + '">● ' + lbl + '</span>';
       const typeIco = String(r.itemType).toLowerCase().indexOf('charg') !== -1 ? '⚡' : '🔋';
 
       // Repair-level cells (Repair ID, Date, Customer) sirf pehli row me — rowspan
