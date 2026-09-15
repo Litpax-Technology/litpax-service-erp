@@ -478,6 +478,12 @@ body:not(.has-sidebar) .header{display:none;}
 .bc-stage-sel { width:100%; padding:9px 10px; border:1.5px solid var(--border); border-radius:8px; font-size:13px; font-family:'IBM Plex Sans',sans-serif; background:var(--surface2); color:var(--text); cursor:pointer; }
 .bc-stage-sel:focus { border-color:var(--blue); outline:none; }
 .bc-at { font-size:10px; color:var(--text3); margin-top:6px; }
+.board-card.pend { cursor:pointer; }
+.board-card.pend.sel { border-color:var(--blue); border-left-color:var(--blue); background:#f0f6ff; box-shadow:0 0 0 2px rgba(26,95,216,.12); }
+.bc-chk { width:15px; height:15px; accent-color:var(--blue); cursor:pointer; vertical-align:middle; }
+.board-plan-btn { margin-left:auto; padding:7px 14px; border:none; border-radius:8px; background:var(--success); color:#fff; font-size:12.5px; font-weight:600; cursor:pointer; font-family:'IBM Plex Sans',sans-serif; }
+.board-plan-btn:hover { background:#00a07a; }
+.board-plan-btn:disabled { opacity:.6; cursor:not-allowed; }
 
 /* Repair/Receive full-page fix — Records se aane par narrow na dikhe */
 @media(min-width:901px){
