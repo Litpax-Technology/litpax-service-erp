@@ -617,19 +617,23 @@ function dispRenderReady() {
   document.getElementById('dReadySkeleton').style.display = 'none';
   const list = document.getElementById('dReadyList');
   if (!dispReady.length) { list.innerHTML = '<div class="no-results">Koi item "Final QC & Pack" pe nahi ✅ (pehle Repair Board me Final QC tak le jao)</div>'; dispUpdCount(); return; }
-  const q = (document.getElementById('dReadySearch').value || '').toLowerCase().trim();
-  const rows = dispReady.map((r, i) => ({ r, i })).filter(({ r }) =>
-    !q || (r.itemId + ' ' + r.repairId + ' ' + r.customer + ' ' + (r.model || '')).toLowerCase().indexOf(q) !== -1);
-  if (!rows.length) { list.innerHTML = '<div class="no-results">Kuch nahi mila 🔍</div>'; return; }
-  list.innerHTML = rows.map(({ r, i }) =>
-    '<label class="pick-card disp-pick' + (dispSel[r.itemId] ? ' selected' : '') + '">' +
-    '<input type="checkbox" class="disp-chk"' + (dispSel[r.itemId] ? ' checked' : '') + ' onchange="dispToggle(\'' + r.itemId + '\')">' +
-    '<div class="pick-main"><div class="pick-title">' + r.itemId + ' <span class="bc-rid">· ' + r.repairId + '</span></div>' +
-    '<div class="pick-sub">' + (r.customer || '') + ' · ' +
-      (String(r.itemType).toLowerCase().indexOf('charg') !== -1 ? '⚡' : '🔋') + ' ' + (r.itemType || '') +
-      (r.model ? ' · ' + r.model : '') + (r.serialNo ? ' · ' + r.serialNo : '') + '</div></div>' +
-    '<span class="badge badge-green">Ready</span></label>'
+
+  const opts = dispReady.map((r, i) =>
+    '<option value="' + r.itemId + '"' + (dispSel[r.itemId] ? ' selected' : '') + '>' +
+    r.itemId + ' · ' + (r.customer || '') + ' · ' + (r.itemType || '') + (r.model ? ' (' + r.model + ')' : '') +
+    '</option>'
   ).join('');
+
+  list.innerHTML =
+    '<select class="board-pick-sel" id="dReadySelect" onchange="dispPickOne(this.value)" style="width:100%">' +
+    '<option value="">-- Item chuno --</option>' + opts + '</select>';
+  dispUpdCount();
+}
+
+// single select — ek hi item select rahega
+function dispPickOne(itemId) {
+  dispSel = {};
+  if (itemId) dispSel[itemId] = true;
   dispUpdCount();
 }
 
