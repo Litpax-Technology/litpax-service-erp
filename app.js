@@ -1263,12 +1263,10 @@ function boardLoad(force) {
 let boardSel = {}; // itemId -> true (pending me select kiye hue)
 
 function boardRender() {
-  // Pending = Received (na In Planning, na kisi stage pe, na dispatched)
   const pending = boardItems.filter(it => {
     const s = String(it.status).toLowerCase();
     return s !== 'in planning' && s !== 'dispatched' && REPAIR_STAGES.indexOf(it.status) === -1;
   });
-  // Active = In Planning + koi bhi stage
   const active = boardItems.filter(it =>
     String(it.status).toLowerCase() === 'in planning' || REPAIR_STAGES.indexOf(it.status) !== -1);
 
@@ -1276,25 +1274,21 @@ function boardRender() {
   _set('pendCount', pending.length);
   _set('repairCount', active.length);
 
-  // --- Pending cards (checkbox select) ---
+  // --- Pending = ek dropdown + Add button ---
   const pWrap = document.getElementById('boardPending');
-  pWrap.innerHTML = pending.length ? pending.map(it =>
-    '<div class="board-card pend' + (boardSel[it.itemId] ? ' sel' : '') + '" onclick="boardToggleSel(\'' + it.itemId + '\')">' +
-    '<div class="bc-top"><span class="bc-id">' +
-      '<input type="checkbox" class="bc-chk"' + (boardSel[it.itemId] ? ' checked' : '') + ' onclick="event.stopPropagation();boardToggleSel(\'' + it.itemId + '\')"> ' +
-      it.itemId + '</span><span class="bc-rid">' + it.repairId + '</span></div>' +
-    '<div class="bc-cust">' + (it.customer || '—') + '</div>' +
-    '<div class="bc-meta">' + (String(it.itemType).toLowerCase().indexOf('charg') !== -1 ? '⚡' : '🔋') + ' ' +
-      (it.itemType || '') + (it.model ? ' · ' + it.model : '') + (it.serialNo ? ' · ' + it.serialNo : '') + '</div>' +
-    '<div class="bc-prob">' + (it.problem || '') + '</div>' +
-    '</div>'
-  ).join('') : '<div class="no-results">Koi pending item nahi ✅</div>';
-
-  // select button show/hide + count
-  const selIds = Object.keys(boardSel).filter(k => boardSel[k]);
-  const btn = document.getElementById('boardPlanBtn');
-  _set('selCount', selIds.length);
-  if (btn) btn.style.display = selIds.length ? 'inline-block' : 'none';
+  if (!pending.length) {
+    pWrap.innerHTML = '<div class="no-results">Koi pending item nahi ✅</div>';
+  } else {
+    const opts = pending.map(it =>
+      '<option value="' + it.itemId + '">' + it.itemId + ' · ' + (it.customer || '') + ' · ' +
+      (it.itemType || '') + (it.model ? ' (' + it.model + ')' : '') + '</option>'
+    ).join('');
+    pWrap.innerHTML =
+      '<div class="board-pick">' +
+        '<select id="boardPendSelect" class="board-pick-sel"><option value="" selected disabled>-- Pending item chuno --</option>' + opts + '</select>' +
+        '<button class="board-pick-btn" onclick="boardAddFromSelect()">➕ In Planning me daalo</button>' +
+      '</div>';
+  }
 
   // --- Active cards (stage dropdown) ---
   const aWrap = document.getElementById('boardActive');
@@ -1321,37 +1315,36 @@ function boardRender() {
   }).join('') : '<div class="no-results">Koi item planning me nahi</div>';
 }
 
-function boardToggleSel(itemId) {
-  boardSel[itemId] = !boardSel[itemId];
-  boardRender();
+// cache ko local boardItems se refresh karo (dobara fetch ke bina)
+function boardSaveLocal() {
+  cacheSet('board_items', boardItems);
+  sessionStorage.removeItem('rec_rep_all'); // Records stale
 }
 
-function boardMarkPlanning() {
-  const ids = Object.keys(boardSel).filter(k => boardSel[k]);
-  if (!ids.length) return;
-  const btn = document.getElementById('boardPlanBtn');
-  btn.disabled = true; btn.textContent = '⏳ ...';
-  jsonp(CONFIG.REPAIR_URL, { action: 'markPlanning', itemIds: JSON.stringify(ids) }, function (res) {
-    btn.disabled = false;
-    if (!res || !res.ok) { showToast('❌ Fail' + (res && res.msg ? ' — ' + res.msg : '')); boardLoad(true); return; }
-    boardSel = {};
-    sessionStorage.removeItem('board_items');
-    sessionStorage.removeItem('rec_rep_all');
-    showToast('✅ ' + res.updated + ' item In Planning me');
-    boardLoad(true);
-  }, function () { btn.disabled = false; showToast('❌ Network error'); boardLoad(true); });
+function boardAddFromSelect() {
+  const sel = document.getElementById('boardPendSelect');
+  const itemId = sel ? sel.value : '';
+  if (!itemId) { showToast('⚠️ Pehle ek item chuno'); return; }
+  // local update — turant dikhe
+  const it = boardItems.find(x => x.itemId === itemId);
+  if (it) { it.status = 'In Planning'; it.stageAt = ''; }
+  boardSaveLocal();
+  boardRender();
+  showToast('✅ ' + itemId + ' In Planning me');
+  // background save
+  jsonp(CONFIG.REPAIR_URL, { action: 'markPlanning', itemIds: JSON.stringify([itemId]) }, function (res) {
+    if (!res || !res.ok) { showToast('❌ Save fail — refresh karke check karo'); boardLoad(true); }
+  }, function () { showToast('❌ Network error — save nahi hua'); boardLoad(true); });
 }
 
 function boardSetStage(itemId, stage) {
   if (!stage) return;
   const it = boardItems.find(x => x.itemId === itemId);
-  if (it) { it.status = stage; it.stageAt = 'saving...'; }
+  const nowStr = new Date().toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+  if (it) { it.status = stage; it.stageAt = nowStr; }
+  boardSaveLocal();
   boardRender();
   jsonp(CONFIG.REPAIR_URL, { action: 'updateStage', itemId: itemId, stage: stage }, function (res) {
-    if (!res || !res.ok) { showToast('❌ Stage update fail' + (res && res.msg ? ' — ' + res.msg : '')); boardLoad(true); return; }
-    sessionStorage.removeItem('board_items');
-    sessionStorage.removeItem('rec_rep_all');
-    showToast('✅ ' + itemId + ' → ' + stage);
-    boardLoad(true);
+    if (!res || !res.ok) { showToast('❌ Stage save fail — refresh karo'); boardLoad(true); }
   }, function () { showToast('❌ Network error'); boardLoad(true); });
 }
