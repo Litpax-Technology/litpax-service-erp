@@ -462,12 +462,14 @@
   <!-- ============ REPAIR BOARD ============ -->
   <div class="app-screen" id="boardModule">
     <div class="board-sec">
-      <div class="board-sec-head">📋 In Planning <span class="board-count" id="planCount">0</span></div>
-      <div class="board-sec-sub">Ye items receive ho chuke — plan me lo taaki repair shuru ho</div>
-      <div id="boardPlanning" class="board-grid"></div>
+      <div class="board-sec-head">📥 Pending <span class="board-count" id="pendCount">0</span>
+        <button class="board-plan-btn" id="boardPlanBtn" onclick="boardMarkPlanning()" style="display:none">✓ Done → In Planning (<span id="selCount">0</span>)</button>
+      </div>
+      <div class="board-sec-sub">Jo repair karni hai unhe select karo, phir "In Planning" me daalo</div>
+      <div id="boardPending" class="board-grid"></div>
     </div>
     <div class="board-sec">
-      <div class="board-sec-head">🔧 Under Repair <span class="board-count" id="repairCount">0</span></div>
+      <div class="board-sec-head">🔧 In Planning / Under Repair <span class="board-count" id="repairCount">0</span></div>
       <div class="board-sec-sub">Stage dropdown se aage badhao</div>
       <div id="boardActive" class="board-grid"></div>
     </div>
