@@ -1437,6 +1437,7 @@ function boardSetStage(itemId, stage) {
   boardSaveLocal();
   boardRender();
   jsonp(CONFIG.REPAIR_URL, { action: 'updateStage', itemId: itemId, stage: stage }, function (res) {
-    if (!res || !res.ok) { showToast('❌ Stage save fail — refresh karo'); boardLoad(true); }
+    console.log('updateStage response:', res);
+    if (!res || !res.ok) { showToast('❌ Stage save fail — ' + ((res && res.msg) || 'no response')); boardLoad(true); }
   }, function () { showToast('❌ Network error'); boardLoad(true); });
 }
