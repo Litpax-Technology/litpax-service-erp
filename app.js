@@ -1292,20 +1292,30 @@ function boardRender() {
   _set('pendCount', pending.length);
   _set('repairCount', active.length);
 
-  // --- Pending = dropdown + date picker + Add ---
+  // --- Pending = checkbox multi-select + date picker + Add ---
   const pWrap = document.getElementById('boardPending');
   if (!pending.length) {
     pWrap.innerHTML = '<div class="no-results">Koi pending item nahi ✅</div>';
   } else {
-    const opts = pending.map(it =>
-      '<option value="' + it.itemId + '">' + it.itemId + ' · ' + (it.customer || '') + ' · ' +
-      (it.itemType || '') + (it.model ? ' (' + it.model + ')' : '') + '</option>'
+    const rows = pending.map(it =>
+      '<label class="ms-opt">' +
+        '<input type="checkbox" class="ms-chk" value="' + it.itemId + '"' + (boardMsSel[it.itemId] ? ' checked' : '') + ' onchange="boardMsToggle(\'' + it.itemId + '\')">' +
+        '<span class="ms-txt"><b>' + it.itemId + '</b> · ' + (it.customer || '') + ' · ' +
+          (String(it.itemType).toLowerCase().indexOf('charg') !== -1 ? '⚡' : '🔋') + ' ' +
+          (it.itemType || '') + (it.model ? ' (' + it.model + ')' : '') + '</span>' +
+      '</label>'
     ).join('');
+    const selN = Object.keys(boardMsSel).filter(k => boardMsSel[k]).length;
     pWrap.innerHTML =
-      '<div class="board-pick">' +
-        '<select id="boardPendSelect" class="board-pick-sel"><option value="" selected disabled>-- Pending item chuno --</option>' + opts + '</select>' +
+      '<div class="ms-wrap">' +
+        '<div class="ms-head" onclick="boardMsOpen()">' +
+          '<span>' + (selN ? selN + ' item selected' : '-- Items chuno (multiple) --') + '</span><span>▾</span>' +
+        '</div>' +
+        '<div class="ms-list" id="boardMsList" style="display:none">' + rows + '</div>' +
+      '</div>' +
+      '<div class="board-pick" style="margin-top:10px">' +
         '<input type="date" id="boardPlanDate" class="board-pick-date" title="Kis din repair karni hai">' +
-        '<button class="board-pick-btn" onclick="boardAddFromSelect()">➕ In Planning me daalo</button>' +
+        '<button class="board-pick-btn" onclick="boardAddSelected()">➕ In Planning me daalo (<span id="msCount">' + selN + '</span>)</button>' +
       '</div>';
     const pd = document.getElementById('boardPlanDate');
     if (pd && !pd.value) pd.value = todayStr();
@@ -1343,18 +1353,38 @@ function boardSaveLocal() {
   sessionStorage.removeItem('rec_rep_all'); // Records stale
 }
 
-function boardAddFromSelect() {
-  const sel = document.getElementById('boardPendSelect');
-  const itemId = sel ? sel.value : '';
-  if (!itemId) { showToast('⚠️ Pehle ek item chuno'); return; }
+let boardMsSel = {}; // itemId -> true (pending me checkbox se select)
+
+function boardMsOpen() {
+  const l = document.getElementById('boardMsList');
+  if (l) l.style.display = l.style.display === 'none' ? 'block' : 'none';
+}
+function boardMsToggle(itemId) {
+  boardMsSel[itemId] = !boardMsSel[itemId];
+  const n = Object.keys(boardMsSel).filter(k => boardMsSel[k]).length;
+  const c = document.getElementById('msCount'); if (c) c.textContent = n;
+  // head text update
+  const head = document.querySelector('#boardPending .ms-head span');
+  if (head) head.textContent = n ? (n + ' item selected') : '-- Items chuno (multiple) --';
+}
+
+function boardAddSelected() {
+  const ids = Object.keys(boardMsSel).filter(k => boardMsSel[k]);
+  if (!ids.length) { showToast('⚠️ Kam se kam ek item chuno'); return; }
   const planDate = (document.getElementById('boardPlanDate') || {}).value || '';
   if (!planDate) { showToast('⚠️ Plan Date chuno'); return; }
-  const it = boardItems.find(x => x.itemId === itemId);
-  if (it) { it.status = 'In Planning'; it.planDate = planDate; it.stageAt = ''; }
+
+  // local update
+  ids.forEach(id => {
+    const it = boardItems.find(x => x.itemId === id);
+    if (it) { it.status = 'In Planning'; it.planDate = planDate; it.stageAt = ''; }
+  });
+  boardMsSel = {};
   boardSaveLocal();
   boardRender();
-  showToast('✅ ' + itemId + ' → ' + planDate);
-  jsonp(CONFIG.REPAIR_URL, { action: 'markPlanning', itemIds: JSON.stringify([itemId]), planDate: planDate }, function (res) {
+  showToast('✅ ' + ids.length + ' item → ' + planDate);
+
+  jsonp(CONFIG.REPAIR_URL, { action: 'markPlanning', itemIds: JSON.stringify(ids), planDate: planDate }, function (res) {
     if (!res || !res.ok) { showToast('❌ Save fail — refresh karke check karo'); boardLoad(true); }
   }, function () { showToast('❌ Network error — save nahi hua'); boardLoad(true); });
 }
