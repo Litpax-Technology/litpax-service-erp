@@ -1249,6 +1249,7 @@ function boardLoad(force) {
         serialNo: it['Serial No'],
         problem:  it['Problem Type'],
         status:   it['Item Status'],
+        planDate: it['Plan Date'],
         stageAt:  it['Stage Updated At'],
         customer: p['Customer Name'] || ''
       };
@@ -1267,14 +1268,19 @@ function boardRender() {
     const s = String(it.status).toLowerCase();
     return s !== 'in planning' && s !== 'dispatched' && REPAIR_STAGES.indexOf(it.status) === -1;
   });
-  const active = boardItems.filter(it =>
+  let active = boardItems.filter(it =>
     String(it.status).toLowerCase() === 'in planning' || REPAIR_STAGES.indexOf(it.status) !== -1);
 
   const _set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+  // date filter (active pe)
+  const df = (document.getElementById('boardDateFilter') || {}).value || '';
+  if (df) active = active.filter(it => String(it.planDate || '').indexOf(df) !== -1);
+
   _set('pendCount', pending.length);
   _set('repairCount', active.length);
 
-  // --- Pending = ek dropdown + Add button ---
+  // --- Pending = dropdown + date picker + Add ---
   const pWrap = document.getElementById('boardPending');
   if (!pending.length) {
     pWrap.innerHTML = '<div class="no-results">Koi pending item nahi ✅</div>';
@@ -1286,11 +1292,14 @@ function boardRender() {
     pWrap.innerHTML =
       '<div class="board-pick">' +
         '<select id="boardPendSelect" class="board-pick-sel"><option value="" selected disabled>-- Pending item chuno --</option>' + opts + '</select>' +
+        '<input type="date" id="boardPlanDate" class="board-pick-date" title="Kis din repair karni hai">' +
         '<button class="board-pick-btn" onclick="boardAddFromSelect()">➕ In Planning me daalo</button>' +
       '</div>';
+    const pd = document.getElementById('boardPlanDate');
+    if (pd && !pd.value) pd.value = todayStr();
   }
 
-  // --- Active cards (stage dropdown) ---
+  // --- Active cards ---
   const aWrap = document.getElementById('boardActive');
   aWrap.innerHTML = active.length ? active.map(it => {
     const inPlan = String(it.status).toLowerCase() === 'in planning';
@@ -1304,15 +1313,16 @@ function boardRender() {
       (inPlan ? '<option value="" selected disabled>-- Stage select karo --</option>' : '') + opts + '</select>';
     return '<div class="board-card active">' +
       '<div class="bc-top"><span class="bc-id">' + it.itemId + '</span>' +
-        '<span class="bc-rid">' + it.repairId + '</span></div>' +
-      '<div class="bc-cust">' + (it.customer || '—') + '</div>' +
+        '<button class="bc-remove" title="Wapas Pending me bhejo" onclick="boardRemovePlan(\'' + it.itemId + '\')">✕</button></div>' +
+      '<div class="bc-cust">' + (it.customer || '—') + ' <span class="bc-rid">· ' + it.repairId + '</span></div>' +
       '<div class="bc-meta">' + (String(it.itemType).toLowerCase().indexOf('charg') !== -1 ? '⚡' : '🔋') + ' ' +
         (it.itemType || '') + (it.model ? ' · ' + it.model : '') + '</div>' +
+      (it.planDate ? '<div class="bc-plandate">📅 ' + it.planDate + '</div>' : '') +
       '<div class="bc-prog"><div class="bc-prog-bar" style="width:' + pct + '%"></div></div>' +
       '<div class="bc-stage-lbl">' + stageLbl + '</div>' + sel +
       (it.stageAt ? '<div class="bc-at">Updated: ' + it.stageAt + '</div>' : '') +
     '</div>';
-  }).join('') : '<div class="no-results">Koi item planning me nahi</div>';
+  }).join('') : '<div class="no-results">' + (df ? 'Is date ka koi item nahi 📅' : 'Koi item planning me nahi') + '</div>';
 }
 
 // cache ko local boardItems se refresh karo (dobara fetch ke bina)
@@ -1325,16 +1335,28 @@ function boardAddFromSelect() {
   const sel = document.getElementById('boardPendSelect');
   const itemId = sel ? sel.value : '';
   if (!itemId) { showToast('⚠️ Pehle ek item chuno'); return; }
-  // local update — turant dikhe
+  const planDate = (document.getElementById('boardPlanDate') || {}).value || '';
+  if (!planDate) { showToast('⚠️ Plan Date chuno'); return; }
   const it = boardItems.find(x => x.itemId === itemId);
-  if (it) { it.status = 'In Planning'; it.stageAt = ''; }
+  if (it) { it.status = 'In Planning'; it.planDate = planDate; it.stageAt = ''; }
   boardSaveLocal();
   boardRender();
-  showToast('✅ ' + itemId + ' In Planning me');
-  // background save
-  jsonp(CONFIG.REPAIR_URL, { action: 'markPlanning', itemIds: JSON.stringify([itemId]) }, function (res) {
+  showToast('✅ ' + itemId + ' → ' + planDate);
+  jsonp(CONFIG.REPAIR_URL, { action: 'markPlanning', itemIds: JSON.stringify([itemId]), planDate: planDate }, function (res) {
     if (!res || !res.ok) { showToast('❌ Save fail — refresh karke check karo'); boardLoad(true); }
   }, function () { showToast('❌ Network error — save nahi hua'); boardLoad(true); });
+}
+
+function boardRemovePlan(itemId) {
+  if (!confirm(itemId + ' ko wapas Pending me bhejein?')) return;
+  const it = boardItems.find(x => x.itemId === itemId);
+  if (it) { it.status = 'Received'; it.planDate = ''; it.stageAt = ''; }
+  boardSaveLocal();
+  boardRender();
+  showToast('↩️ ' + itemId + ' wapas Pending me');
+  jsonp(CONFIG.REPAIR_URL, { action: 'removePlanning', itemId: itemId }, function (res) {
+    if (!res || !res.ok) { showToast('❌ Remove fail — refresh karo'); boardLoad(true); }
+  }, function () { showToast('❌ Network error'); boardLoad(true); });
 }
 
 function boardSetStage(itemId, stage) {
