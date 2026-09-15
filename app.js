@@ -1262,6 +1262,7 @@ function boardLoad(force) {
     document.getElementById('boardPlanning').innerHTML = '<div class="skeleton sk-card"></div><div class="skeleton sk-card"></div>';
     document.getElementById('boardActive').innerHTML = '';
   }
+  }
   jsonp(CONFIG.REPAIR_URL, { action: 'getAll' }, function (r) {
     const repairs = (r && r.repairs) || [];
     const items   = (r && r.items) || [];
@@ -1285,7 +1286,7 @@ function boardLoad(force) {
     cacheSet('board_items', boardItems);
     boardRender();
   }, function () {
-    document.getElementById('boardPlanning').innerHTML = '<div class="no-results">Data load nahi hua ❌</div>';
+    document.getElementById('boardPending').innerHTML = '<div class="no-results">Data load nahi hua ❌</div>';
   });
 }
 
