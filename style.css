@@ -500,6 +500,15 @@ body:not(.has-sidebar) .header{display:none;}
 .bc-remove { background:#fff0ec; border:none; color:#c0392b; width:24px; height:24px; border-radius:6px; font-size:13px; cursor:pointer; font-weight:600; }
 .bc-remove:hover { background:#ffd9cf; }
 .bc-plandate { font-size:12px; font-weight:600; color:var(--blue); background:#e8f0fe; display:inline-block; padding:2px 8px; border-radius:6px; margin-bottom:8px; }
+/* multi-select dropdown */
+.ms-wrap { max-width:520px; }
+.ms-head { display:flex; align-items:center; justify-content:space-between; padding:11px 14px; border:1.5px solid var(--border); border-radius:8px; background:var(--surface2); font-size:14px; color:var(--text2); cursor:pointer; }
+.ms-head:hover { border-color:var(--blue); }
+.ms-list { border:1.5px solid var(--border); border-radius:8px; margin-top:6px; max-height:260px; overflow-y:auto; background:#fff; padding:4px; }
+.ms-opt { display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:6px; cursor:pointer; font-size:13px; }
+.ms-opt:hover { background:var(--surface3); }
+.ms-chk { width:16px; height:16px; accent-color:var(--blue); cursor:pointer; flex-shrink:0; }
+.ms-txt { color:var(--text); }
 
 /* Repair/Receive full-page fix — Records se aane par narrow na dikhe */
 @media(min-width:901px){
