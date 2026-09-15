@@ -960,7 +960,7 @@ function recSwitchTab(tab) {
   const tb = document.getElementById('recTab-' + tab); if (tb) tb.classList.add('active');
   document.getElementById('recRepairPane').style.display = tab === 'repair' ? 'block' : 'none';
   document.getElementById('recEnqPane').style.display = tab === 'enquiry' ? 'block' : 'none';
-  if (tab === 'repair') recRepLoad(false); else recEnqLoad(false);
+  if (tab === 'repair') recRepLoad(true); else recEnqLoad(true);
 }
 
 /* ---------- REPAIRS records ---------- */
