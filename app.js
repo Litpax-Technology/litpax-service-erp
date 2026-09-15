@@ -66,10 +66,12 @@ const HEADERS = {
   dashboard: ['Dashboard', 'Aaj ka overview'],
   repair:   ['Service Management', 'Battery / Charger — Receive & Dispatch'],
   enquiry:  ['Enquiry Management', 'Customer Enquiry — Log & Track'],
-  records:  ['Records', 'Saari entries — dekho aur action lo']
+  records:  ['Records', 'Saari entries — dekho aur action lo'],
+  board:    ['Repair Board', 'Item-wise repair stage tracking']
 };
 const NAV_ITEMS = [
   { key: 'records',   icon: '📁', label: 'Records',   mod: 'records' },
+  { key: 'board',     icon: '🔧', label: 'Repair Board', mod: 'board' },
   { key: 'repair',    icon: '🛠️', label: 'Repair',    mod: 'repair' },
   { key: 'enquiry',   icon: '📞', label: 'Enquiry',   mod: 'enquiry' }
 ];
@@ -88,14 +90,14 @@ function roleCan(mod) { const r = CONFIG.ROLES[currentRole()]; return r && r.mod
 
 function buildSidebar() {
   const nav = document.getElementById('sbNav');
-  nav.innerHTML = NAV_ITEMS.filter(it => it.mod === null || (it.mod === 'records' ? recCanAny() : roleCan(it.mod))).map(it =>
+  nav.innerHTML = NAV_ITEMS.filter(it => it.mod === null || (it.mod === 'records' ? recCanAny() : (it.mod === 'board' ? roleCan('repair') : roleCan(it.mod)))).map(it =>
     '<button class="sb-item" data-nav="' + it.key + '" onclick="navGo(\'' + it.key + '\')"><span class="sb-ico">' + it.icon + '</span>' + it.label + '</button>'
   ).join('');
 }
 function setActiveNav(key) {
   document.querySelectorAll('.sb-item').forEach(b => b.classList.toggle('active', b.getAttribute('data-nav') === key));
 }
-function navGo(key) { if (key === 'records') openRecords(); else openModule(key); toggleSidebar(false); }
+function navGo(key) { if (key === 'records') openRecords(); else if (key === 'board') openBoard(); else openModule(key); toggleSidebar(false); }
 function toggleSidebar(force) {
   const sb = document.getElementById('sidebar'), ov = document.getElementById('sbOverlay');
   const open = (typeof force === 'boolean') ? force : !sb.classList.contains('open');
@@ -1216,3 +1218,99 @@ function recEnqNew() {
 /* ---------- shared drawer ---------- */
 function recOpenDrawer() { document.getElementById('recDrawer').classList.add('open'); document.getElementById('recDrawerOv').classList.add('show'); }
 function recCloseDrawer() { document.getElementById('recDrawer').classList.remove('open'); document.getElementById('recDrawerOv').classList.remove('show'); }
+
+/* ============================================================
+   REPAIR BOARD — item-wise stage tracking
+   ============================================================ */
+let boardItems = [];
+const REPAIR_STAGES = (CONFIG.DROPDOWNS && CONFIG.DROPDOWNS.repair && CONFIG.DROPDOWNS.repair.Stages) || [];
+
+function openBoard() { setActiveNav('board'); setHeader('board'); showApp('boardModule'); boardLoad(false); }
+
+function boardLoad(force) {
+  const cached = cacheGet('board_items');
+  if (cached && !force) { boardItems = cached.val || []; boardRender(); if (cached.fresh) return; }
+  else if (!cached) {
+    document.getElementById('boardPlanning').innerHTML = '<div class="skeleton sk-card"></div><div class="skeleton sk-card"></div>';
+    document.getElementById('boardActive').innerHTML = '';
+  }
+  jsonp(CONFIG.REPAIR_URL, { action: 'getAll' }, function (r) {
+    const repairs = (r && r.repairs) || [];
+    const items   = (r && r.items) || [];
+    const pmap = {};
+    repairs.forEach(rp => { pmap[String(rp['Repair ID']).trim()] = rp; });
+    boardItems = items.map(it => {
+      const p = pmap[String(it['Repair ID']).trim()] || {};
+      return {
+        itemId:   it['Item ID'],
+        repairId: it['Repair ID'],
+        itemType: it['Item Type'],
+        model:    it['Model'],
+        serialNo: it['Serial No'],
+        problem:  it['Problem Type'],
+        status:   it['Item Status'],
+        stageAt:  it['Stage Updated At'],
+        customer: p['Customer Name'] || ''
+      };
+    });
+    cacheSet('board_items', boardItems);
+    boardRender();
+  }, function () {
+    document.getElementById('boardPlanning').innerHTML = '<div class="no-results">Data load nahi hua ❌</div>';
+  });
+}
+
+function boardRender() {
+  const planning = boardItems.filter(it => String(it.status).toLowerCase() === 'in planning');
+  const active   = boardItems.filter(it => REPAIR_STAGES.indexOf(it.status) !== -1);
+
+  document.getElementById('planCount').textContent = planning.length;
+  document.getElementById('repairCount').textContent = active.length;
+
+  const pWrap = document.getElementById('boardPlanning');
+  pWrap.innerHTML = planning.length ? planning.map(it =>
+    '<div class="board-card">' +
+    '<div class="bc-top"><span class="bc-id">' + it.itemId + '</span>' +
+      '<span class="bc-rid">' + it.repairId + '</span></div>' +
+    '<div class="bc-cust">' + (it.customer || '—') + '</div>' +
+    '<div class="bc-meta">' + (String(it.itemType).toLowerCase().indexOf('charg') !== -1 ? '⚡' : '🔋') + ' ' +
+      (it.itemType || '') + (it.model ? ' · ' + it.model : '') + (it.serialNo ? ' · ' + it.serialNo : '') + '</div>' +
+    '<div class="bc-prob">' + (it.problem || '') + '</div>' +
+    '<button class="bc-plan-btn" onclick="boardStartPlan(\'' + it.itemId + '\')">▶ Plan me lo</button>' +
+    '</div>'
+  ).join('') : '<div class="no-results">Koi item planning me nahi ✅</div>';
+
+  const aWrap = document.getElementById('boardActive');
+  aWrap.innerHTML = active.length ? active.map(it => {
+    const opts = REPAIR_STAGES.map(s => '<option value="' + s + '"' + (s === it.status ? ' selected' : '') + '>' + s + '</option>').join('');
+    const idx = REPAIR_STAGES.indexOf(it.status);
+    const pct = Math.round(((idx + 1) / REPAIR_STAGES.length) * 100);
+    const last = REPAIR_STAGES.length - 1;
+    return '<div class="board-card active">' +
+      '<div class="bc-top"><span class="bc-id">' + it.itemId + '</span>' +
+        '<span class="bc-rid">' + it.repairId + '</span></div>' +
+      '<div class="bc-cust">' + (it.customer || '—') + '</div>' +
+      '<div class="bc-meta">' + (String(it.itemType).toLowerCase().indexOf('charg') !== -1 ? '⚡' : '🔋') + ' ' +
+        (it.itemType || '') + (it.model ? ' · ' + it.model : '') + '</div>' +
+      '<div class="bc-prog"><div class="bc-prog-bar" style="width:' + pct + '%"></div></div>' +
+      '<div class="bc-stage-lbl">Stage ' + (idx + 1) + '/' + REPAIR_STAGES.length + (idx === last ? ' · Ready ✅' : '') + '</div>' +
+      '<select class="bc-stage-sel" onchange="boardSetStage(\'' + it.itemId + '\', this.value)">' + opts + '</select>' +
+      (it.stageAt ? '<div class="bc-at">Updated: ' + it.stageAt + '</div>' : '') +
+    '</div>';
+  }).join('') : '<div class="no-results">Koi item repair me nahi</div>';
+}
+
+function boardStartPlan(itemId) { boardSetStage(itemId, REPAIR_STAGES[0]); }
+
+function boardSetStage(itemId, stage) {
+  const it = boardItems.find(x => x.itemId === itemId);
+  if (it) { it.status = stage; it.stageAt = 'saving...'; }
+  boardRender();
+  jsonp(CONFIG.REPAIR_URL, { action: 'updateStage', itemId: itemId, stage: stage }, function (res) {
+    if (!res || !res.ok) { showToast('❌ Stage update fail' + (res && res.msg ? ' — ' + res.msg : '')); boardLoad(true); return; }
+    sessionStorage.removeItem('board_items');
+    sessionStorage.removeItem('rec_rep_all');
+    showToast('✅ ' + itemId + ' → ' + stage);
+    boardLoad(true);
+  }, function () { showToast('❌ Network error'); boardLoad(true); });
+}
