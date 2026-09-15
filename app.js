@@ -1259,9 +1259,8 @@ function boardLoad(force) {
   const cached = cacheGet('board_items');
   if (cached && !force) { boardItems = cached.val || []; boardRender(); if (cached.fresh) return; }
   else if (!cached) {
-    document.getElementById('boardPlanning').innerHTML = '<div class="skeleton sk-card"></div><div class="skeleton sk-card"></div>';
+    document.getElementById('boardPending').innerHTML = '<div class="skeleton sk-card"></div><div class="skeleton sk-card"></div>';
     document.getElementById('boardActive').innerHTML = '';
-  
   }
   jsonp(CONFIG.REPAIR_URL, { action: 'getAll' }, function (r) {
     const repairs = (r && r.repairs) || [];
