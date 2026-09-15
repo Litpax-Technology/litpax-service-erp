@@ -433,7 +433,9 @@ body:not(.has-sidebar) .header{display:none;}
     max-width:860px;
   }
   /* Records full-width */
-  body.has-sidebar .main:has(#recordsModule.active) > *{
+  /* Records + Board full-width */
+  body.has-sidebar .main:has(#recordsModule.active) > *,
+  body.has-sidebar .main:has(#boardModule.active) > *{
     max-width:none;
   }
 }
