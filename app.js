@@ -1341,10 +1341,10 @@ function boardRender() {
 
   const _set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
 
-  // date filter (active pe) — filter tabhi lagao jab date select ho;
-  // jinki planDate empty hai wo kisi bhi date filter me match nahi karenge
+  // date filter (active pe)
+  // date filter (active pe) — jinki planDate empty hai unhe aaj ki date maano
   const df = (document.getElementById('boardDateFilter') || {}).value || ''; // yyyy-mm-dd
-  if (df) active = active.filter(it => boardNormDate(it.planDate).substring(0, 10) === df.substring(0, 10));
+  if (df) active = active.filter(it => (boardNormDate(it.planDate).substring(0, 10) || todayStr()) === df.substring(0, 10));
 
   _set('pendCount', pending.length);
   _set('repairCount', active.length);
@@ -1401,7 +1401,7 @@ function boardRender() {
       '<div class="bc-stage-lbl">' + stageLbl + '</div>' + sel +
       (it.stageAt ? '<div class="bc-at">Updated: ' + it.stageAt + '</div>' : '') +
     '</div>';
-  }).join('') : '<div class="no-results">' + (df ? 'Is date ka koi item nahi 📅' : 'Koi item planning me nahi') + '</div>';
+  }).join('') : '<div class="no-results">' + (df ? 'Is date ka koi item nahi 📅' : '📅 Upar Plan Date filter me date chuno — us din ke items yahan dikhenge') + '</div>';
 }
 
 // cache ko local boardItems se refresh karo (dobara fetch ke bina)
