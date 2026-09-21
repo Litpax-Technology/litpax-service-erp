@@ -1341,10 +1341,11 @@ function boardRender() {
 
   const _set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
 
-  // date filter (active pe)
-  // date filter (active pe) — jinki planDate empty hai unhe aaj ki date maano
+  // date filter (active pe) — date daalo tabhi us din ke items dikhenge;
+  // filter khaali ho to In-Planning list bhi khaali (date-first view)
   const df = (document.getElementById('boardDateFilter') || {}).value || ''; // yyyy-mm-dd
-  if (df) active = active.filter(it => (boardNormDate(it.planDate).substring(0, 10) || todayStr()) === df.substring(0, 10));
+  if (df) active = active.filter(it => boardNormDate(it.planDate).substring(0, 10) === df.substring(0, 10));
+  else active = [];
 
   _set('pendCount', pending.length);
   _set('repairCount', active.length);
