@@ -329,7 +329,7 @@ function repLoadData(force, cb) {
 function repShowReceive() {
   repShowScreen('repReceiveScreen');
   document.getElementById('repairIdDisplay').textContent = '...';
-  repLoadData(false, function () {
+  repLoadData(true, function () {   // force=true — Sr No hamesha sheet se fresh, cache se nahi
     repRepairId = 'LTX-R-' + String(repNextSrNo).padStart(3, '0');
     document.getElementById('r_srNo').value = repNextSrNo;
     document.getElementById('repairIdDisplay').textContent = repRepairId;
