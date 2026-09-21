@@ -85,7 +85,7 @@ function showApp(id) {
   document.getElementById(id).classList.add('active');
   window.scrollTo(0, 0);
 }
-function currentRole() { return sessionStorage.getItem('hub_role') || ''; }
+function currentRole() { return localStorage.getItem('hub_role') || ''; }
 function roleCan(mod) { const r = CONFIG.ROLES[currentRole()]; return r && r.modules.indexOf(mod) !== -1; }
 
 function buildSidebar() {
@@ -152,7 +152,7 @@ function authLogin() {
       showToast('❌ ' + ((res && res.msg) || 'Galat username ya PIN'));
       return;
     }
-    sessionStorage.setItem('hub_role', res.role);
+    localStorage.setItem('hub_role', res.role);
     enterApp(res.role);
   }, function () {
     if (btn) { btn.disabled = false; btn.textContent = oldTxt; }
@@ -169,7 +169,7 @@ function enterApp(role) {
   openRecords();
 }
 
-function logout() { sessionStorage.removeItem('hub_role'); toggleSidebar(false); showLogin(); }
+function logout() { localStorage.removeItem('hub_role'); toggleSidebar(false); showLogin(); }
 
 /* ============================================================
    DASHBOARD (KPIs + recent lists) — uses existing backends
