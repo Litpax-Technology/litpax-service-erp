@@ -618,7 +618,13 @@ function dispRenderReady() {
   const list = document.getElementById('dReadyList');
   if (!dispReady.length) { list.innerHTML = '<div class="no-results">Koi item "Final QC & Pack" pe nahi ✅ (pehle Repair Board me Final QC tak le jao)</div>'; dispUpdCount(); return; }
 
-  const opts = dispReady.map((r, i) =>
+  const q = (document.getElementById('dReadySearch').value || '').toLowerCase().trim();
+  const filtered = dispReady.filter(r =>
+    !q || (r.itemId + ' ' + r.repairId + ' ' + (r.customer || '') + ' ' + (r.itemType || '') + ' ' + (r.model || '')).toLowerCase().indexOf(q) !== -1);
+
+  if (!filtered.length) { list.innerHTML = '<div class="no-results">Kuch nahi mila 🔍</div>'; dispUpdCount(); return; }
+
+  const opts = filtered.map((r, i) =>
     '<option value="' + r.itemId + '"' + (dispSel[r.itemId] ? ' selected' : '') + '>' +
     r.itemId + ' · ' + (r.customer || '') + ' · ' + (r.itemType || '') + (r.model ? ' (' + r.model + ')' : '') +
     '</option>'
@@ -819,21 +825,31 @@ function enqSubmit() {
     'Remarks': document.getElementById('remarks').value
   };
 
-  postNoCors(CONFIG.ENQUIRY_URL, data);
-  sessionStorage.removeItem('enq_open'); // list changed
-  sessionStorage.removeItem('rec_enq_all');
+  jsonp(CONFIG.ENQUIRY_URL, data, function (res) {
+    if (!res || !res.ok) {
+      btn.disabled = false; btn.textContent = 'Submit Entry ✓';
+      showToast('❌ Save nahi hua' + (res && res.msg ? ' — ' + res.msg : '') + '. Dobara try karo');
+      return;
+    }
+    sessionStorage.removeItem('enq_open'); // list changed
+    sessionStorage.removeItem('rec_enq_all');
 
-  document.getElementById('enqFormScreen').style.display = 'none';
-  document.getElementById('enqSuccessScreen').style.display = 'block';
-  document.getElementById('enqSuccessSrNo').textContent = 'Sr. No. — ' + enqNextSrNo;
-  document.getElementById('enqSummaryCard').innerHTML =
-    '<div class="summary-row"><span>Customer</span><span>' + data['Customer Name'] + '</span></div>' +
-    '<div class="summary-row"><span>OEM</span><span>' + data['OEMs'] + '</span></div>' +
-    '<div class="summary-row"><span>Contact</span><span>' + data['Contact'] + '</span></div>' +
-    '<div class="summary-row"><span>Enquiry About</span><span>' + data['Enquiry About'] + '</span></div>' +
-    '<div class="summary-row"><span>Enquiry Closed</span><span>' + data['Enquiry Closed'] + '</span></div>' +
-    '<div class="summary-row"><span>Attended By</span><span>' + data['Attended By'] + '</span></div>';
-  window.scrollTo(0, 0);
+    const savedSrNo = res.srNo || enqNextSrNo;
+    document.getElementById('enqFormScreen').style.display = 'none';
+    document.getElementById('enqSuccessScreen').style.display = 'block';
+    document.getElementById('enqSuccessSrNo').textContent = 'Sr. No. — ' + savedSrNo;
+    document.getElementById('enqSummaryCard').innerHTML =
+      '<div class="summary-row"><span>Customer</span><span>' + data['Customer Name'] + '</span></div>' +
+      '<div class="summary-row"><span>OEM</span><span>' + data['OEMs'] + '</span></div>' +
+      '<div class="summary-row"><span>Contact</span><span>' + data['Contact'] + '</span></div>' +
+      '<div class="summary-row"><span>Enquiry About</span><span>' + data['Enquiry About'] + '</span></div>' +
+      '<div class="summary-row"><span>Enquiry Closed</span><span>' + data['Enquiry Closed'] + '</span></div>' +
+      '<div class="summary-row"><span>Attended By</span><span>' + data['Attended By'] + '</span></div>';
+    window.scrollTo(0, 0);
+  }, function () {
+    btn.disabled = false; btn.textContent = 'Submit Entry ✓';
+    showToast('❌ Network error — save confirm nahi hua, dobara try karo');
+  });
 }
 
 function enqReset() {
@@ -912,15 +928,23 @@ function enqSubmitUpdate() {
   if (!closed) { showToast('⚠️ Enquiry Closed select karo'); return; }
   const btn = document.getElementById('updateBtn'); btn.disabled = true; btn.textContent = '⏳ Updating...';
   const data = { action: 'updateEnquiry', srNo: enqSelected.srNo, enquiryClosed: closed, response: document.getElementById('uResponse').value, remarks: document.getElementById('uRemarks').value };
-  postNoCors(CONFIG.ENQUIRY_URL, data);
-  sessionStorage.removeItem('enq_open');
-  setTimeout(() => {
+  jsonp(CONFIG.ENQUIRY_URL, data, function (res) {
+    if (!res || !res.ok) {
+      btn.disabled = false; btn.textContent = '✅ Update Karo';
+      showToast('❌ Update nahi hua' + (res && res.msg ? ' — ' + res.msg : '') + '. Dobara try karo');
+      return;
+    }
+    sessionStorage.removeItem('enq_open');
+    sessionStorage.removeItem('rec_enq_all');
     document.getElementById('enqUpdateFormScreen').style.display = 'none';
     document.getElementById('enqUpdateSuccessScreen').style.display = 'block';
     document.getElementById('updateSrNoDisplay').textContent = 'Sr. No. — ' + enqSelected.srNo + ' Updated ✅';
     btn.disabled = false; btn.textContent = '✅ Update Karo';
     window.scrollTo(0, 0);
-  }, 300);
+  }, function () {
+    btn.disabled = false; btn.textContent = '✅ Update Karo';
+    showToast('❌ Network error — update confirm nahi hua');
+  });
 }
 
 /* ============================================================
@@ -1195,7 +1219,7 @@ function recEnqRender() {
   }).join('');
   list.innerHTML =
     '<table class="rec-table"><thead><tr>' +
-    '<th>Item ID</th><th>Repair ID</th><th>Date</th><th>Customer</th><th>Type</th><th>Model</th><th>Serial</th><th>Problem</th><th>Status</th>' +
+    '<th>Sr No</th><th>Date</th><th>Customer</th><th>Contact</th><th>OEM</th><th>Enquiry About</th><th>Status</th>' +
     '</tr></thead><tbody>' + body + '</tbody></table>';
 }
 
