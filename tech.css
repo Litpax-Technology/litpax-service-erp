@@ -1,0 +1,159 @@
+/* ============================================================
+   LITPAX — REPAIR FLOOR (tech.css)
+   Light UI, single accent, large touch targets for shop floor.
+   ============================================================ */
+:root {
+  --accent: #635bff;
+  --accent-dark: #4b45d6;
+  --accent-soft: #eeedff;
+  --ink: #1e1b4b;
+  --bg: #f7f8fc;
+  --surface: #ffffff;
+  --text: #1a1a2e;
+  --muted: #6b7280;
+  --faint: #9ca3af;
+  --line: #e5e7eb;
+  --chip: #f1f2f6;
+  --ok: #16a34a;
+  --ok-soft: #e8f7ee;
+  --bad: #dc2626;
+  --radius: 14px;
+  --shadow: 0 1px 3px rgba(16,24,40,.06), 0 1px 2px rgba(16,24,40,.04);
+  --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 15px; line-height: 1.45; min-height: 100vh;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+}
+button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+
+/* ---------- Header ---------- */
+.top {
+  position: sticky; top: 0; z-index: 10;
+  background: var(--ink); color: #fff;
+  padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 14px;
+  box-shadow: 0 2px 12px rgba(30,27,75,.18);
+}
+.top-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; max-width: 640px; margin: 0 auto; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-mark {
+  width: 36px; height: 36px; border-radius: 10px; background: var(--accent);
+  display: grid; place-items: center; font-weight: 700; font-size: 18px;
+}
+.brand-name { font-weight: 600; font-size: 17px; }
+.brand-date { font-size: 12.5px; color: #c7c9ea; }
+.refresh {
+  width: 44px; height: 44px; border-radius: 12px; background: rgba(255,255,255,.1);
+  color: #fff; font-size: 21px; transition: background .2s;
+}
+.refresh:active { background: rgba(255,255,255,.22); }
+.refresh.spin { animation: spin .8s linear infinite; }
+
+.tally { max-width: 640px; margin: 12px auto 0; }
+.tally-num { font-size: 13px; color: #c7c9ea; margin-bottom: 6px; }
+.tally-num b { color: #fff; font-size: 15px; font-family: var(--mono); }
+.tally-bar { height: 6px; border-radius: 99px; background: rgba(255,255,255,.14); overflow: hidden; }
+.tally-bar i { display: block; height: 100%; width: 0; background: #8b85ff; border-radius: inherit; transition: width .5s ease; }
+
+/* ---------- List ---------- */
+.list { max-width: 640px; margin: 0 auto; padding: 14px 12px; display: flex; flex-direction: column; gap: 12px; }
+
+/* ---------- Repair card ---------- */
+.job { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.job.enter { animation: rise .35s ease both; }
+.job.complete { background: #fbfdfb; border-color: #cfead8; }
+.job-head {
+  width: 100%; min-height: 66px; padding: 14px 16px; text-align: left;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.job-id { font-family: var(--mono); font-weight: 600; font-size: 16px; letter-spacing: .2px; }
+.job-cust { font-size: 13.5px; color: var(--muted); margin-top: 2px; }
+.job-side { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.pill { font-size: 12.5px; font-weight: 600; padding: 4px 10px; border-radius: 99px; background: var(--accent-soft); color: var(--accent-dark); }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.chev {
+  width: 9px; height: 9px; margin-top: -4px;
+  border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg); transition: transform .25s;
+}
+.job.open .chev { transform: rotate(-135deg); margin-top: 4px; }
+.job-bar { height: 3px; background: var(--line); }
+.job-bar i { display: block; height: 100%; background: var(--accent); transition: width .4s ease; }
+.job.complete .job-bar i { background: var(--ok); }
+.job-body { padding: 6px 12px 12px; display: flex; flex-direction: column; gap: 10px; animation: fade .25s ease; }
+
+/* ---------- Item ---------- */
+.item { border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.item-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tag { font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 6px; background: var(--chip); }
+.item-id { font-family: var(--mono); font-size: 13.5px; color: var(--muted); }
+.item-info { font-size: 13.5px; margin-top: 6px; }
+.item-at { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.item-ready { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--ok-soft); color: var(--ok); font-weight: 600; font-size: 13.5px; }
+
+/* ---------- Stage stepper ---------- */
+.stages { list-style: none; margin: 12px 0 0; padding: 0; }
+.st { position: relative; display: grid; grid-template-columns: 28px 1fr; column-gap: 12px; align-items: center; padding: 6px 0; }
+.st:not(:last-child)::after {
+  content: ''; position: absolute; left: 13px; top: 36px; bottom: -8px; width: 2px; background: var(--line);
+}
+.st.done:not(:last-child)::after { background: var(--ok); }
+.dot {
+  position: relative; z-index: 1; width: 28px; height: 28px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 12.5px; font-weight: 600;
+  background: var(--chip); color: var(--muted); border: 2px solid var(--line);
+}
+.st.done .dot { background: var(--ok); border-color: var(--ok); color: #fff; }
+.st.just .dot { animation: pop .35s ease; }
+.st.next .dot { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.st-name { font-size: 14.5px; }
+.st.locked .st-name { color: var(--faint); }
+.st.next .st-name { font-weight: 600; }
+
+.tick {
+  grid-column: 2; margin-top: 8px; width: 100%; min-height: 54px; border-radius: 12px;
+  background: var(--accent); color: #fff; font-weight: 600; font-size: 16px;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  box-shadow: 0 4px 14px rgba(99,91,255,.28); transition: transform .12s, background .2s;
+}
+.tick:active { transform: scale(.98); background: var(--accent-dark); }
+.tick:disabled { opacity: .75; }
+.spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+
+/* ---------- States ---------- */
+.empty { text-align: center; padding: 56px 20px; color: var(--muted); animation: fade .3s ease; }
+.empty-title { font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.retry { margin-top: 16px; padding: 12px 24px; border-radius: 12px; background: var(--accent); color: #fff; font-weight: 600; }
+.sk {
+  height: 76px; border-radius: var(--radius);
+  background: linear-gradient(90deg, #eceef4 0%, #f6f7fb 50%, #eceef4 100%);
+  background-size: 200% 100%; animation: shimmer 1.2s linear infinite;
+}
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 50;
+  transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
+  max-width: calc(100% - 32px); padding: 12px 18px; border-radius: 12px;
+  background: var(--text); color: #fff; font-size: 14px; font-weight: 500;
+  transition: opacity .25s, transform .25s;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.ok { background: var(--ok); }
+.toast.bad { background: var(--bad); }
+
+/* ---------- Animations ---------- */
+@keyframes spin    { to { transform: rotate(360deg); } }
+@keyframes rise    { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes fade    { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop     { 0% { transform: scale(.6); } 70% { transform: scale(1.15); } 100% { transform: scale(1); } }
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
