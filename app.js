@@ -1311,7 +1311,7 @@ function recCloseDrawer() { document.getElementById('recDrawer').classList.remov
 let boardItems = [];
 const REPAIR_STAGES = (CONFIG.DROPDOWNS && CONFIG.DROPDOWNS.repair && CONFIG.DROPDOWNS.repair.Stages) || [];
 
-function openBoard() { setActiveNav('board'); setHeader('board'); showApp('boardModule'); boardLoad(false); }
+function openBoard() { setActiveNav('board'); setHeader('board'); showApp('boardModule'); boardLoad(true); }
 
 function boardLoad(force) {
   const cached = cacheGet('board_items');
@@ -1336,6 +1336,7 @@ function boardLoad(force) {
         problem:  it['Problem Type'],
         status:   it['Item Status'],
         planDate: it['Plan Date'],
+        planned:  it['Planned'] === 'Yes',
         stageAt:  it['Stage Updated At'],
         customer: p['Customer Name'] || ''
       };
@@ -1362,12 +1363,9 @@ function boardNormDate(v) {
 }
 
 function boardRender() {
-  const pending = boardItems.filter(it => {
-    const s = String(it.status).toLowerCase();
-    return s !== 'in planning' && s !== 'dispatched' && REPAIR_STAGES.indexOf(it.status) === -1;
-  });
-  let active = boardItems.filter(it =>
-    String(it.status).toLowerCase() === 'in planning' || REPAIR_STAGES.indexOf(it.status) !== -1);
+  const notDisp = it => String(it.status).toLowerCase() !== 'dispatched';
+  const pending = boardItems.filter(it => notDisp(it) && !it.planned);
+  let active    = boardItems.filter(it => notDisp(it) && it.planned);
 
   const _set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
 
@@ -1412,7 +1410,7 @@ function boardRender() {
   // --- Active cards ---
   const aWrap = document.getElementById('boardActive');
   aWrap.innerHTML = active.length ? active.map(it => {
-    const inPlan = String(it.status).toLowerCase() === 'in planning';
+    const inPlan = REPAIR_STAGES.indexOf(it.status) === -1;   // In Planning / Received = abhi shuru nahi
     const opts = REPAIR_STAGES.map(s => '<option value="' + s + '"' + (s === it.status ? ' selected' : '') + '>' + s + '</option>').join('');
     const idx = REPAIR_STAGES.indexOf(it.status);
     const pct = inPlan ? 0 : Math.round(((idx + 1) / REPAIR_STAGES.length) * 100);
@@ -1464,7 +1462,7 @@ function boardAddSelected() {
   // local update
   ids.forEach(id => {
     const it = boardItems.find(x => x.itemId === id);
-    if (it) { it.status = 'In Planning'; it.planDate = planDate; it.stageAt = ''; }
+    if (it) { if (REPAIR_STAGES.indexOf(it.status) === -1) { it.status = 'In Planning'; it.stageAt = ''; } it.planned = true; it.planDate = planDate; }
   });
   boardMsSel = {};
   boardSaveLocal();
@@ -1479,7 +1477,7 @@ function boardAddSelected() {
 function boardRemovePlan(itemId) {
   if (!confirm(itemId + ' ko wapas Pending me bhejein?')) return;
   const it = boardItems.find(x => x.itemId === itemId);
-  if (it) { it.status = 'Received'; it.planDate = ''; it.stageAt = ''; }
+  if (it) { if (REPAIR_STAGES.indexOf(it.status) === -1) { it.status = 'Received'; it.stageAt = ''; } it.planned = false; it.planDate = ''; }
   boardSaveLocal();
   boardRender();
   showToast('↩️ ' + itemId + ' wapas Pending me');
