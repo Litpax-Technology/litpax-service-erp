@@ -7,6 +7,9 @@
 /* ---------- SHARED: JSONP + POST + TOAST + CACHE ---------- */
 let _jsonpSeq = 0;
 function jsonp(baseUrl, params, onData, onErr) {
+  params = Object.assign({}, params || {});
+  const tk = localStorage.getItem('hub_token');
+  if (tk && params.action !== 'login') params.token = tk;
   const cbName = '__cb' + (++_jsonpSeq) + '_' + Date.now();
   const qs = Object.keys(params || {}).map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k])).join('&');
   const src = baseUrl + '?' + qs + (qs ? '&' : '') + 'callback=' + cbName + '&t=' + Date.now();
@@ -16,10 +19,22 @@ function jsonp(baseUrl, params, onData, onErr) {
   const timer = setTimeout(() => { if (!done) { cleanup(); onErr && onErr('timeout'); } }, CONFIG.JSONP_TIMEOUT_MS);
 
   function cleanup() { done = true; clearTimeout(timer); delete window[cbName]; if (script.parentNode) script.parentNode.removeChild(script); }
-  window[cbName] = function (data) { cleanup(); onData && onData(data); };
+  window[cbName] = function (data) {
+    cleanup();
+    if (data && data.auth === false) { sessionExpired(data.msg); return; }
+    onData && onData(data);
+  };
   script.onerror = function () { if (!done) { cleanup(); onErr && onErr('network'); } };
   script.src = src;
   document.body.appendChild(script);
+}
+
+function sessionExpired(msg) {
+  localStorage.removeItem('hub_role');
+  localStorage.removeItem('hub_token');
+  sessionStorage.clear();
+  showToast('🔒 ' + (msg || 'Session expire — dobara login karo'));
+  showLogin();
 }
 
 function postNoCors(baseUrl, data) {
@@ -118,7 +133,7 @@ function openDashboard() { setActiveNav('dashboard'); setHeader('dashboard'); sh
    ============================================================ */
 function authInit() {
   const role = currentRole();
-  if (role && CONFIG.ROLES[role]) enterApp(role);
+  if (role && CONFIG.ROLES[role] && localStorage.getItem('hub_token')) enterApp(role);
   else showLogin();
 }
 
@@ -152,7 +167,9 @@ function authLogin() {
       showToast('❌ ' + ((res && res.msg) || 'Galat username ya PIN'));
       return;
     }
+    if (!res.token) { showToast('❌ Backend purana hai — naya GAS deploy karo'); return; }
     localStorage.setItem('hub_role', res.role);
+    localStorage.setItem('hub_token', res.token);
     enterApp(res.role);
   }, function () {
     if (btn) { btn.disabled = false; btn.textContent = oldTxt; }
@@ -169,7 +186,13 @@ function enterApp(role) {
   openRecords();
 }
 
-function logout() { localStorage.removeItem('hub_role'); toggleSidebar(false); showLogin(); }
+function logout() {
+  if (localStorage.getItem('hub_token')) jsonp(CONFIG.REPAIR_URL, { action: 'logout' }, () => {}, () => {});
+  localStorage.removeItem('hub_role');
+  localStorage.removeItem('hub_token');
+  sessionStorage.clear();
+  toggleSidebar(false); showLogin();
+}
 
 /* ============================================================
    DASHBOARD (KPIs + recent lists) — uses existing backends
@@ -693,7 +716,8 @@ function dispSubmit() {
     'Transport (Outward)': document.getElementById('d_transportOutward').value,
     'Actual Problem Found': document.getElementById('d_actualProblem').value,
     'Any Cost': document.getElementById('d_anyCost').value,
-    'Dispatch Remarks': document.getElementById('d_remarks').value
+    'Dispatch Remarks': document.getElementById('d_remarks').value,
+    'Dispatch Address': document.getElementById('d_dispatchAddress').value
   };
 
   let pendingCalls = repairIds.length, anyFail = false, completedRepairs = [];
@@ -1023,6 +1047,9 @@ function recRepLoad(force) {
         actualProblem: it['Actual Problem Found'],
         anyCost:       it['Any Cost'],
         itemRemarks:   it['Item Remarks'],
+        dispatchedBy:  it['Dispatched By'],
+        dispatchAddr:  it['Dispatch Address'],
+        dispatchRem:   it['Dispatch Remarks'],
         // parent
         customerName:  p['Customer Name'] || '',
         contactNo:     p['Contact No'] || '',
@@ -1146,6 +1173,9 @@ function recRepOpen(idx) {
     ['Actual Problem Found', r.actualProblem],
     ['Any Cost', r.anyCost],
     ['Transport (Outward)', r.transportOut],
+    ['Dispatched By', r.dispatchedBy],
+    ['Dispatch Address', r.dispatchAddr],
+    ['Dispatch Remarks', r.dispatchRem],
     ['Item Remarks', r.itemRemarks]
   ];
   document.getElementById('recDrawerBody').innerHTML = kv.map(x =>
