@@ -5,7 +5,7 @@
 const CONFIG = {
   // --- Backend URL (ek hi unified GAS — teeno tabs: Repairs, Repair_Items, Service Calls) ---
   // Naya deploy URL sirf yahan daalo; Repair aur Enquiry dono isi ko use karte hain.
-  HUB_URL: 'https://script.google.com/macros/s/AKfycbyP6fpqZiutUozn0wqiRRIsQ7eRrdyvYKyQzMjtc4ztbpWLsko3L9IO3scDuY1fMeDXEg/exec',
+  HUB_URL: 'https://script.google.com/macros/s/AKfycbyVDBiO2sU8oDapLQLxfw9Jm06N6ahpoJ2TP3s0LT_IzHEDA9IK-U6lKvzCOG9TMT0LaA/exec',
   get REPAIR_URL()  { return this.HUB_URL; },
   get ENQUIRY_URL() { return this.HUB_URL; },
 
