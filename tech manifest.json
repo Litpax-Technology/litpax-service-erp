@@ -1,0 +1,11 @@
+{
+  "id": "tech.html",
+  "name": "Litpax Repair Floor",
+  "short_name": "Repair Floor",
+  "start_url": "tech.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7f8fc",
+  "theme_color": "#1e1b4b",
+  "icons": []
+}
