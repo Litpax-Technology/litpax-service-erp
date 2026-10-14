@@ -3,466 +3,148 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Litpax — Service Hub</title>
-<meta name="theme-color" content="#0d1526">
-<link rel="manifest" href="manifest.json">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<title>Litpax Service Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<!-- ============ SIDEBAR ============ -->
-<aside class="sidebar" id="sidebar">
-  <div class="sb-brand">
-    <div class="sb-logo">L</div>
-    <div><div class="sb-brand-name">Service Hub</div><div class="sb-brand-sub">Litpax Technology</div></div>
-  </div>
-  <nav class="sb-nav" id="sbNav"></nav>
-  <div class="sb-foot">
-    <div class="sb-role" id="sbRole"></div>
-    <button class="sb-logout" onclick="logout()">⎋ Logout</button>
-  </div>
-</aside>
-<div class="sb-overlay" id="sbOverlay" onclick="toggleSidebar(false)"></div>
-
-<div class="header">
-  <div class="header-inner">
-    <button class="sb-toggle" id="sbToggle" onclick="toggleSidebar()" style="display:none">☰</button>
-    <div class="header-text">
-      <h1 id="hdrTitle">Service Hub</h1>
-      <p id="hdrSub">Repair &amp; Enquiry — one place</p>
+<!-- ================= LOGIN ================= -->
+<div id="loginScreen" class="login-screen">
+  <div class="login-card">
+    <div class="brand">
+      <div class="brand-logo">L</div>
+      <div><div class="brand-name">LITPAX</div><div class="brand-sub">Service Hub</div></div>
     </div>
-    <div class="header-date" id="headerDate"></div>
+    <div class="fg"><label>Username</label><input id="loginUser" autocomplete="username"></div>
+    <div class="fg"><label>PIN</label>
+      <div class="pass-wrap">
+        <input id="loginPass" type="password" inputmode="numeric" autocomplete="current-password" onkeydown="if(event.key==='Enter')authLogin()">
+        <span class="pass-eye" onclick="loginTogglePass(this)">👁</span>
+      </div>
+    </div>
+    <button id="loginBtn" class="btn btn-primary btn-block" onclick="authLogin()">Login</button>
   </div>
 </div>
 
-<div class="main">
-
-  <!-- ============ LOGIN ============ -->
-  <div class="login-screen active" id="loginScreen">
-    <div class="login-card">
-      <!-- Left: brand + workflow + stats -->
-      <div class="login-left">
-        <div class="login-brand">
-          <div class="login-logo">L</div>
-          <div><div class="login-brand-name">Litpax Service Hub</div><div class="login-brand-sub">Service &amp; Repair Suite</div></div>
-        </div>
-        <div class="login-hero">Receive se Dispatch tak,<br>ek jagah.</div>
-        <div class="login-hero-sub">Repair, service aur customer enquiry — sab ek app mein, role ke hisaab se.</div>
-        <div class="login-steps">
-          <div class="login-step"><span class="login-step-num">1</span> Battery / Charger Receive</div>
-          <div class="login-step"><span class="login-step-num">2</span> Repair / Service</div>
-          <div class="login-step"><span class="login-step-num">3</span> Dispatch</div>
-          <div class="login-step"><span class="login-step-num">4</span> Enquiry Log &amp; Track</div>
-          <div class="login-step"><span class="login-step-num">5</span> Resolved / Closed</div>
-        </div>
-        <div class="login-stats">
-          <div class="login-stat"><div class="login-stat-num">3</div><div class="login-stat-lbl">Roles</div></div>
-          <div class="login-stat"><div class="login-stat-num">2</div><div class="login-stat-lbl">Modules</div></div>
-          <div class="login-stat"><div class="login-stat-num">Live</div><div class="login-stat-lbl">Data Sync</div></div>
-        </div>
-      </div>
-      <!-- Right: sign-in form -->
-      <div class="login-right">
-        <div class="login-welcome">Welcome back</div>
-        <div class="login-welcome-sub">Sign in to access Service Hub</div>
-        <div class="login-field">
-          <label>USERNAME</label>
-          <div class="login-input-wrap">
-            <span class="login-input-icon">👤</span>
-            <input type="text" id="loginUser" placeholder="Enter username" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('loginPass').focus()">
-          </div>
-        </div>
-        <div class="login-field">
-          <label>PASSWORD</label>
-          <div class="login-input-wrap">
-            <span class="login-input-icon">🔒</span>
-            <input type="password" id="loginPass" placeholder="Enter password" autocomplete="current-password" onkeydown="if(event.key==='Enter')authLogin()">
-            <span class="login-eye" onclick="loginTogglePass(this)">👁️</span>
-          </div>
-        </div>
-        <button class="login-btn" onclick="authLogin()">Sign In →</button>
-        <div class="login-foot">Role-based Access • Google Sheets • GitHub Hosted</div>
-      </div>
+<!-- ================= APP ================= -->
+<div id="appWrap" class="app-wrap" style="display:none">
+  <aside id="sidebar" class="sidebar">
+    <div class="brand sb-brand">
+      <div class="brand-logo">L</div>
+      <div><div class="brand-name">LITPAX</div><div class="brand-sub">Service Hub</div></div>
     </div>
-  </div>
+    <div id="sbRole" class="sb-role"></div>
+    <nav id="sbNav" class="sb-nav"></nav>
+    <button class="sb-logout" onclick="logout()">⎋ Logout</button>
+  </aside>
+  <div id="sbOverlay" class="sb-overlay" onclick="toggleSidebar(false)"></div>
 
-  <!-- ============ APP (post-login) ============ -->
-  <div id="appWrap" style="display:none">
+  <main class="main">
+    <header class="topbar">
+      <button class="menu-btn" onclick="toggleSidebar()">☰</button>
+      <div><div id="hdrTitle" class="hdr-title"></div><div id="hdrSub" class="hdr-sub"></div></div>
+    </header>
 
-  <!-- ============ REPAIR MODULE ============ -->
-  <div class="app-screen" id="repairModule">
-
-    <!-- Repair Home -->
-    <div class="screen active" id="repHomeScreen">
-      <div class="home-screen">
-        <div class="home-title">Service Center</div>
-        <div class="home-sub">Battery / Charger receive karo ya dispatch karo</div>
-        <div class="mode-grid">
-          <div class="mode-card receive" onclick="repShowReceive()">
-            <div class="mode-icon">📥</div>
-            <div class="mode-title">Receive Battery</div>
-            <div class="mode-sub">Customer se battery / charger lena hai</div>
-          </div>
-          <div class="mode-card dispatch" onclick="repShowDispatch()">
-            <div class="mode-icon">🚚</div>
-            <div class="mode-title">Dispatch Battery</div>
-            <div class="mode-sub">Repaired battery customer ko deni hai</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Receive -->
-    <div class="screen" id="repReceiveScreen">
-      <div class="screen-header">
-        <button class="back-btn" onclick="repGoHome()">← Back</button>
-        <div><div class="screen-title">📥 Receive Battery</div><div class="screen-sub">Nayi service entry</div></div>
-      </div>
-
-      <div class="steps-nav">
-        <button class="step-btn active" onclick="repGoToStep(1)" id="rStepBtn1"><span class="step-num">1</span> Customer</button>
-        <button class="step-btn" onclick="repGoToStep(2)" id="rStepBtn2"><span class="step-num">2</span> Product</button>
-        <button class="step-btn" onclick="repGoToStep(3)" id="rStepBtn3"><span class="step-num">3</span> Details</button>
-      </div>
-
-      <!-- Step 1 -->
-      <div class="form-section active" id="rSection1">
-        <div class="card">
-          <div class="card-label">Repair ID (Auto)</div>
-          <div class="repair-id-box">
-            <div class="repair-id-label">Repair ID</div>
-            <div class="repair-id-value" id="repairIdDisplay">—</div>
-          </div>
-          <input type="hidden" id="r_srNo">
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Receiving Date <span class="req">*</span></label>
-              <input type="date" id="r_receivingDate" required>
-            </div>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-label">Customer Details</div>
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Customer Name <span class="req">*</span></label>
-              <input type="text" id="r_customerName" placeholder="Full name" required>
-            </div>
-            <div class="form-group">
-              <label>Contact No. <span class="req">*</span></label>
-              <input type="tel" id="r_contactNo" placeholder="10-digit mobile" maxlength="10" required>
-            </div>
-            <div class="form-group full">
-              <label>Email</label>
-              <input type="email" id="r_email" placeholder="customer@email.com">
-            </div>
-          </div>
-        </div>
-        <div class="nav-btns"><span></span><button class="btn-next" onclick="repNextStep(1)">Product Details →</button></div>
-      </div>
-
-      <!-- Step 2 -->
-      <div class="form-section" id="rSection2">
-        <div class="card">
-          <div class="card-label">Items — kitne aur kaunse</div>
-          <div class="form-grid">
-            <div class="form-group"><label>🔋 Battery Qty</label><input type="number" id="r_batteryReceivedQty" placeholder="0" min="0" value="0" oninput="repBuildItems()"></div>
-            <div class="form-group"><label>⚡ Charger Qty</label><input type="number" id="r_chargerReceivedQty" placeholder="0" min="0" value="0" oninput="repBuildItems()"></div>
-          </div>
-          <div class="items-hint">Qty daalte hi neeche har item ka apna card khulega — model, serial, problem, warranty, transport sab alag-alag bhar sakte ho. Pehla card bhar ke <b>“⬇ Copy to all”</b> se baaki me copy kar do.</div>
-          <input type="hidden" id="r_category" value="">
-        </div>
-
-        <div id="itemsWrap"></div>
-
-        <div class="card">
-          <div class="card-label">Received Mode (common)</div>
-          <div class="form-group"><select id="r_receivedMode" data-cfg="ReceivedMode"><option value="">-- Select --</option></select></div>
-        </div>
-
-        <div class="nav-btns"><button class="btn-back-nav" onclick="repPrevStep(2)">← Back</button><button class="btn-next" onclick="repNextStep(2)">More Details →</button></div>
-      </div>
-
-      <!-- Step 3 -->
-      <div class="form-section" id="rSection3">
-        <div class="card">
-          <div class="card-label">Staff &amp; Handover (common)</div>
-          <div class="form-grid">
-            <div class="form-group"><label>Received By <span class="req">*</span></label><input type="text" id="r_receivedBy" placeholder="Staff name" required></div>
-            <div class="form-group"><label>Accepted By</label><input type="text" id="r_acceptedBy" placeholder="Manager name"></div>
-            <div class="form-group"><label>Estimated Dispatch Date</label><input type="date" id="r_estimatedDispatchDate"></div>
-            <div class="form-group full"><label>Receiving Remarks</label><textarea id="r_remarks" placeholder="Additional info..."></textarea></div>
-          </div>
-        </div>
-        <div class="nav-btns"><button class="btn-back-nav" onclick="repPrevStep(3)">← Back</button><button class="btn-submit-receive" onclick="repSubmitReceive()">Submit Entry ✓</button></div>
-      </div>
-
-      <!-- Receive Success -->
-      <div class="success-screen" id="repReceiveSuccess">
-        <div style="background:white;border-radius:12px;border:1px solid #dde1f0;padding:24px;margin-bottom:16px;">
-          <div class="receipt-header">
-            <div><div class="receipt-logo">LITPAX</div><div class="receipt-title">Battery / Charger Service Center</div></div>
-            <div style="text-align:right;"><div style="font-size:11px;color:#5a6080;">Service Receipt</div><div id="receiptDate" style="font-size:11px;color:#8890b0;"></div></div>
-          </div>
-          <div style="background:#e8f0fe;border-radius:6px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;">
-            <span style="font-size:11px;color:#1a5fd8;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Repair ID</span>
-            <span id="successReceiveId" style="font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:700;color:#1a5fd8;"></span>
-          </div>
-          <div id="receiveSummary"></div>
-          <div class="receipt-footer"><span>Litpax Technology — Service Management System</span><span id="receiptFooterDate"></span></div>
-        </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          <button class="btn-pdf" onclick="repPrint()">🖨️ Print / Save PDF</button>
-          <button class="btn-home" onclick="repGoHome()">🏠 Home</button>
-          <button class="btn-new-entry" onclick="repResetReceive()">+ New Entry</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Dispatch (item-level, sirf Final QC & Pack ready items) -->
-    <div class="screen" id="repDispatchScreen">
-      <div class="screen-header">
-        <button class="back-btn" onclick="repGoHome()">← Back</button>
-        <div><div class="screen-title">🚚 Dispatch Battery</div><div class="screen-sub">Sirf "Final QC & Pack" ready items</div></div>
-      </div>
-
-      <div class="form-section active" id="dSection1">
-        <div class="card">
-          <div class="card-label">Ready Items (Final QC & Pack)</div>
-          <div id="dReadyContainer">
-            <div class="list-search"><span>🔍</span><input type="text" id="dReadySearch" placeholder="Item ID, Repair ID ya customer search..." oninput="dispRenderReady()"></div>
-            <div id="dReadySkeleton" style="display:none;">
-              <div class="skeleton sk-card"></div><div class="skeleton sk-card"></div>
-            </div>
-            <div class="error-box" id="dErrorBox">Data load nahi ho paya.</div>
-            <div class="pick-list" id="dReadyList"></div>
-          </div>
-        </div>
-        <div class="nav-btns"><span></span><button class="btn-next" onclick="dispGoStep2()" id="dNextBtn" disabled style="opacity:.5">Dispatch Details → (<span id="dSelCount">0</span>)</button></div>
-      </div>
-
-      <div class="form-section" id="dSection2">
-        <div class="card">
-          <div class="card-label">Selected Items</div>
-          <div id="dSelectedSummary"></div>
-        </div>
-        <div class="card">
-          <div class="card-label">Dispatch Details (common)</div>
-          <div class="form-grid">
-            <div class="form-group"><label>Dispatch Date <span class="req">*</span></label><input type="date" id="d_dispatchDate" required></div>
-            <div class="form-group"><label>Dispatched By <span class="req">*</span></label><input type="text" id="d_dispatchedBy" placeholder="Staff name" required></div>
-            <div class="form-group full"><label>Transport Details (Outward)</label><input type="text" id="d_transportOutward" placeholder="e.g. DTDC Tracking No. 789012"></div>
-            <div class="form-group full"><label>Dispatch Address</label><textarea id="d_dispatchAddress" placeholder="Customer delivery address..."></textarea></div>
-            <div class="form-group"><label>Any Cost / Repair Cost</label><input type="text" id="d_anyCost" placeholder="e.g. ₹500"></div>
-            <div class="form-group full"><label>Actual Problem Found</label><select id="d_actualProblem" data-cfg="ActualProblem"><option value="">-- Select --</option></select></div>
-            <div class="form-group full"><label>Dispatch Remarks</label><textarea id="d_remarks" placeholder="Additional info..."></textarea></div>
-          </div>
-        </div>
-        <div class="nav-btns"><button class="btn-back-nav" onclick="dispBackStep1()">← Back</button><button class="btn-submit-dispatch" onclick="dispSubmit()">Dispatch Karo 🚚</button></div>
-      </div>
-
-      <div class="success-screen" id="repDispatchSuccess">
-        <div class="success-icon dispatch">🚚</div>
-        <h2>Dispatched!</h2>
-        <p>Sheet mein record update ho gaya:</p>
-        <div class="big-id dispatch" id="successDispatchId"></div>
-        <p class="id-note" id="dispatchCompleteNote"></p>
-        <div class="card" style="text-align:left;margin-bottom:20px;" id="dispatchSummary"></div>
-        <button class="btn-pdf" onclick="repPrint()">🖨️ Print / Save PDF</button>
-        <button class="btn-home" onclick="repGoHome()">🏠 Home</button>
-        <button class="btn-new-entry" onclick="dispReset()">+ Aur Dispatch</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ============ ENQUIRY MODULE ============ -->
-  <div class="app-screen" id="enquiryModule">
-    <div class="tabs">
-      <button class="tab-btn active" id="tab-new" onclick="enqSwitchTab('new')">📋 New Enquiry</button>
-      <button class="tab-btn" id="tab-update" onclick="enqSwitchTab('update')">✏️ Update Enquiry</button>
-    </div>
-
-    <!-- New Enquiry -->
-    <div id="enqFormScreen">
-      <div class="page-title">📋 New Enquiry Entry</div>
-      <div class="page-sub">Customer enquiry ka record darj karo</div>
-
-      <div class="card">
-        <div class="card-label">Entry Info</div>
-        <div class="enquiry-id-box">
-          <div class="enquiry-id-label">Sr. No.</div>
-          <div class="enquiry-id-value" id="srNoDisplay">Loading...</div>
-        </div>
+    <!-- ===== PHASE 1: NEW TICKET ===== -->
+    <section id="scrNew" class="screen">
+      <div id="newForm" class="card form-card">
+        <div class="card-head"><span>📝 Basic Record</span><span class="chip-soft">Ticket ID auto banega</span></div>
         <div class="form-grid">
-          <div class="form-group"><label>Date <span class="req">*</span></label><input type="date" id="entryDate" required></div>
-          <div class="form-group"><label>Attended By <span class="req">*</span></label><select id="attendedBy" data-cfg="AttendedBy" required><option value="">-- Select --</option></select></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-label">Customer Details</div>
-        <div class="form-grid">
-          <div class="form-group"><label>Customer Name <span class="req">*</span></label><input type="text" id="customerName" placeholder="Full name" required></div>
-          <div class="form-group"><label>Contact <span class="req">*</span></label><input type="tel" id="contact" placeholder="Mobile number" required></div>
-          <div class="form-group"><label>OEM's <span class="req">*</span></label><select id="oems" data-cfg="OEM" required><option value="">-- Select OEM --</option></select></div>
-          <div class="form-group"><label>Company Name</label><input type="text" id="companyName" placeholder="Company / Dealer name"></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-label">Enquiry Details</div>
-        <div class="form-grid">
-          <div class="form-group"><label>Enquiry About <span class="req">*</span></label><select id="enquiryAbout" data-cfg="EnquiryAbout" required><option value="">-- Select --</option></select></div>
-          <div class="form-group">
-            <label>Enquiry Closed <span class="req">*</span></label>
-            <div class="tag-group">
-              <div class="tag-opt yes" onclick="selectTag(this,'enquiryClosed','Yes')">✅ Yes</div>
-              <div class="tag-opt no" onclick="selectTag(this,'enquiryClosed','No')">❌ No</div>
+          <div class="fg full"><label>Customer Company Name <b>*</b></label><input id="n_company" maxlength="150" placeholder="e.g. ABC Motors"></div>
+          <div class="fg"><label>Contact Person <b>*</b></label><input id="n_person" maxlength="100"></div>
+          <div class="fg"><label>Phone <b>*</b></label><input id="n_phone" inputmode="numeric" maxlength="10" placeholder="10 digit"></div>
+          <div class="fg full"><label>Scooty Brand <b>*</b></label><input id="n_brand" maxlength="100" placeholder="Kis brand ki scooty use kar rahe hain"></div>
+          <div class="fg full"><label>Battery company ko bhej di hai? <b>*</b></label>
+            <div class="seg" id="n_sentSeg">
+              <button type="button" data-v="Yes" onclick="segPick(this)">🚚 Haan, bhej di</button>
+              <button type="button" data-v="No" onclick="segPick(this)">✋ Nahi</button>
             </div>
-            <input type="hidden" id="enquiryClosed" value="">
           </div>
-          <div class="form-group full"><label>Response <span class="req">*</span></label><select id="response" data-cfg="Response" required><option value="">-- Select Response --</option></select></div>
-          <div class="form-group full"><label>Solution</label><textarea id="solution" placeholder="Problem ka solution kya tha..."></textarea></div>
-          <div class="form-group full"><label>Remarks</label><textarea id="remarks" placeholder="Koi aur information..."></textarea></div>
         </div>
+        <button id="n_submit" class="btn btn-primary btn-block" onclick="ticketCreate()">Ticket Banao ✓</button>
       </div>
 
-      <div class="nav-btns" style="justify-content:flex-end"><button class="btn-submit" onclick="enqSubmit()" id="submitBtn">Submit Entry ✓</button></div>
-    </div>
-
-    <!-- Update Search -->
-    <div id="enqUpdateSearchScreen" style="display:none">
-      <div class="page-title">✏️ Update Enquiry</div>
-      <div class="page-sub">Open enquiries mein se select karo</div>
-      <div class="card">
-        <div class="card-label">Open Enquiries — Select to Update</div>
-        <div class="list-search"><span>🔍</span><input type="text" id="openSearch" placeholder="Sr No ya customer search karo..." oninput="enqFillOpen()"></div>
-        <div id="openSkeleton" style="display:none"><div class="skeleton sk-card"></div><div class="skeleton sk-card"></div></div>
-        <div class="pick-list" id="openList"></div>
-      </div>
-    </div>
-
-    <!-- Update Form -->
-    <div id="enqUpdateFormScreen" style="display:none">
-      <div class="page-title">✏️ Enquiry Update</div>
-      <div class="page-sub">Selected enquiry ki details update karo</div>
-      <div class="card">
-        <div class="update-header">
-          <div class="update-header-title" id="uf-title">Enquiry Details</div>
-          <div class="update-header-sub" id="uf-sub">Read-only info</div>
+      <div id="newSuccess" class="card success-card" style="display:none">
+        <div class="success-ico">✅</div>
+        <div class="success-title">Ticket ban gaya</div>
+        <div id="newId" class="success-id"></div>
+        <div class="success-sub">Service Team ise Tickets list me dekh ke call karegi.</div>
+        <div class="btn-row">
+          <button class="btn btn-ghost" onclick="newReset()">➕ Ek aur ticket</button>
+          <button class="btn btn-primary" id="newOpenBtn" onclick="openTicketFromNew(this.dataset.id)">Ticket kholo →</button>
         </div>
-        <div class="readonly-grid" id="ro-grid"></div>
-        <div class="card-label">Update Fields</div>
+      </div>
+    </section>
+
+    <!-- ===== TICKETS LIST ===== -->
+    <section id="scrTickets" class="screen">
+      <div class="toolbar">
+        <input id="tkSearch" class="search" placeholder="🔍 Ticket ID, company, phone, brand..." oninput="tkRender()">
+        <button class="btn btn-ghost btn-icon" title="Refresh" onclick="tkLoad(true)">↻</button>
+      </div>
+      <div id="tkChips" class="chips"></div>
+      <div id="tkList" class="tk-list"></div>
+    </section>
+
+    <!-- ===== PHASE 3: REPAIR BOARD ===== -->
+    <section id="scrBoard" class="screen">
+      <div class="board-grid">
+        <div class="card">
+          <div class="card-head"><span>⏳ Pending — plan nahi hue <b id="pendCount" class="count">0</b></span>
+            <button class="btn btn-ghost btn-icon" title="Refresh" onclick="boardLoad(true)">↻</button></div>
+          <div id="boardPending"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><span>🔧 Planned <b id="repairCount" class="count">0</b></span>
+            <input type="date" id="boardDateFilter" class="date-sm" onchange="boardRender()" title="Plan date (khaali = sab)"></div>
+          <div id="boardActive" class="board-cards"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== PHASE 3: DISPATCH ===== -->
+    <section id="scrDispatch" class="screen">
+      <div class="card">
+        <div class="card-head"><span>📦 Ready — Final QC &amp; Pack</span>
+          <button class="btn btn-ghost btn-icon" title="Refresh" onclick="dispLoad(true)">↻</button></div>
+        <input id="dSearch" class="search" placeholder="🔍 Item / Ticket / Customer" oninput="dispRender()">
+        <div id="dList" class="d-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span>🚚 Dispatch Details — <b id="dSelCount">0</b> selected</span></div>
         <div class="form-grid">
-          <div class="form-group">
-            <label>Enquiry Closed <span class="req">*</span></label>
-            <div class="tag-group">
-              <div class="tag-opt yes" onclick="selectTag(this,'uEnquiryClosed','Yes')">✅ Yes</div>
-              <div class="tag-opt no" onclick="selectTag(this,'uEnquiryClosed','No')">❌ No</div>
-            </div>
-            <input type="hidden" id="uEnquiryClosed" value="">
-          </div>
-          <div class="form-group"><label>Response</label><select id="uResponse" data-cfg="Response"><option value="">-- Select --</option></select></div>
-          <div class="form-group full"><label>Remarks (add / update)</label><textarea id="uRemarks" placeholder="Koi update ya note..."></textarea></div>
+          <div class="fg"><label>Dispatch Date <b>*</b></label><input type="date" id="d_date"></div>
+          <div class="fg"><label>Dispatched By <b>*</b></label><input id="d_by" maxlength="100"></div>
+          <div class="fg"><label>Transport (Outward)</label><input id="d_transport" maxlength="150" placeholder="Transport / AWB / LR"></div>
+          <div class="fg"><label>Any Cost (₹)</label><input id="d_cost" maxlength="30"></div>
+          <div class="fg full"><label>Actual Problem Found</label><textarea id="d_problem" maxlength="500"></textarea></div>
+          <div class="fg full"><label>Dispatch Address</label><textarea id="d_address" maxlength="300"></textarea></div>
+          <div class="fg full"><label>Remarks</label><input id="d_remarks" maxlength="500"></div>
         </div>
-        <div class="update-btns">
-          <button class="btn-back" onclick="enqBackToSearch()">← Wapas</button>
-          <button class="btn-update" id="updateBtn" onclick="enqSubmitUpdate()">✅ Update Karo</button>
-        </div>
+        <button id="dSubmit" class="btn btn-primary btn-block" onclick="dispSubmit()">Dispatch Karo 🚚</button>
       </div>
-    </div>
+    </section>
+  </main>
+</div>
 
-    <!-- Update Success -->
-    <div id="enqUpdateSuccessScreen" style="display:none;text-align:center;padding:56px 20px">
-      <div class="success-icon" style="background:#e8f8f4">✅</div>
-      <h2 style="font-size:22px;font-weight:600;margin-bottom:8px">Updated!</h2>
-      <p style="font-size:14px;color:var(--text2);margin-bottom:20px">Enquiry successfully update ho gayi</p>
-      <div class="big-id" id="updateSrNoDisplay"></div><br>
-      <button class="btn-new" onclick="enqSwitchTab('update')" style="margin-right:10px">🔍 Aur Search Karo</button>
-      <button class="btn-new" onclick="enqSwitchTab('new')">📋 Nayi Entry</button>
-    </div>
+<!-- ================= TICKET DRAWER ================= -->
+<div id="drawerOv" class="drawer-ov" onclick="drawerClose()"></div>
+<aside id="drawer" class="drawer">
+  <div class="drawer-head"><div id="drTitle" class="dr-title"></div><button class="x-btn" onclick="drawerClose()">✕</button></div>
+  <div id="drBody" class="drawer-body"></div>
+</aside>
 
-    <!-- New Success -->
-    <div class="success-screen" id="enqSuccessScreen">
-      <div class="success-icon">📋</div>
-      <h2>Enquiry Logged!</h2>
-      <p>Entry successfully save ho gayi</p>
-      <div class="big-id" id="enqSuccessSrNo"></div>
-      <div class="card" style="text-align:left;margin-bottom:0" id="enqSummaryCard"></div>
-      <button class="btn-new" onclick="enqReset()" style="margin-top:20px">+ Nayi Entry</button>
-    </div>
+<!-- ================= MODAL ================= -->
+<div id="modalOv" class="modal-ov" onclick="if(event.target===this)modalClose()">
+  <div class="modal">
+    <div class="modal-head"><span id="mdTitle"></span><button class="x-btn" onclick="modalClose()">✕</button></div>
+    <div id="mdBody" class="modal-body"></div>
   </div>
+</div>
 
-  <!-- ============ RECORDS MODULE ============ -->
-  <div class="app-screen" id="recordsModule">
-    <div class="tabs" id="recTabs"></div>
-
-    <!-- Repairs records -->
-    <div id="recRepairPane">
-      <div class="rec-toolbar">
-        <div class="list-search"><span>🔍</span><input type="text" id="recRepSearch" placeholder="Repair ID, customer, contact..." oninput="recRepRender()"></div>
-        <button class="btn-search" onclick="recRepNew()">+ New Receive</button>
-      </div>
-      <div class="rec-filters" id="recRepFilters">
-        <button class="rec-chip active" onclick="recRepFilter(this,'all')">All</button>
-        <button class="rec-chip" onclick="recRepFilter(this,'pending')">Pending</button>
-        <button class="rec-chip" onclick="recRepFilter(this,'dispatched')">Dispatched</button>
-      </div>
-      <div id="recRepSkeleton" style="display:none;"><div class="skeleton sk-card"></div><div class="skeleton sk-card"></div><div class="skeleton sk-card"></div></div>
-      <div class="rec-table-wrap" id="recRepList"></div>
-    </div>
-
-    <!-- Enquiries records -->
-    <div id="recEnqPane" style="display:none;">
-      <div class="rec-toolbar">
-        <div class="list-search"><span>🔍</span><input type="text" id="recEnqSearch" placeholder="Sr No, customer, contact..." oninput="recEnqRender()"></div>
-        <button class="btn-search" onclick="recEnqNew()">+ New Enquiry</button>
-      </div>
-      <div class="rec-filters" id="recEnqFilters">
-        <button class="rec-chip active" onclick="recEnqFilter(this,'all')">All</button>
-        <button class="rec-chip" onclick="recEnqFilter(this,'open')">Open</button>
-        <button class="rec-chip" onclick="recEnqFilter(this,'closed')">Closed</button>
-      </div>
-      <div id="recEnqSkeleton" style="display:none;"><div class="skeleton sk-card"></div><div class="skeleton sk-card"></div></div>
-      <div class="rec-table-wrap" id="recEnqList"></div>
-    </div>
-
-    <!-- Detail drawer -->
-    <div class="rec-drawer-overlay" id="recDrawerOv" onclick="recCloseDrawer()"></div>
-    <div class="rec-drawer" id="recDrawer">
-      <div class="rec-drawer-head">
-        <div class="rec-drawer-title" id="recDrawerTitle">Detail</div>
-        <button class="rec-drawer-close" onclick="recCloseDrawer()">✕</button>
-      </div>
-      <div class="rec-drawer-body" id="recDrawerBody"></div>
-      <div class="rec-drawer-foot" id="recDrawerFoot"></div>
-    </div>
-  </div>
-
-  <!-- ============ REPAIR BOARD ============ -->
-  <div class="app-screen" id="boardModule">
-    <div class="board-sec">
-      <div class="board-sec-head">📥 Pending <span class="board-count" id="pendCount">0</span></div>
-      <div class="board-sec-sub">Item chuno + kis din repair karni hai (Plan Date), phir "In Planning" me daalo</div>
-      <div id="boardPending" class="board-grid"></div>
-    </div>
-    <div class="board-sec">
-      <div class="board-sec-head">🔧 In Planning / Under Repair <span class="board-count" id="repairCount">0</span></div>
-      <div class="board-sec-sub">Stage dropdown se aage badhao</div>
-      <div class="board-filter">
-        <label>📅 Plan Date filter:</label>
-        <input type="date" id="boardDateFilter" onchange="boardRender()">
-        <button class="board-filter-clear" onclick="document.getElementById('boardDateFilter').value='';boardRender()">Clear</button>
-      </div>
-      <div id="boardActive" class="board-grid"></div>
-    </div>
-  </div>
-
-  </div><!-- /appWrap -->
-</div><!-- /main -->
-
-<div class="toast" id="toast"></div>
+<div id="toast" class="toast"></div>
 
 <script src="config.js"></script>
 <script src="app.js"></script>
