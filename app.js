@@ -29,7 +29,7 @@ function api(params) { return new Promise((res, rej) => jsonp(params, res, rej))
 // button busy + error toast; success pe response, warna null
 async function run(params, btn) {
   let old = '';
-  if (btn) { old = btn.textContent; btn.disabled = true; btn.textContent = '⏳ ...'; }
+  if (btn) { old = btn.innerHTML; btn.disabled = true; btn.textContent = '⏳ ...'; }
   try {
     const r = await api(params);
     if (!r || !r.ok) { toast('❌ ' + ((r && r.msg) || 'Fail ho gaya')); return null; }
@@ -38,7 +38,7 @@ async function run(params, btn) {
     if (e !== 'auth') toast('❌ Network error — dobara try karo');
     return null;
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = old; }
+    if (btn) { btn.disabled = false; btn.innerHTML = old; }
   }
 }
 
@@ -118,9 +118,16 @@ function sessionExpired(msg) { clearSession(); toast('🔒 ' + (msg || 'Session 
 
 function showLogin() {
   $('loginScreen').style.display = 'flex'; $('appWrap').style.display = 'none';
-  drawerClose(); modalClose(); $('loginUser').value = ''; $('loginPass').value = '';
+  drawerClose(); modalClose();
+  const h = new Date().getHours();
+  $('loginHello').textContent = h < 12 ? 'Good morning 👋' : (h < 17 ? 'Good afternoon 👋' : 'Good evening 👋');
+  const saved = localStorage.getItem('hub_remember_user') || '';
+  $('loginUser').value = saved; $('rememberUser').checked = !!saved;
+  $('loginPass').value = ''; $('loginPass').type = 'password'; $('capsWarn').style.display = 'none';
+  setTimeout(() => (saved ? $('loginPass') : $('loginUser')).focus(), 50);
 }
 function loginTogglePass(el) { const p = $('loginPass'); p.type = p.type === 'password' ? 'text' : 'password'; el.style.opacity = p.type === 'text' ? '1' : '.5'; }
+function capsCheck(e) { if (e.getModifierState) $('capsWarn').style.display = e.getModifierState('CapsLock') ? 'block' : 'none'; }
 
 async function authLogin() {
   const u = $('loginUser').value.trim().toLowerCase(), p = $('loginPass').value.trim();
@@ -129,6 +136,7 @@ async function authLogin() {
   if (!r) return;
   if (!CONFIG.ROLES[r.role]) return toast('❌ Role config.js me nahi hai: ' + r.role);
   localStorage.setItem('hub_role', r.role); localStorage.setItem('hub_token', r.token); localStorage.setItem('hub_user', u);
+  if ($('rememberUser').checked) localStorage.setItem('hub_remember_user', u); else localStorage.removeItem('hub_remember_user');
   enterApp(r.role);
 }
 
