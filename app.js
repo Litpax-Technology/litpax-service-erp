@@ -1,6 +1,6 @@
 /* ============================================================
    LITPAX SERVICE HUB v2 — app.js
-   Ek Ticket ID → Phase 1 (Basic) → Phase 2 (Service/CRM) → Phase 3 (Repair)
+   One Ticket ID → Phase 1 (Basic) → Phase 2 (Service/CRM) → Phase 3 (Repair)
    ============================================================ */
 
 /* ---------- CORE: JSONP / API ---------- */
@@ -26,16 +26,16 @@ function jsonp(params, onData, onErr) {
 }
 function api(params) { return new Promise((res, rej) => jsonp(params, res, rej)); }
 
-// button busy + error toast; success pe response, warna null
+// button busy state + error toast; returns the response on success, otherwise null
 async function run(params, btn) {
   let old = '';
   if (btn) { old = btn.innerHTML; btn.disabled = true; btn.textContent = '⏳ ...'; }
   try {
     const r = await api(params);
-    if (!r || !r.ok) { toast('❌ ' + ((r && r.msg) || 'Fail ho gaya')); return null; }
+    if (!r || !r.ok) { toast('❌ ' + ((r && r.msg) || 'Something went wrong')); return null; }
     return r;
   } catch (e) {
-    if (e !== 'auth') toast('❌ Network error — dobara try karo');
+    if (e !== 'auth') toast('❌ Network error — please try again');
     return null;
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = old; }
@@ -79,10 +79,10 @@ function pill(s) { return '<span class="pill pill-' + (STATUS_TONE[s] || 'blue')
 
 /* ---------- SCREENS / NAV ---------- */
 const SCREENS = {
-  newTicket: { id: 'scrNew',      icon: '➕', label: 'New Ticket',   title: 'Naya Ticket',  sub: 'Phase 1 — call / walk-in ka basic record', open: openNew },
-  tickets:   { id: 'scrTickets',  icon: '📋', label: 'Tickets',      title: 'Tickets',      sub: 'Saare tickets — status, call log, action', open: openTickets },
-  board:     { id: 'scrBoard',    icon: '🔧', label: 'Repair Board', title: 'Repair Board', sub: 'Phase 3 — item-wise planning aur stages', open: openBoard },
-  dispatch:  { id: 'scrDispatch', icon: '🚚', label: 'Dispatch',     title: 'Dispatch',     sub: 'Final QC & Pack wale items bhejo', open: openDispatch }
+  newTicket: { id: 'scrNew',      icon: '➕', label: 'New Ticket',   title: 'New Ticket',   sub: 'Phase 1 — basic record for a call or walk-in', open: openNew },
+  tickets:   { id: 'scrTickets',  icon: '📋', label: 'Tickets',      title: 'Tickets',      sub: 'All tickets — status, call log and actions', open: openTickets },
+  board:     { id: 'scrBoard',    icon: '🔧', label: 'Repair Board', title: 'Repair Board', sub: 'Phase 3 — item-wise planning and stages', open: openBoard },
+  dispatch:  { id: 'scrDispatch', icon: '🚚', label: 'Dispatch',     title: 'Dispatch',     sub: 'Send out items that passed Final QC & Pack', open: openDispatch }
 };
 let CURRENT = '';
 
@@ -114,7 +114,7 @@ function clearSession() {
   ['hub_role', 'hub_token', 'hub_user'].forEach(k => localStorage.removeItem(k));
   try { sessionStorage.clear(); } catch (e) {}
 }
-function sessionExpired(msg) { clearSession(); toast('🔒 ' + (msg || 'Session expire — dobara login karo')); showLogin(); }
+function sessionExpired(msg) { clearSession(); toast('🔒 ' + (msg || 'Session expired — please sign in again')); showLogin(); }
 
 function showLogin() {
   $('loginScreen').style.display = 'flex'; $('appWrap').style.display = 'none';
@@ -131,10 +131,10 @@ function capsCheck(e) { if (e.getModifierState) $('capsWarn').style.display = e.
 
 async function authLogin() {
   const u = $('loginUser').value.trim().toLowerCase(), p = $('loginPass').value.trim();
-  if (!u || !p) return toast('⚠️ Username aur PIN bharein');
+  if (!u || !p) return toast('⚠️ Enter username and PIN');
   const r = await run({ action: 'login', username: u, pin: p }, $('loginBtn'));
   if (!r) return;
-  if (!CONFIG.ROLES[r.role]) return toast('❌ Role config.js me nahi hai: ' + r.role);
+  if (!CONFIG.ROLES[r.role]) return toast('❌ Role not found in config.js: ' + r.role);
   localStorage.setItem('hub_role', r.role); localStorage.setItem('hub_token', r.token); localStorage.setItem('hub_user', u);
   if ($('rememberUser').checked) localStorage.setItem('hub_remember_user', u); else localStorage.removeItem('hub_remember_user');
   enterApp(r.role);
@@ -155,7 +155,7 @@ function logout() {
   clearSession(); toggleSidebar(false); showLogin();
 }
 
-// kisi bhi change ke baad stale data hatao
+// clear stale cached data after any change
 function afterChange() {
   ['tickets', 'board_items'].forEach(cacheDel);
   if (CURRENT === 'tickets') tkLoad(true);
@@ -175,9 +175,9 @@ function newReset() {
 async function ticketCreate() {
   const v = id => $(id).value.trim();
   const d = { action: 'createTicket', company: v('n_company'), person: v('n_person'), phone: v('n_phone'), brand: v('n_brand'), batterySent: segVal('n_sentSeg') };
-  if (!d.company || !d.person || !d.phone || !d.brand) return toast('⚠️ Sabhi fields bharein');
-  if (!/^\d{10}$/.test(d.phone)) return toast('⚠️ Phone 10-digit hona chahiye');
-  if (!d.batterySent) return toast('⚠️ Battery bheji hai ya nahi — select karo');
+  if (!d.company || !d.person || !d.phone || !d.brand) return toast('⚠️ Please fill all fields');
+  if (!/^\d{10}$/.test(d.phone)) return toast('⚠️ Phone must be 10 digits');
+  if (!d.batterySent) return toast('⚠️ Select whether the battery has been sent');
   const r = await run(d, $('n_submit'));
   if (!r) return;
   afterChange();
@@ -216,9 +216,9 @@ async function tkLoad(force) {
   else if (!c || force) { if (!TK.length) $('tkList').innerHTML = '<div class="skeleton sk-card"></div>'.repeat(3); }
   try {
     const r = await api({ action: 'getTickets' });
-    if (!r || !r.ok) { toast('❌ ' + ((r && r.msg) || 'Tickets load nahi hue')); return; }
+    if (!r || !r.ok) { toast('❌ ' + ((r && r.msg) || 'Could not load tickets')); return; }
     TK = r.tickets || []; cacheSet('tickets', TK); tkRender();
-  } catch (e) { if (e !== 'auth' && !TK.length) $('tkList').innerHTML = '<div class="empty">Data load nahi hua ❌</div>'; }
+  } catch (e) { if (e !== 'auth' && !TK.length) $('tkList').innerHTML = '<div class="empty">Could not load data ❌</div>'; }
 }
 
 function tkSetFilter(f) { tkFilter = f; tkRender(); }
@@ -235,7 +235,7 @@ function tkRender() {
     [t['Ticket ID'], t['Company Name'], t['Contact Person'], t['Phone'], t['Scooty Brand']].join(' ').toLowerCase().indexOf(q) !== -1
   ).sort((a, b) => idNum(b['Ticket ID']) - idNum(a['Ticket ID']));
 
-  if (!rows.length) { $('tkList').innerHTML = '<div class="empty">' + (TK.length ? 'Kuch nahi mila 🔍' : 'Abhi koi ticket nahi ✅') + '</div>'; return; }
+  if (!rows.length) { $('tkList').innerHTML = '<div class="empty">' + (TK.length ? 'No matches 🔍' : 'No tickets yet ✅') + '</div>'; return; }
 
   $('tkList').innerHTML = rows.map(t => {
     const due = isDue(t), calls = parseInt(t['Total Calls'], 10) || 0, items = parseInt(t['Total Items'], 10) || 0;
@@ -255,7 +255,7 @@ function tkRender() {
 }
 
 /* ============================================================
-   TICKET DRAWER (Phase 2 actions yahin)
+   TICKET DRAWER (Phase 2 actions live here)
    ============================================================ */
 let CUR = null; // {ticket, calls, items}
 
@@ -266,7 +266,7 @@ async function drawerOpen(id) {
   $('drawer').classList.add('open'); $('drawerOv').classList.add('show');
   try {
     const r = await api({ action: 'getTicket', ticketId: id });
-    if (!r || !r.ok) { $('drBody').innerHTML = '<div class="empty">' + esc((r && r.msg) || 'Load nahi hua') + '</div>'; return; }
+    if (!r || !r.ok) { $('drBody').innerHTML = '<div class="empty">' + esc((r && r.msg) || 'Could not load') + '</div>'; return; }
     CUR = r; drawerRender();
   } catch (e) { if (e !== 'auth') $('drBody').innerHTML = '<div class="empty">Network error ❌</div>'; }
 }
@@ -303,12 +303,12 @@ function drawerRender() {
   // ---- actions (service team) ----
   if (can('service') && open) {
     const b = [];
-    b.push('<button class="btn btn-primary" onclick="callFormToggle()">📞 Call Log Add</button>');
+    b.push('<button class="btn btn-primary" onclick="callFormToggle()">📞 Add Call Log</button>');
     if (!sent && early) b.push('<button class="btn btn-green" onclick="ticketSolve(this)">✅ Solved on Call</button>');
-    if (early || s === 'In Transit') b.push('<button class="btn btn-violet" onclick="pickupOpen()">🚚 ' + (s === 'In Transit' ? 'Pickup Edit' : 'Pickup Arrange') + '</button>');
-    if (s === 'In Transit' || (sent && early)) b.push('<button class="btn btn-teal" onclick="receiveOpen()">📥 Battery Received</button>');
+    if (early || s === 'In Transit') b.push('<button class="btn btn-violet" onclick="pickupOpen()">🚚 ' + (s === 'In Transit' ? 'Edit Pickup' : 'Arrange Pickup') + '</button>');
+    if (s === 'In Transit' || (sent && early)) b.push('<button class="btn btn-teal" onclick="receiveOpen()">📥 Mark Received</button>');
     h += '<div class="dsec actions">' +
-      (sent && early ? '<div class="note">🚚 Customer ne battery already bhej di hai — troubleshoot nahi, bas problem note karo aur pickup details bharo.</div>' : '') +
+      (sent && early ? '<div class="note">🚚 The customer has already sent the battery — no troubleshooting needed. Just note the problem and fill in the pickup details.</div>' : '') +
       '<div class="btn-wrap">' + b.join('') + '</div>' + callFormHtml(t) + '</div>';
   }
 
@@ -345,7 +345,7 @@ function drawerRender() {
     '<div class="tl-item"><div class="tl-head"><b>' + esc(c['Attended By'] || c['Logged By']) + '</b><span>' + esc(c['Time']) + '</span></div>' +
     '<div class="tl-body">' + esc(c['Notes']) + '</div>' +
     (c['Next Follow-up'] ? '<div class="tl-next">📅 Next follow-up: ' + esc(c['Next Follow-up']) + '</div>' : '') + '</div>'
-  ).join('') + '</div>' : '<div class="empty sm">Abhi koi call log nahi</div>');
+  ).join('') + '</div>' : '<div class="empty sm">No call logs yet</div>');
 
   if (t['Closed At']) h += sec('✅ Closed', kv([['Closed At', t['Closed At']], ['Outcome', t['Outcome']]]));
 
@@ -358,7 +358,7 @@ function callFormHtml(t) {
   return '<div id="callForm" class="call-form" style="display:none"><div class="form-grid">' +
     '<div class="fg"><label>Attended By <b>*</b></label><input id="c_by" maxlength="100" value="' + esc(t['Attended By'] || localStorage.getItem('hub_user') || '') + '"></div>' +
     '<div class="fg"><label>Battery Purchase Age</label><select id="c_age"><option value="">-- Select --</option>' + ages + '</select></div>' +
-    '<div class="fg full"><label>Kya baat hui? <b>*</b></label><textarea id="c_notes" maxlength="1000" placeholder="Problem, troubleshooting, customer ne kya bola..."></textarea></div>' +
+    '<div class="fg full"><label>Call notes <b>*</b></label><textarea id="c_notes" maxlength="1000" placeholder="Problem, troubleshooting steps, what the customer said..."></textarea></div>' +
     '<div class="fg"><label>Next Follow-up</label><input type="date" id="c_next"></div>' +
     '</div><button class="btn btn-primary btn-block" onclick="callSave(this)">Save Call ✓</button></div>';
 }
@@ -369,14 +369,14 @@ async function callSave(btn) {
     action: 'addCall', ticketId: CUR.ticket['Ticket ID'], attendedBy: $('c_by').value.trim(),
     purchaseAge: $('c_age').value, notes: $('c_notes').value.trim(), nextFollowUp: $('c_next').value
   };
-  if (!d.attendedBy) return toast('⚠️ Attended By bharein');
-  if (!d.notes) return toast('⚠️ Kya baat hui — likho');
+  if (!d.attendedBy) return toast('⚠️ Enter Attended By');
+  if (!d.notes) return toast('⚠️ Please add call notes');
   const r = await run(d, btn); if (!r) return;
-  toast('✅ Call log save ho gaya'); afterChange(); drawerReload();
+  toast('✅ Call log saved'); afterChange(); drawerReload();
 }
 
 async function ticketSolve(btn) {
-  if (!confirm('Ticket ko "Solved on Call" mark karke close karein?')) return;
+  if (!confirm('Mark this ticket as "Solved on Call" and close it?')) return;
   const r = await run({ action: 'solveTicket', ticketId: CUR.ticket['Ticket ID'] }, btn); if (!r) return;
   toast('✅ Ticket closed — Solved on Call'); afterChange(); drawerReload();
 }
@@ -392,16 +392,16 @@ function fg(label, id, type, val, extra) {
 function pickupOpen() {
   const t = CUR.ticket;
   modalOpen('🚚 Pickup / Transport Details',
-    '<div class="fg"><label>Pickup kisne arrange kiya? <b>*</b></label><div class="seg" id="p_bySeg">' +
+    '<div class="fg"><label>Pickup arranged by <b>*</b></label><div class="seg" id="p_bySeg">' +
       ['Company', 'Customer'].map(v => '<button type="button" data-v="' + v + '" class="' + (t['Pickup By'] === v ? 'on' : '') + '" onclick="segPick(this)">' +
-        (v === 'Company' ? '🏢 Company' : '👤 Customer (khud)') + '</button>').join('') + '</div></div>' +
+        (v === 'Company' ? '🏢 Company' : '👤 Customer (self)') + '</button>').join('') + '</div></div>' +
     '<div class="form-grid">' +
       fg('No. of Boxes', 'p_boxes', 'number', t['No. of Boxes'], ' min="0" max="999"') +
       fg('Pickup Date <b>*</b>', 'p_date', 'date', t['Pickup Date'] || todayStr()) +
       fg('Place', 'p_place', 'text', t['Pickup Place'], ' maxlength="150"') +
       fg('Transport Name', 'p_transport', 'text', t['Transport Name'], ' maxlength="100"') +
       fg('LR No', 'p_lr', 'text', t['LR No'], ' maxlength="60"') +
-    '</div><button class="btn btn-primary btn-block" onclick="pickupSave(this)">Save — In Transit ✓</button>');
+    '</div><button class="btn btn-primary btn-block" onclick="pickupSave(this)">Save — mark In Transit ✓</button>');
 }
 async function pickupSave(btn) {
   const d = {
@@ -409,15 +409,15 @@ async function pickupSave(btn) {
     boxes: $('p_boxes').value, pickupDate: $('p_date').value, place: $('p_place').value.trim(),
     transport: $('p_transport').value.trim(), lr: $('p_lr').value.trim()
   };
-  if (!d.pickupBy) return toast('⚠️ Company ya Customer select karo');
-  if (!d.pickupDate) return toast('⚠️ Pickup Date bharein');
+  if (!d.pickupBy) return toast('⚠️ Select Company or Customer');
+  if (!d.pickupDate) return toast('⚠️ Enter pickup date');
   const r = await run(d, btn); if (!r) return;
-  modalClose(); toast('✅ Pickup save — status In Transit'); afterChange(); drawerReload();
+  modalClose(); toast('✅ Pickup saved — status is now In Transit'); afterChange(); drawerReload();
 }
 
 /* ---- Received ---- */
 function receiveOpen() {
-  modalOpen('📥 Battery Received',
+  modalOpen('📥 Mark Received',
     '<div class="form-grid">' +
       fg('Received Date <b>*</b>', 'r_date', 'date', todayStr()) + '<div class="fg"></div>' +
       fg('Battery Qty', 'r_bq', 'number', 0, ' min="0" max="50" oninput="recvPreview()"') +
@@ -425,13 +425,13 @@ function receiveOpen() {
       fg('Charger Qty', 'r_cq', 'number', 0, ' min="0" max="50" oninput="recvPreview()"') +
       fg('Charger Model', 'r_cm', 'text', '', ' maxlength="100" placeholder="e.g. CHR-48V-5A"') +
       '<div class="fg full"><label>Remarks</label><textarea id="r_rem" maxlength="500"></textarea></div>' +
-    '</div><div id="r_prev" class="note">Qty daalo — utne item IDs ban jayenge</div>' +
-    '<button class="btn btn-teal btn-block" onclick="recvSave(this)">Receive Karo ✓</button>');
+    '</div><div id="r_prev" class="note">Enter quantities — one item ID is created per unit</div>' +
+    '<button class="btn btn-teal btn-block" onclick="recvSave(this)">Mark Received ✓</button>');
 }
 function recvPreview() {
   const bq = parseInt($('r_bq').value, 10) || 0, cq = parseInt($('r_cq').value, 10) || 0, n = bq + cq;
   const id = CUR.ticket['Ticket ID'];
-  $('r_prev').innerHTML = n ? ('📦 <b>' + n + '</b> items banenge: ' + esc(id) + '-01 … ' + esc(id) + '-' + pad2(n)) : 'Qty daalo — utne item IDs ban jayenge';
+  $('r_prev').innerHTML = n ? ('📦 <b>' + n + '</b> items will be created: ' + esc(id) + '-01 … ' + esc(id) + '-' + pad2(n)) : 'Enter quantities — one item ID is created per unit';
 }
 async function recvSave(btn) {
   const d = {
@@ -439,13 +439,13 @@ async function recvSave(btn) {
     batteryQty: parseInt($('r_bq').value, 10) || 0, batteryModel: $('r_bm').value.trim(),
     chargerQty: parseInt($('r_cq').value, 10) || 0, chargerModel: $('r_cm').value.trim(), remarks: $('r_rem').value.trim()
   };
-  if (d.batteryQty < 0 || d.chargerQty < 0 || d.batteryQty > 50 || d.chargerQty > 50) return toast('⚠️ Qty 0–50 ke beech');
-  if (!d.batteryQty && !d.chargerQty) return toast('⚠️ Battery ya Charger qty daalo');
-  if (d.batteryQty && !d.batteryModel) return toast('⚠️ Battery Model bharein');
-  if (d.chargerQty && !d.chargerModel) return toast('⚠️ Charger Model bharein');
-  if (!confirm((d.batteryQty + d.chargerQty) + ' items receive karke Repair me bhejein?')) return;
+  if (d.batteryQty < 0 || d.chargerQty < 0 || d.batteryQty > 50 || d.chargerQty > 50) return toast('⚠️ Quantity must be between 0 and 50');
+  if (!d.batteryQty && !d.chargerQty) return toast('⚠️ Enter battery or charger quantity');
+  if (d.batteryQty && !d.batteryModel) return toast('⚠️ Enter battery model');
+  if (d.chargerQty && !d.chargerModel) return toast('⚠️ Enter charger model');
+  if (!confirm((d.batteryQty + d.chargerQty) + ' items will be received and sent to Repair. Continue?')) return;
   const r = await run(d, btn); if (!r) return;
-  modalClose(); toast('✅ ' + r.items + ' items Repair me aa gaye'); afterChange(); drawerReload();
+  modalClose(); toast('✅ ' + r.items + ' items moved to Repair'); afterChange(); drawerReload();
 }
 
 /* ============================================================
@@ -472,9 +472,9 @@ async function boardLoad(force) {
   else if (!boardItems.length) { $('boardPending').innerHTML = '<div class="skeleton sk-card"></div>'; $('boardActive').innerHTML = ''; }
   try {
     const r = await api({ action: 'getItems' });
-    if (!r || !r.ok) { toast('❌ ' + ((r && r.msg) || 'Items load nahi hue')); return; }
+    if (!r || !r.ok) { toast('❌ ' + ((r && r.msg) || 'Could not load items')); return; }
     boardItems = (r.items || []).map(mapItem); cacheSet('board_items', boardItems); boardRender();
-  } catch (e) { if (e !== 'auth') $('boardPending').innerHTML = '<div class="empty">Data load nahi hua ❌</div>'; }
+  } catch (e) { if (e !== 'auth') $('boardPending').innerHTML = '<div class="empty">Could not load data ❌</div>'; }
 }
 
 function boardRender() {
@@ -485,7 +485,7 @@ function boardRender() {
   $('pendCount').textContent = pending.length; $('repairCount').textContent = active.length;
 
   // pending list
-  if (!pending.length) $('boardPending').innerHTML = '<div class="empty">Koi pending item nahi ✅</div>';
+  if (!pending.length) $('boardPending').innerHTML = '<div class="empty">No pending items ✅</div>';
   else {
     const n = Object.keys(boardSel).filter(k => boardSel[k]).length;
     $('boardPending').innerHTML =
@@ -494,7 +494,7 @@ function boardRender() {
         '<span><b>' + esc(it.itemId) + '</b> · ' + esc(it.customer) + '<br><small>' + typeIco(it.itemType) + ' ' + esc(it.itemType) + (it.model ? ' · ' + esc(it.model) : '') + '</small></span></label>'
       ).join('') + '</div>' +
       '<div class="board-pick"><input type="date" id="boardPlanDate" value="' + todayStr() + '">' +
-      '<button class="btn btn-primary" onclick="boardAddSelected(this)">➕ Plan karo (<span id="selN">' + n + '</span>)</button></div>';
+      '<button class="btn btn-primary" onclick="boardAddSelected(this)">➕ Plan (<span id="selN">' + n + '</span>)</button></div>';
   }
 
   // planned cards
@@ -504,16 +504,16 @@ function boardRender() {
     const opts = STAGES.map(s => '<option value="' + esc(s) + '"' + (s === it.status ? ' selected' : '') + '>' + esc(s) + '</option>').join('');
     return '<div class="board-card' + (idx === last ? ' ready' : '') + '">' +
       '<div class="bc-top"><span class="bc-id">' + esc(it.itemId) + '</span>' +
-        '<button class="bc-remove" title="Wapas Pending" data-id="' + esc(it.itemId) + '" onclick="boardRemovePlan(this.dataset.id)">✕</button></div>' +
+        '<button class="bc-remove" title="Move back to Pending" data-id="' + esc(it.itemId) + '" onclick="boardRemovePlan(this.dataset.id)">✕</button></div>' +
       '<div class="bc-cust">' + esc(it.customer || '—') + '</div>' +
       '<div class="bc-meta">' + typeIco(it.itemType) + ' ' + esc(it.itemType) + (it.model ? ' · ' + esc(it.model) : '') + ' · 📅 ' + esc(it.planDate) + '</div>' +
       '<div class="bc-prog"><div style="width:' + pct + '%"></div></div>' +
-      '<div class="bc-lbl">' + (inPlan ? 'In Planning — stage chuno' : 'Stage ' + (idx + 1) + '/' + STAGES.length + (idx === last ? ' · Ready ✅' : '')) + '</div>' +
+      '<div class="bc-lbl">' + (inPlan ? 'In Planning — pick a stage' : 'Stage ' + (idx + 1) + '/' + STAGES.length + (idx === last ? ' · Ready ✅' : '')) + '</div>' +
       '<select data-id="' + esc(it.itemId) + '" onchange="boardSetStage(this.dataset.id, this.value)">' +
-        (inPlan ? '<option value="" selected disabled>-- Stage select karo --</option>' : '') + opts + '</select>' +
+        (inPlan ? '<option value="" selected disabled>-- Select stage --</option>' : '') + opts + '</select>' +
       (it.stageAt ? '<div class="bc-at">Updated: ' + esc(it.stageAt) + '</div>' : '') +
     '</div>';
-  }).join('') : '<div class="empty">' + (df ? 'Is date ka koi planned item nahi 📅' : 'Koi planned item nahi') + '</div>';
+  }).join('') : '<div class="empty">' + (df ? 'No items planned for this date 📅' : 'No planned items') + '</div>';
 }
 
 function boardToggle(el) {
@@ -523,29 +523,29 @@ function boardToggle(el) {
 
 async function boardAddSelected(btn) {
   const ids = Object.keys(boardSel).filter(k => boardSel[k]);
-  if (!ids.length) return toast('⚠️ Kam se kam ek item chuno');
+  if (!ids.length) return toast('⚠️ Select at least one item');
   const planDate = $('boardPlanDate').value || todayStr();
   const r = await run({ action: 'markPlanning', itemIds: JSON.stringify(ids), planDate }, btn);
   if (!r) return;
-  boardSel = {}; toast('✅ ' + r.updated + ' item → ' + planDate);
+  boardSel = {}; toast('✅ ' + r.updated + ' item(s) planned for ' + planDate);
   $('boardDateFilter').value = planDate; cacheDel('tickets'); boardLoad(true);
 }
 
 async function boardRemovePlan(itemId) {
-  if (!confirm(itemId + ' ko wapas Pending me bhejein?')) return;
+  if (!confirm(itemId + ' — move back to Pending?')) return;
   const r = await run({ action: 'removePlanning', itemId }); if (!r) return;
-  toast('↩️ ' + itemId + ' wapas Pending'); boardLoad(true);
+  toast('↩️ ' + itemId + ' moved back to Pending'); boardLoad(true);
 }
 
 async function boardSetStage(itemId, stage) {
   if (!stage) return;
   const it = boardItems.find(x => x.itemId === itemId);
   const prev = it ? it.status : '';
-  if (it) { it.status = stage; it.stageAt = 'abhi'; boardRender(); }
+  if (it) { it.status = stage; it.stageAt = 'just now'; boardRender(); }
   const r = await run({ action: 'updateStage', itemId, stage });
   if (!r) { if (it) { it.status = prev; boardRender(); } return; }
   cacheSet('board_items', boardItems); cacheDel('tickets');
-  if (stage === STAGES[STAGES.length - 1]) toast('✅ ' + itemId + ' Ready — Dispatch me dikhega');
+  if (stage === STAGES[STAGES.length - 1]) toast('✅ ' + itemId + ' is ready — it will appear in Dispatch');
 }
 
 /* ============================================================
@@ -564,11 +564,11 @@ async function dispLoad() {
   $('dList').innerHTML = '<div class="skeleton sk-card"></div>';
   try {
     const r = await api({ action: 'getItems' });
-    if (!r || !r.ok) { toast('❌ ' + ((r && r.msg) || 'Load nahi hua')); return; }
+    if (!r || !r.ok) { toast('❌ ' + ((r && r.msg) || 'Could not load')); return; }
     const last = STAGES[STAGES.length - 1];
     dispItems = (r.items || []).map(mapItem).filter(it => it.status === last);
     dispSel = {}; dispRender();
-  } catch (e) { if (e !== 'auth') $('dList').innerHTML = '<div class="empty">Data load nahi hua ❌</div>'; }
+  } catch (e) { if (e !== 'auth') $('dList').innerHTML = '<div class="empty">Could not load data ❌</div>'; }
 }
 
 function dispRender() {
@@ -577,17 +577,17 @@ function dispRender() {
   $('dList').innerHTML = rows.length ? rows.map(it =>
     '<label class="ms-opt"><input type="checkbox" data-id="' + esc(it.itemId) + '"' + (dispSel[it.itemId] ? ' checked' : '') + ' onchange="dispToggle(this)">' +
     '<span><b>' + esc(it.itemId) + '</b> · ' + esc(it.customer) + '<br><small>' + typeIco(it.itemType) + ' ' + esc(it.itemType) + (it.model ? ' · ' + esc(it.model) : '') + '</small></span></label>'
-  ).join('') : '<div class="empty">' + (dispItems.length ? 'Kuch nahi mila 🔍' : 'Koi item Final QC & Pack pe nahi ✅') + '</div>';
+  ).join('') : '<div class="empty">' + (dispItems.length ? 'No matches 🔍' : 'No items at Final QC & Pack ✅') + '</div>';
   $('dSelCount').textContent = Object.keys(dispSel).filter(k => dispSel[k]).length;
 }
 
 function dispToggle(el) {
   const id = el.dataset.id;
   if (el.checked) {
-    // ek dispatch = ek ticket (ek address/transport)
+    // one dispatch = one ticket (single address / transport)
     const tid = (dispItems.find(x => x.itemId === id) || {}).ticketId;
     const other = Object.keys(dispSel).filter(k => dispSel[k]).map(k => (dispItems.find(x => x.itemId === k) || {}).ticketId).find(x => x !== tid);
-    if (other) { el.checked = false; return toast('⚠️ Ek dispatch me ek hi ticket ke items — ' + other + ' wale pehle bhejo'); }
+    if (other) { el.checked = false; return toast('⚠️ One dispatch can only include items from one ticket — dispatch ' + other + ' first'); }
   }
   dispSel[id] = el.checked;
   $('dSelCount').textContent = Object.keys(dispSel).filter(k => dispSel[k]).length;
@@ -595,15 +595,15 @@ function dispToggle(el) {
 
 async function dispSubmit() {
   const ids = Object.keys(dispSel).filter(k => dispSel[k]);
-  if (!ids.length) return toast('⚠️ Kam se kam ek item chuno');
+  if (!ids.length) return toast('⚠️ Select at least one item');
   const d = {
     action: 'dispatch', itemIds: JSON.stringify(ids), dispatchDate: $('d_date').value, dispatchedBy: $('d_by').value.trim(),
     transport: $('d_transport').value.trim(), anyCost: $('d_cost').value.trim(), actualProblem: $('d_problem').value.trim(),
     address: $('d_address').value.trim(), remarks: $('d_remarks').value.trim()
   };
-  if (!d.dispatchDate) return toast('⚠️ Dispatch Date bharein');
-  if (!d.dispatchedBy) return toast('⚠️ Dispatched By bharein');
-  if (!confirm(ids.length + ' item dispatch karein?')) return;
+  if (!d.dispatchDate) return toast('⚠️ Enter dispatch date');
+  if (!d.dispatchedBy) return toast('⚠️ Enter Dispatched By');
+  if (!confirm(ids.length + ' item(s) will be dispatched. Continue?')) return;
   const r = await run(d, $('dSubmit')); if (!r) return;
 
   const sel = dispItems.filter(it => dispSel[it.itemId]);
@@ -624,11 +624,11 @@ function dispSlip(sel, d, r) {
       sel.map(it => '<tr><td>' + esc(it.itemId) + '</td><td>' + esc(it.itemType) + '</td><td>' + esc(it.model || '—') + '</td></tr>').join('') +
       '</table>' +
     '</div><button class="btn btn-primary btn-block" onclick="slipPrint()">🖨️ Print Slip</button>';
-  modalOpen('✅ ' + r.dispatched + ' item dispatched', html);
+  modalOpen('✅ ' + r.dispatched + ' item(s) dispatched', html);
 }
 
 function slipPrint() {
-  const w = window.open('', '_blank'); if (!w) return toast('⚠️ Popup block hai');
+  const w = window.open('', '_blank'); if (!w) return toast('⚠️ Popup blocked — allow popups to print');
   const css = Array.from(document.styleSheets).map(s => { try { return Array.from(s.cssRules).map(r => r.cssText).join(''); } catch (e) { return ''; } }).join('');
   w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Dispatch Slip</title><style>' + css + 'body{background:#fff;padding:24px}</style></head><body>' + $('slip').outerHTML + '</body></html>');
   w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
