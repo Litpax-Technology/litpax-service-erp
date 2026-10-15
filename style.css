@@ -322,3 +322,49 @@ textarea { min-height: 70px; resize: vertical; }
   .tk-list { grid-template-columns: 1fr; }
   .step .lbl { font-size: 10px; }
 }
+
+/* ---------- v2.1 additions ---------- */
+.btn-sm { padding: 7px 12px; font-size: 13px; }
+.muted-sm { font-size: 12px; color: var(--muted); margin-top: 8px; }
+.link-btn { border: 0; background: none; color: var(--primary); font-weight: 600; font-size: 12px; padding: 2px 4px; }
+.link-btn:hover { text-decoration: underline; }
+
+/* file picker (builty) */
+.file-drop { position: relative; display: flex; align-items: center; justify-content: center; padding: 14px; border: 1.5px dashed #cfd4e3; border-radius: 10px; background: #fafbfd; color: var(--text2); font-size: 13px; font-weight: 500; cursor: pointer; text-align: center; word-break: break-all; transition: border-color .15s, background .15s; }
+.file-drop:hover { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+.file-drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+/* receive — per-unit rows */
+.u-block { border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin-bottom: 12px; background: #fafbfd; }
+.u-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 13px; margin-bottom: 8px; }
+.u-row { display: grid; grid-template-columns: 34px 1fr 1fr; gap: 8px; align-items: center; margin-bottom: 6px; }
+.u-row:last-child { margin-bottom: 0; }
+.u-no { font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; }
+.u-row select, .u-row input { padding: 8px 10px; font-size: 13px; }
+@media (max-width: 480px) {
+  .u-row { grid-template-columns: 28px 1fr; }
+  .u-row input { grid-column: 2; }
+}
+
+/* modal: only ✕ closes — make the ✕ obvious */
+.modal-head .x-btn:hover, .drawer-head .x-btn:hover { background: var(--red-soft); color: var(--red); }
+.modal { max-width: 580px; }
+
+/* slips */
+.slip-logo-img { height: 30px; width: auto; display: block; margin-bottom: 2px; }
+.slip-total { margin-top: 8px; font-size: 13px; font-weight: 600; text-align: right; }
+.slip-sign { display: flex; justify-content: space-between; gap: 24px; margin-top: 44px; }
+.slip-sign div { flex: 1; border-top: 1px solid var(--text); padding-top: 6px; font-size: 12px; color: var(--text2); text-align: center; }
+
+/* masters */
+.mst-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.mst-card { margin-bottom: 0; display: flex; flex-direction: column; }
+.mst-card .card-head { margin-bottom: 4px; }
+.mst-sub { font-size: 12px; color: var(--text2); margin-bottom: 12px; }
+.mst-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; flex: 1; align-content: flex-start; min-height: 40px; }
+.mst-chip { display: inline-flex; align-items: center; gap: 4px; padding: 5px 6px 5px 11px; border-radius: 20px; background: #f0f2f7; font-size: 13px; font-weight: 500; }
+.mst-chip button { border: 0; background: transparent; width: 20px; height: 20px; border-radius: 50%; font-size: 11px; color: var(--muted); display: grid; place-items: center; }
+.mst-chip button:hover { background: var(--red-soft); color: var(--red); }
+.mst-add { display: flex; gap: 8px; }
+.mst-add input { flex: 1; }
+.mst-note { margin-top: 16px; font-size: 13px; color: var(--text2); background: #fff; border: 1px dashed var(--border); border-radius: 10px; padding: 12px 14px; }
