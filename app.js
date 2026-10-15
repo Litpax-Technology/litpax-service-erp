@@ -26,12 +26,29 @@ function jsonp(params, onData, onErr) {
 }
 function api(params) { return new Promise((res, rej) => jsonp(params, res, rej)); }
 
-// button busy state + error toast; returns the response on success, otherwise null
-async function run(params, btn) {
-  let old = '';
-  if (btn) { old = btn.innerHTML; btn.disabled = true; btn.textContent = '⏳ ...'; }
+// POST (JSON as text/plain → no CORS preflight). Used for file upload and large payloads.
+async function apiPost(params) {
+  const body = Object.assign({}, params || {});
+  const tk = localStorage.getItem('hub_token');
+  if (tk) body.token = tk;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), CONFIG.POST_TIMEOUT_MS);
+  let d;
   try {
-    const r = await api(params);
+    const res = await fetch(CONFIG.API_URL, { method: 'POST', body: JSON.stringify(body), signal: ctrl.signal });
+    d = await res.json();
+  } catch (e) { throw 'network'; }
+  finally { clearTimeout(timer); }
+  if (d && d.auth === false) { sessionExpired(d.msg); throw 'auth'; }
+  return d;
+}
+
+// button busy state + error toast; returns the response on success, otherwise null
+async function run(params, btn, post, busyText) {
+  let old = '';
+  if (btn) { old = btn.innerHTML; btn.disabled = true; btn.textContent = busyText || '⏳ ...'; }
+  try {
+    const r = await (post ? apiPost(params) : api(params));
     if (!r || !r.ok) { toast('❌ ' + ((r && r.msg) || 'Something went wrong')); return null; }
     return r;
   } catch (e) {
@@ -62,6 +79,40 @@ function segPick(btn) {
 }
 function segVal(id) { const b = document.querySelector('#' + id + ' button.on'); return b ? b.dataset.v : ''; }
 
+/* ---------- MASTERS (dropdown lists: sheet-driven + admin UI) ---------- */
+let MASTERS = null;
+const EMPTY_MASTERS = { attendedBy: [], dispatchedBy: [], batteryType: [], chargerType: [] };
+const M = () => MASTERS || EMPTY_MASTERS;
+
+async function ensureMasters(force) {
+  if (!force && MASTERS) return MASTERS;
+  if (!force) { const c = cacheGet('masters'); if (c && c.fresh) { MASTERS = c.val; return MASTERS; } }
+  try {
+    const r = await api({ action: 'getMasters' });
+    if (r && r.ok) { MASTERS = r.masters; cacheSet('masters', MASTERS); }
+  } catch (e) {}
+  return M();
+}
+
+// <option> list; keeps an old value selectable even if it was removed from the list
+function optList(list, sel, ph) {
+  list = list || [];
+  const all = sel && list.indexOf(sel) === -1 ? list.concat([sel]) : list;
+  if (!all.length) return '<option value="">' + esc(ph || '-- Select --') + ' — none set, ask admin</option>';
+  return '<option value="">' + esc(ph || '-- Select --') + '</option>' +
+    all.map(v => '<option' + (v === sel ? ' selected' : '') + '>' + esc(v) + '</option>').join('');
+}
+
+function fileToB64(file) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(String(fr.result).split(',')[1] || '');
+    fr.onerror = () => rej('read');
+    fr.readAsDataURL(file);
+  });
+}
+const safeUrl = u => /^https:\/\//i.test(String(u || '')) ? String(u) : '';
+
 // sessionStorage cache (TTL)
 function cacheSet(k, v) { try { sessionStorage.setItem(k, JSON.stringify({ ts: Date.now(), v })); } catch (e) {} }
 function cacheGet(k) {
@@ -82,7 +133,8 @@ const SCREENS = {
   newTicket: { id: 'scrNew',      icon: '➕', label: 'New Ticket',   title: 'New Ticket',   sub: 'Phase 1 — basic record for a call or walk-in', open: openNew },
   tickets:   { id: 'scrTickets',  icon: '📋', label: 'Tickets',      title: 'Tickets',      sub: 'All tickets — status, call log and actions', open: openTickets },
   board:     { id: 'scrBoard',    icon: '🔧', label: 'Repair Board', title: 'Repair Board', sub: 'Phase 3 — item-wise planning and stages', open: openBoard },
-  dispatch:  { id: 'scrDispatch', icon: '🚚', label: 'Dispatch',     title: 'Dispatch',     sub: 'Send out items that passed Final QC & Pack', open: openDispatch }
+  dispatch:  { id: 'scrDispatch', icon: '🚚', label: 'Dispatch',     title: 'Dispatch',     sub: 'Send out items that passed Final QC & Pack', open: openDispatch },
+  masters:   { id: 'scrMasters',  icon: '⚙️', label: 'Masters',      title: 'Masters',      sub: 'Dropdown lists — names and battery / charger types', open: openMasters }
 };
 let CURRENT = '';
 
@@ -113,6 +165,7 @@ window.addEventListener('load', () => {
 function clearSession() {
   ['hub_role', 'hub_token', 'hub_user'].forEach(k => localStorage.removeItem(k));
   try { sessionStorage.clear(); } catch (e) {}
+  MASTERS = null;
 }
 function sessionExpired(msg) { clearSession(); toast('🔒 ' + (msg || 'Session expired — please sign in again')); showLogin(); }
 
@@ -147,6 +200,7 @@ function enterApp(r) {
   $('sbNav').innerHTML = R.nav.map(k =>
     '<button class="sb-item" data-nav="' + k + '" onclick="go(this.dataset.nav)"><span class="sb-ico">' + SCREENS[k].icon + '</span>' + SCREENS[k].label + '</button>'
   ).join('');
+  ensureMasters();           // preload dropdown lists in the background
   go(R.nav[0]);
 }
 
@@ -265,7 +319,7 @@ async function drawerOpen(id) {
   $('drBody').innerHTML = '<div class="skeleton sk-block"></div><div class="skeleton sk-block"></div>';
   $('drawer').classList.add('open'); $('drawerOv').classList.add('show');
   try {
-    const r = await api({ action: 'getTicket', ticketId: id });
+    const [r] = await Promise.all([api({ action: 'getTicket', ticketId: id }), ensureMasters()]);
     if (!r || !r.ok) { $('drBody').innerHTML = '<div class="empty">' + esc((r && r.msg) || 'Could not load') + '</div>'; return; }
     CUR = r; drawerRender();
   } catch (e) { if (e !== 'auth') $('drBody').innerHTML = '<div class="empty">Network error ❌</div>'; }
@@ -326,18 +380,21 @@ function drawerRender() {
   if (t['Pickup By']) h += sec('🚚 Pickup / Transport', kv([
     ['Arranged By', t['Pickup By']], ['No. of Boxes', t['No. of Boxes']], ['Place', t['Pickup Place']],
     ['Date', t['Pickup Date']], ['Transport', t['Transport Name']], ['LR No', t['LR No']]
-  ]));
+  ]) + (safeUrl(t['Builty URL'])
+    ? '<a class="call-link" href="' + esc(safeUrl(t['Builty URL'])) + '" target="_blank" rel="noopener">📎 View builty</a>'
+    : '<div class="muted-sm">No builty uploaded</div>'));
 
   if (t['Received Date']) {
     const items = CUR.items || [];
     h += sec('📥 Received → Phase 3 Repair', kv([
       ['Received Date', t['Received Date']], ['Received By', t['Received By']],
-      ['Battery', (t['Battery Qty'] || 0) + (t['Battery Model'] ? ' × ' + t['Battery Model'] : '')],
-      ['Charger', (t['Charger Qty'] || 0) + (t['Charger Model'] ? ' × ' + t['Charger Model'] : '')],
+      ['Batteries', t['Battery Qty'] || 0], ['Chargers', t['Charger Qty'] || 0],
       ['Remarks', t['Receive Remarks']]
     ]) + (items.length ? '<div class="items-mini">' + items.map(it =>
-      '<div class="im-row"><span class="im-id">' + esc(it['Item ID']) + '</span><span>' + (it['Item Type'] === 'Charger' ? '⚡' : '🔋') + ' ' + esc(it['Model']) + '</span>' + pill(it['Item Status']) + '</div>'
-    ).join('') + '</div>' : ''));
+      '<div class="im-row"><span class="im-id">' + esc(it['Item ID']) + '</span><span>' + (it['Item Type'] === 'Charger' ? '⚡' : '🔋') + ' ' +
+      esc([it['Category'], it['Model']].filter(Boolean).join(' · ')) + '</span>' + pill(it['Item Status']) + '</div>'
+    ).join('') + '</div>' : '') +
+    '<button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="recvSlip()">🖨️ Receiving Slip</button>');
   }
 
   const calls = CUR.calls || [];
@@ -356,7 +413,7 @@ function drawerRender() {
 function callFormHtml(t) {
   const ages = CONFIG.PURCHASE_AGE.map(a => '<option' + (a === t['Purchase Age'] ? ' selected' : '') + '>' + esc(a) + '</option>').join('');
   return '<div id="callForm" class="call-form" style="display:none"><div class="form-grid">' +
-    '<div class="fg"><label>Attended By <b>*</b></label><input id="c_by" maxlength="100" value="' + esc(t['Attended By'] || localStorage.getItem('hub_user') || '') + '"></div>' +
+    '<div class="fg"><label>Attended By <b>*</b></label><select id="c_by">' + optList(M().attendedBy, t['Attended By'] || '', '-- Select name --') + '</select></div>' +
     '<div class="fg"><label>Battery Purchase Age</label><select id="c_age"><option value="">-- Select --</option>' + ages + '</select></div>' +
     '<div class="fg full"><label>Call notes <b>*</b></label><textarea id="c_notes" maxlength="1000" placeholder="Problem, troubleshooting steps, what the customer said..."></textarea></div>' +
     '<div class="fg"><label>Next Follow-up</label><input type="date" id="c_next"></div>' +
@@ -369,7 +426,7 @@ async function callSave(btn) {
     action: 'addCall', ticketId: CUR.ticket['Ticket ID'], attendedBy: $('c_by').value.trim(),
     purchaseAge: $('c_age').value, notes: $('c_notes').value.trim(), nextFollowUp: $('c_next').value
   };
-  if (!d.attendedBy) return toast('⚠️ Enter Attended By');
+  if (!d.attendedBy) return toast('⚠️ Select Attended By');
   if (!d.notes) return toast('⚠️ Please add call notes');
   const r = await run(d, btn); if (!r) return;
   toast('✅ Call log saved'); afterChange(); drawerReload();
@@ -390,7 +447,7 @@ function fg(label, id, type, val, extra) {
 
 /* ---- Pickup ---- */
 function pickupOpen() {
-  const t = CUR.ticket;
+  const t = CUR.ticket, cur = safeUrl(t['Builty URL']);
   modalOpen('🚚 Pickup / Transport Details',
     '<div class="fg"><label>Pickup arranged by <b>*</b></label><div class="seg" id="p_bySeg">' +
       ['Company', 'Customer'].map(v => '<button type="button" data-v="' + v + '" class="' + (t['Pickup By'] === v ? 'on' : '') + '" onclick="segPick(this)">' +
@@ -401,51 +458,152 @@ function pickupOpen() {
       fg('Place', 'p_place', 'text', t['Pickup Place'], ' maxlength="150"') +
       fg('Transport Name', 'p_transport', 'text', t['Transport Name'], ' maxlength="100"') +
       fg('LR No', 'p_lr', 'text', t['LR No'], ' maxlength="60"') +
+      '<div class="fg full"><label>Builty (photo or PDF, max ' + CONFIG.BUILTY_MAX_MB + ' MB)</label>' +
+        '<label class="file-drop" for="p_file"><span id="p_fileName">📎 ' + (cur ? 'Replace builty' : 'Choose file') + '</span>' +
+        '<input type="file" id="p_file" accept="image/jpeg,image/png,image/webp,application/pdf" onchange="pickupFilePick(this)"></label>' +
+        (cur ? '<a class="call-link" href="' + esc(cur) + '" target="_blank" rel="noopener">View current builty ↗</a>' : '') +
+      '</div>' +
     '</div><button class="btn btn-primary btn-block" onclick="pickupSave(this)">Save — mark In Transit ✓</button>');
 }
+function pickupFilePick(inp) {
+  const f = inp.files && inp.files[0];
+  $('p_fileName').textContent = f ? '📎 ' + f.name + ' (' + (f.size / 1048576).toFixed(1) + ' MB)' : '📎 Choose file';
+}
 async function pickupSave(btn) {
+  const id = CUR.ticket['Ticket ID'];
   const d = {
-    action: 'arrangePickup', ticketId: CUR.ticket['Ticket ID'], pickupBy: segVal('p_bySeg'),
+    action: 'arrangePickup', ticketId: id, pickupBy: segVal('p_bySeg'),
     boxes: $('p_boxes').value, pickupDate: $('p_date').value, place: $('p_place').value.trim(),
     transport: $('p_transport').value.trim(), lr: $('p_lr').value.trim()
   };
   if (!d.pickupBy) return toast('⚠️ Select Company or Customer');
   if (!d.pickupDate) return toast('⚠️ Enter pickup date');
+  const file = $('p_file').files[0];
+  if (file) {
+    if (file.size > CONFIG.BUILTY_MAX_MB * 1048576) return toast('⚠️ Builty file is too large (max ' + CONFIG.BUILTY_MAX_MB + ' MB)');
+    if (!/^(image\/(jpeg|png|webp)|application\/pdf)$/.test(file.type)) return toast('⚠️ Builty must be a JPG, PNG, WEBP or PDF');
+  }
   const r = await run(d, btn); if (!r) return;
-  modalClose(); toast('✅ Pickup saved — status is now In Transit'); afterChange(); drawerReload();
+  if (file) {
+    let data = '';
+    try { data = await fileToB64(file); } catch (e) { toast('⚠️ Pickup saved, but the builty file could not be read'); }
+    if (data) {
+      const u = await run({ action: 'uploadBuilty', ticketId: id, mimeType: file.type, data }, btn, true, '⏳ Uploading builty...');
+      if (!u) { toast('⚠️ Pickup saved, but builty upload failed — use Edit Pickup to retry'); afterChange(); drawerReload(); return; }
+    }
+  }
+  modalClose(); toast('✅ Pickup saved' + (file ? ' with builty' : '') + ' — status is now In Transit'); afterChange(); drawerReload();
 }
 
-/* ---- Received ---- */
-function receiveOpen() {
+/* ---- Received (one row per unit: type + model) ---- */
+async function receiveOpen() {
+  await ensureMasters();
   modalOpen('📥 Mark Received',
     '<div class="form-grid">' +
       fg('Received Date <b>*</b>', 'r_date', 'date', todayStr()) + '<div class="fg"></div>' +
-      fg('Battery Qty', 'r_bq', 'number', 0, ' min="0" max="50" oninput="recvPreview()"') +
-      fg('Battery Model', 'r_bm', 'text', '', ' maxlength="100" placeholder="e.g. LFP-48V-30AH"') +
-      fg('Charger Qty', 'r_cq', 'number', 0, ' min="0" max="50" oninput="recvPreview()"') +
-      fg('Charger Model', 'r_cm', 'text', '', ' maxlength="100" placeholder="e.g. CHR-48V-5A"') +
-      '<div class="fg full"><label>Remarks</label><textarea id="r_rem" maxlength="500"></textarea></div>' +
-    '</div><div id="r_prev" class="note">Enter quantities — one item ID is created per unit</div>' +
+      fg('Battery Qty', 'r_bq', 'number', 0, ' min="0" max="50" oninput="recvUnits()"') +
+      fg('Charger Qty', 'r_cq', 'number', 0, ' min="0" max="50" oninput="recvUnits()"') +
+    '</div>' +
+    '<div id="r_units"></div>' +
+    '<div class="fg full" style="margin-bottom:12px"><label>Remarks</label><textarea id="r_rem" maxlength="500"></textarea></div>' +
+    '<div id="r_prev" class="note">Enter quantities — a detail row opens for every unit</div>' +
     '<button class="btn btn-teal btn-block" onclick="recvSave(this)">Mark Received ✓</button>');
 }
-function recvPreview() {
-  const bq = parseInt($('r_bq').value, 10) || 0, cq = parseInt($('r_cq').value, 10) || 0, n = bq + cq;
-  const id = CUR.ticket['Ticket ID'];
-  $('r_prev').innerHTML = n ? ('📦 <b>' + n + '</b> items will be created: ' + esc(id) + '-01 … ' + esc(id) + '-' + pad2(n)) : 'Enter quantities — one item ID is created per unit';
-}
-async function recvSave(btn) {
-  const d = {
-    action: 'markReceived', ticketId: CUR.ticket['Ticket ID'], receivedDate: $('r_date').value,
-    batteryQty: parseInt($('r_bq').value, 10) || 0, batteryModel: $('r_bm').value.trim(),
-    chargerQty: parseInt($('r_cq').value, 10) || 0, chargerModel: $('r_cm').value.trim(), remarks: $('r_rem').value.trim()
+
+const qtyVal = id => Math.max(0, Math.min(50, parseInt($(id).value, 10) || 0));
+
+function recvUnits() {
+  // keep what was already typed when quantities change
+  const keep = k => Array.from(document.querySelectorAll('.u-row[data-u="' + k + '"]'))
+    .map(r => ({ c: r.querySelector('select').value, m: r.querySelector('input').value }));
+  const kb = keep('B'), kc = keep('C');
+  const bq = qtyVal('r_bq'), cq = qtyVal('r_cq');
+
+  const block = (k, label, n, list, prev, ico) => {
+    if (!n) return '';
+    let s = '<div class="u-block"><div class="u-head"><span>' + ico + ' ' + (label === 'Battery' ? 'Batteries' : label + 's') + ' (' + n + ')</span>' +
+      (n > 1 ? '<button type="button" class="link-btn" onclick="recvCopy(\'' + k + '\')">Copy #1 to all</button>' : '') + '</div>';
+    for (let i = 0; i < n; i++) {
+      const p = prev[i] || {};
+      s += '<div class="u-row" data-u="' + k + '"><span class="u-no">#' + (i + 1) + '</span>' +
+        '<select>' + optList(list, p.c || '', '-- ' + label + ' type --') + '</select>' +
+        '<input maxlength="100" placeholder="' + label + ' model" value="' + esc(p.m || '') + '"></div>';
+    }
+    return s + '</div>';
   };
-  if (d.batteryQty < 0 || d.chargerQty < 0 || d.batteryQty > 50 || d.chargerQty > 50) return toast('⚠️ Quantity must be between 0 and 50');
-  if (!d.batteryQty && !d.chargerQty) return toast('⚠️ Enter battery or charger quantity');
-  if (d.batteryQty && !d.batteryModel) return toast('⚠️ Enter battery model');
-  if (d.chargerQty && !d.chargerModel) return toast('⚠️ Enter charger model');
-  if (!confirm((d.batteryQty + d.chargerQty) + ' items will be received and sent to Repair. Continue?')) return;
-  const r = await run(d, btn); if (!r) return;
-  modalClose(); toast('✅ ' + r.items + ' items moved to Repair'); afterChange(); drawerReload();
+  $('r_units').innerHTML =
+    block('B', 'Battery', bq, M().batteryType, kb, '🔋') +
+    block('C', 'Charger', cq, M().chargerType, kc, '⚡');
+
+  const n = bq + cq, id = CUR.ticket['Ticket ID'];
+  $('r_prev').innerHTML = n
+    ? '📦 <b>' + n + '</b> items will be created: ' + esc(id) + '-01 … ' + esc(id) + '-' + pad2(n)
+    : 'Enter quantities — a detail row opens for every unit';
+}
+
+function recvCopy(k) {
+  const rows = document.querySelectorAll('.u-row[data-u="' + k + '"]');
+  if (!rows.length) return;
+  const c = rows[0].querySelector('select').value, m = rows[0].querySelector('input').value;
+  rows.forEach(r => { r.querySelector('select').value = c; r.querySelector('input').value = m; });
+}
+
+async function recvSave(btn) {
+  const id = CUR.ticket['Ticket ID'];
+  const items = [];
+  for (const [k, type] of [['B', 'Battery'], ['C', 'Charger']]) {
+    const rows = document.querySelectorAll('.u-row[data-u="' + k + '"]');
+    for (let i = 0; i < rows.length; i++) {
+      const c = rows[i].querySelector('select').value, m = rows[i].querySelector('input').value.trim();
+      if (!c || !m) return toast('⚠️ ' + type + ' #' + (i + 1) + ': select type and enter model');
+      items.push({ type, category: c, model: m });
+    }
+  }
+  if (!items.length) return toast('⚠️ Enter battery or charger quantity');
+  if (!$('r_date').value) return toast('⚠️ Enter received date');
+  if (!confirm(items.length + ' items will be received and sent to Repair. Continue?')) return;
+
+  const r = await run({ action: 'markReceived', ticketId: id, receivedDate: $('r_date').value, items, remarks: $('r_rem').value.trim() }, btn, true);
+  if (!r) return;
+  afterChange();
+  toast('✅ ' + r.items + ' items moved to Repair');
+  try {
+    const t = await api({ action: 'getTicket', ticketId: id });
+    if (t && t.ok) { CUR = t; drawerRender(); recvSlip(); return; }
+  } catch (e) {}
+  modalClose(); drawerReload();
+}
+
+/* ---- Slips (receiving + dispatch) ---- */
+function slipHead(title, date) {
+  const logo = (document.querySelector('.card-logo') || {}).src || '';
+  return '<div class="slip-head"><div>' +
+    (logo ? '<img class="slip-logo-img" src="' + logo + '" alt="Litpax">' : '<div class="slip-logo">LITPAX</div>') +
+    '<div class="slip-sub">Battery / Charger Service Center</div></div>' +
+    '<div class="slip-right"><b>' + esc(title) + '</b><br>' + esc(date || '') + '</div></div>';
+}
+
+function recvSlip() {
+  if (!CUR) return;
+  const t = CUR.ticket, items = CUR.items || [];
+  const nb = items.filter(i => i['Item Type'] === 'Battery').length, nc = items.length - nb;
+  const html =
+    '<div class="slip" id="slip">' + slipHead('Receiving Slip', t['Received Date']) +
+      '<div class="slip-sec">Ticket: <b>' + esc(t['Ticket ID']) + '</b></div>' +
+      kv([
+        ['Company', t['Company Name']], ['Contact', [t['Contact Person'], t['Phone']].filter(Boolean).join(' · ')],
+        ['Scooty Brand', t['Scooty Brand']], ['Received By', t['Received By']],
+        ['Pickup By', t['Pickup By']], ['Transport', t['Transport Name']], ['LR No', t['LR No']],
+        ['No. of Boxes', t['No. of Boxes']], ['Remarks', t['Receive Remarks']]
+      ]) +
+      '<table class="slip-table"><tr><th>#</th><th>Item ID</th><th>Item</th><th>Type</th><th>Model</th></tr>' +
+      items.map((it, i) => '<tr><td>' + (i + 1) + '</td><td>' + esc(it['Item ID']) + '</td><td>' + esc(it['Item Type']) +
+        '</td><td>' + esc(it['Category'] || '—') + '</td><td>' + esc(it['Model'] || '—') + '</td></tr>').join('') +
+      '</table>' +
+      '<div class="slip-total">Total: ' + nb + ' batter' + (nb === 1 ? 'y' : 'ies') + ', ' + nc + ' charger' + (nc === 1 ? '' : 's') + '</div>' +
+      '<div class="slip-sign"><div>Received by (Litpax)</div><div>Customer / Transporter</div></div>' +
+    '</div><button class="btn btn-primary btn-block" onclick="slipPrint()">🖨️ Print Slip</button>';
+  modalOpen('📥 Receiving Slip — ' + t['Ticket ID'], html);
 }
 
 /* ============================================================
@@ -459,9 +617,11 @@ function mapItem(it) {
   return {
     itemId: it['Item ID'], ticketId: it['Ticket ID'], itemType: it['Item Type'], model: it['Model'],
     status: it['Item Status'], planDate: String(it['Plan Date'] || '').substring(0, 10), planned: it['Planned'] === 'Yes',
-    stageAt: it['Stage Updated At'], customer: it['Customer'] || ''
+    stageAt: it['Stage Updated At'], customer: it['Customer'] || '', category: it['Category'] || ''
   };
 }
+// "🔋 Battery · 2 Wheeler · LFP-48V"
+const itemDesc = it => typeIco(it.itemType) + ' ' + esc([it.itemType, it.category, it.model].filter(Boolean).join(' · '));
 const typeIco = t => String(t).toLowerCase().indexOf('charg') !== -1 ? '⚡' : '🔋';
 
 function openBoard() { if (!$('boardDateFilter').value) $('boardDateFilter').value = todayStr(); boardLoad(true); }
@@ -491,7 +651,7 @@ function boardRender() {
     $('boardPending').innerHTML =
       '<div class="ms-list">' + pending.map(it =>
         '<label class="ms-opt"><input type="checkbox" data-id="' + esc(it.itemId) + '"' + (boardSel[it.itemId] ? ' checked' : '') + ' onchange="boardToggle(this)">' +
-        '<span><b>' + esc(it.itemId) + '</b> · ' + esc(it.customer) + '<br><small>' + typeIco(it.itemType) + ' ' + esc(it.itemType) + (it.model ? ' · ' + esc(it.model) : '') + '</small></span></label>'
+        '<span><b>' + esc(it.itemId) + '</b> · ' + esc(it.customer) + '<br><small>' + itemDesc(it) + '</small></span></label>'
       ).join('') + '</div>' +
       '<div class="board-pick"><input type="date" id="boardPlanDate" value="' + todayStr() + '">' +
       '<button class="btn btn-primary" onclick="boardAddSelected(this)">➕ Plan (<span id="selN">' + n + '</span>)</button></div>';
@@ -506,7 +666,7 @@ function boardRender() {
       '<div class="bc-top"><span class="bc-id">' + esc(it.itemId) + '</span>' +
         '<button class="bc-remove" title="Move back to Pending" data-id="' + esc(it.itemId) + '" onclick="boardRemovePlan(this.dataset.id)">✕</button></div>' +
       '<div class="bc-cust">' + esc(it.customer || '—') + '</div>' +
-      '<div class="bc-meta">' + typeIco(it.itemType) + ' ' + esc(it.itemType) + (it.model ? ' · ' + esc(it.model) : '') + ' · 📅 ' + esc(it.planDate) + '</div>' +
+      '<div class="bc-meta">' + itemDesc(it) + ' · 📅 ' + esc(it.planDate) + '</div>' +
       '<div class="bc-prog"><div style="width:' + pct + '%"></div></div>' +
       '<div class="bc-lbl">' + (inPlan ? 'In Planning — pick a stage' : 'Stage ' + (idx + 1) + '/' + STAGES.length + (idx === last ? ' · Ready ✅' : '')) + '</div>' +
       '<select data-id="' + esc(it.itemId) + '" onchange="boardSetStage(this.dataset.id, this.value)">' +
@@ -556,7 +716,8 @@ let dispSel = {};
 
 function openDispatch() {
   $('d_date').value = todayStr();
-  if (!$('d_by').value) $('d_by').value = localStorage.getItem('hub_user') || '';
+  $('d_by').innerHTML = optList(M().dispatchedBy, $('d_by').value, '-- Select name --');
+  ensureMasters().then(() => { $('d_by').innerHTML = optList(M().dispatchedBy, $('d_by').value, '-- Select name --'); });
   dispLoad(true);
 }
 
@@ -573,10 +734,10 @@ async function dispLoad() {
 
 function dispRender() {
   const q = $('dSearch').value.toLowerCase().trim();
-  const rows = dispItems.filter(it => !q || (it.itemId + ' ' + it.ticketId + ' ' + it.customer + ' ' + it.model).toLowerCase().indexOf(q) !== -1);
+  const rows = dispItems.filter(it => !q || (it.itemId + ' ' + it.ticketId + ' ' + it.customer + ' ' + it.category + ' ' + it.model).toLowerCase().indexOf(q) !== -1);
   $('dList').innerHTML = rows.length ? rows.map(it =>
     '<label class="ms-opt"><input type="checkbox" data-id="' + esc(it.itemId) + '"' + (dispSel[it.itemId] ? ' checked' : '') + ' onchange="dispToggle(this)">' +
-    '<span><b>' + esc(it.itemId) + '</b> · ' + esc(it.customer) + '<br><small>' + typeIco(it.itemType) + ' ' + esc(it.itemType) + (it.model ? ' · ' + esc(it.model) : '') + '</small></span></label>'
+    '<span><b>' + esc(it.itemId) + '</b> · ' + esc(it.customer) + '<br><small>' + itemDesc(it) + '</small></span></label>'
   ).join('') : '<div class="empty">' + (dispItems.length ? 'No matches 🔍' : 'No items at Final QC & Pack ✅') + '</div>';
   $('dSelCount').textContent = Object.keys(dispSel).filter(k => dispSel[k]).length;
 }
@@ -602,7 +763,7 @@ async function dispSubmit() {
     address: $('d_address').value.trim(), remarks: $('d_remarks').value.trim()
   };
   if (!d.dispatchDate) return toast('⚠️ Enter dispatch date');
-  if (!d.dispatchedBy) return toast('⚠️ Enter Dispatched By');
+  if (!d.dispatchedBy) return toast('⚠️ Select Dispatched By');
   if (!confirm(ids.length + ' item(s) will be dispatched. Continue?')) return;
   const r = await run(d, $('dSubmit')); if (!r) return;
 
@@ -616,13 +777,13 @@ async function dispSubmit() {
 function dispSlip(sel, d, r) {
   const html =
     '<div class="slip" id="slip">' +
-      '<div class="slip-head"><div><div class="slip-logo">LITPAX</div><div class="slip-sub">Battery / Charger Service Center</div></div>' +
-      '<div class="slip-right">Dispatch Slip<br>' + esc(d.dispatchDate) + '</div></div>' +
+      slipHead('Dispatch Slip', d.dispatchDate) +
       '<div class="slip-sec">Ticket: <b>' + esc((r.tickets || []).join(', ')) + '</b> · ' + esc(sel[0] ? sel[0].customer : '') + '</div>' +
       kv([['Dispatched By', d.dispatchedBy], ['Transport', d.transport], ['Address', d.address], ['Any Cost', d.anyCost], ['Problem Found', d.actualProblem]]) +
-      '<table class="slip-table"><tr><th>Item ID</th><th>Type</th><th>Model</th></tr>' +
-      sel.map(it => '<tr><td>' + esc(it.itemId) + '</td><td>' + esc(it.itemType) + '</td><td>' + esc(it.model || '—') + '</td></tr>').join('') +
+      '<table class="slip-table"><tr><th>#</th><th>Item ID</th><th>Item</th><th>Type</th><th>Model</th></tr>' +
+      sel.map((it, i) => '<tr><td>' + (i + 1) + '</td><td>' + esc(it.itemId) + '</td><td>' + esc(it.itemType) + '</td><td>' + esc(it.category || '—') + '</td><td>' + esc(it.model || '—') + '</td></tr>').join('') +
       '</table>' +
+      '<div class="slip-sign"><div>Dispatched by (Litpax)</div><div>Received by (Customer / Transporter)</div></div>' +
     '</div><button class="btn btn-primary btn-block" onclick="slipPrint()">🖨️ Print Slip</button>';
   modalOpen('✅ ' + r.dispatched + ' item(s) dispatched', html);
 }
@@ -632,4 +793,56 @@ function slipPrint() {
   const css = Array.from(document.styleSheets).map(s => { try { return Array.from(s.cssRules).map(r => r.cssText).join(''); } catch (e) { return ''; } }).join('');
   w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Dispatch Slip</title><style>' + css + 'body{background:#fff;padding:24px}</style></head><body>' + $('slip').outerHTML + '</body></html>');
   w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+}
+
+/* ============================================================
+   MASTERS (admin) — dropdown lists, also editable in the sheet
+   ============================================================ */
+const MST_LISTS = [
+  ['attendedBy',   'Attended By',   'Names in the call log dropdown',          '🎧'],
+  ['dispatchedBy', 'Dispatched By', 'Names in the Dispatch form dropdown',     '🚚'],
+  ['batteryType',  'Battery Type',  'Types offered when receiving batteries',  '🔋'],
+  ['chargerType',  'Charger Type',  'Types offered when receiving chargers',   '⚡']
+];
+
+function openMasters() {
+  mstRender();
+  ensureMasters(true).then(mstRender);
+}
+
+function mstRender() {
+  const m = M();
+  $('mstGrid').innerHTML = MST_LISTS.map(([k, label, sub, ico]) => {
+    const list = m[k] || [];
+    return '<div class="card mst-card">' +
+      '<div class="card-head"><span>' + ico + ' ' + label + ' <b class="count">' + list.length + '</b></span></div>' +
+      '<div class="mst-sub">' + sub + '</div>' +
+      '<div class="mst-list">' + (list.length
+        ? list.map(v => '<span class="mst-chip">' + esc(v) +
+            '<button type="button" title="Remove" data-k="' + k + '" data-v="' + esc(v) + '" onclick="mstRemove(this)">✕</button></span>').join('')
+        : '<div class="empty sm">No entries yet</div>') + '</div>' +
+      '<div class="mst-add"><input id="mst_' + k + '" maxlength="100" placeholder="Add ' + label.toLowerCase() + '" ' +
+        'onkeydown="if(event.key===\'Enter\')mstAdd(\'' + k + '\')">' +
+        '<button class="btn btn-primary" id="mstBtn_' + k + '" onclick="mstAdd(\'' + k + '\')">Add</button></div>' +
+    '</div>';
+  }).join('');
+}
+
+async function mstAdd(k) {
+  const inp = $('mst_' + k), v = inp.value.trim();
+  if (!v) return toast('⚠️ Enter a value');
+  const r = await run({ action: 'addMaster', list: k, value: v }, $('mstBtn_' + k));
+  if (!r) return;
+  MASTERS = r.masters; cacheSet('masters', MASTERS);
+  toast('✅ "' + v + '" added'); mstRender();
+  const n = $('mst_' + k); if (n) n.focus();
+}
+
+async function mstRemove(el) {
+  const k = el.dataset.k, v = el.dataset.v;
+  if (!confirm('Remove "' + v + '"? Old records keep their value.')) return;
+  const r = await run({ action: 'removeMaster', list: k, value: v });
+  if (!r) return;
+  MASTERS = r.masters; cacheSet('masters', MASTERS);
+  toast('🗑️ "' + v + '" removed'); mstRender();
 }
