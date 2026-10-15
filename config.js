@@ -3,7 +3,7 @@
    ============================================================ */
 const CONFIG = {
   // GAS Web App URL (Deploy → Web app → URL yahan)
-  API_URL: 'https://script.google.com/macros/s/AKfycbxUZYlYWraR2s4RIJyJaVsk6q1BgNh4Rh2QkSgsCeV_1UYNnY0z0svjc2XDBCYrZAJy5g/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycbyJMFTLJYjfWDcII6NLCAdcP-jNxqKkPLQuDTTVT5NLSCMqV7Yc1GytClVOkTWQlk_oHw/exec',
 
   JSONP_TIMEOUT_MS: 25000,
   CACHE_TTL_MS: 60000,
