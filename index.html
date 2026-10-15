@@ -206,6 +206,12 @@
       </div>
     </section>
 
+    <!-- ===== MASTERS (admin) ===== -->
+    <section id="scrMasters" class="screen">
+      <div id="mstGrid" class="mst-grid"></div>
+      <div class="mst-note">💡 These lists can also be edited directly in the <b>Masters</b> tab of the Google Sheet — one value per row under each column.</div>
+    </section>
+
     <!-- ===== PHASE 3: DISPATCH ===== -->
     <section id="scrDispatch" class="screen">
       <div class="card">
@@ -218,7 +224,7 @@
         <div class="card-head"><span>🚚 Dispatch Details — <b id="dSelCount">0</b> selected</span></div>
         <div class="form-grid">
           <div class="fg"><label>Dispatch Date <b>*</b></label><input type="date" id="d_date"></div>
-          <div class="fg"><label>Dispatched By <b>*</b></label><input id="d_by" maxlength="100"></div>
+          <div class="fg"><label>Dispatched By <b>*</b></label><select id="d_by"></select></div>
           <div class="fg"><label>Transport (Outward)</label><input id="d_transport" maxlength="150" placeholder="Transport / AWB / LR"></div>
           <div class="fg"><label>Any Cost (₹)</label><input id="d_cost" maxlength="30"></div>
           <div class="fg full"><label>Actual Problem Found</label><textarea id="d_problem" maxlength="500"></textarea></div>
@@ -232,14 +238,14 @@
 </div>
 
 <!-- ================= TICKET DRAWER ================= -->
-<div id="drawerOv" class="drawer-ov" onclick="drawerClose()"></div>
+<div id="drawerOv" class="drawer-ov"></div>
 <aside id="drawer" class="drawer">
   <div class="drawer-head"><div id="drTitle" class="dr-title"></div><button class="x-btn" onclick="drawerClose()">✕</button></div>
   <div id="drBody" class="drawer-body"></div>
 </aside>
 
 <!-- ================= MODAL ================= -->
-<div id="modalOv" class="modal-ov" onclick="if(event.target===this)modalClose()">
+<div id="modalOv" class="modal-ov">
   <div class="modal">
     <div class="modal-head"><span id="mdTitle"></span><button class="x-btn" onclick="modalClose()">✕</button></div>
     <div id="mdBody" class="modal-body"></div>
