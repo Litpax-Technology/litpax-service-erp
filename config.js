@@ -30,5 +30,19 @@ const CONFIG = {
   PURCHASE_AGE: ['Less than 6 months', '6 months - 1 year', 'More than 1 year'],
 
   // ⚠️ Must EXACTLY match REPAIR_STAGES in Code.gs (same order) — last = Final QC & Pack
-  STAGES: ['Diagnosis', 'Cell Testing', 'Repair Work', 'Charging Test', 'Final QC & Pack']
+  STAGES: ['Diagnosis', 'Cell Testing', 'Repair Work', 'Charging Test', 'Final QC & Pack'],
+
+  // ── Customer tracking page + WhatsApp (click-to-send) ──
+  TRACK_URL: 'https://mis-darpan.github.io/YOUR-REPO/track/',   // ⚠️ apna repo naam daalo, end mein / zaroori
+  WA_COUNTRY: '91',
+  FEEDBACK_AFTER_DAYS: 3,
+
+  // {placeholder} khaali ho toh wo poori line message se hat jaati hai
+  WA_TEMPLATES: {
+    created:    'Hello {name},\nThank you for contacting Litpax Service. Your request has been registered.\nTicket ID: {id}\nTrack your service status: {link}',
+    pickup:     'Hello {name},\nPickup for your Ticket {id} has been arranged.\nPickup date: {date}\nTransport: {transport}\nLR No: {lr}\nTrack status: {link}',
+    received:   'Hello {name},\nWe have received your {items} at the Litpax Service Center.\nTicket ID: {id}\nTrack repair status: {link}',
+    dispatched: 'Hello {name},\nYour {items} (Ticket {id}) has been dispatched.\nDispatch date: {date}\nTransport: {transport}\nTrack status: {link}',
+    feedback:   'Hello {name},\nWe hope your battery is working well after the service (Ticket {id}).\nPlease share your feedback, it takes less than a minute:\n{flink}\nThank you, Team Litpax'
+  }
 };
