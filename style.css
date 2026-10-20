@@ -368,3 +368,17 @@ textarea { min-height: 70px; resize: vertical; }
 .mst-add { display: flex; gap: 8px; }
 .mst-add input { flex: 1; }
 .mst-note { margin-top: 16px; font-size: 13px; color: var(--text2); background: #fff; border: 1px dashed var(--border); border-radius: 10px; padding: 12px 14px; }
+
+/* ---------- v2.2 — WhatsApp / tracking / feedback ---------- */
+.btn-wa { background: #25d366; color: #fff; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn-wa:hover { filter: brightness(.93); }
+.wa-list { display: flex; flex-direction: column; gap: 8px; }
+.wa-list .btn { justify-content: space-between; text-align: left; }
+.wa-sent { font-size: 11px; font-weight: 500; background: rgba(255,255,255,.22); padding: 2px 7px; border-radius: 8px; white-space: nowrap; }
+.wa-after { margin-top: 10px; }
+.wa-after .btn { width: 100%; }
+.note-red { background: var(--red-soft); color: var(--red); }
+.tag-amber { background: var(--amber-soft); color: var(--amber); font-weight: 600; }
+.slip-track { display: flex; gap: 14px; align-items: center; margin-top: 16px; padding: 12px; border: 1px dashed #cfd4e3; border-radius: 10px; font-size: 12px; color: var(--text2); line-height: 1.55; }
+.slip-qr { width: 110px; height: 110px; flex-shrink: 0; image-rendering: pixelated; }
+.slip-url { color: var(--text); font-weight: 600; word-break: break-all; }
