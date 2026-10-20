@@ -988,3 +988,44 @@ async function mstRemove(el) {
   });
   hero.addEventListener('mouseleave', () => { tilt.style.setProperty('--ry', '0deg'); tilt.style.setProperty('--rx', '0deg'); });
 })();
+
+/* ---------- LOGIN INTRO — battery opens, login card comes out ---------- */
+(function () {
+  const root = document.documentElement, intro = document.getElementById('intro');
+  if (!intro) return;
+  if (!root.classList.contains('play-intro')) { intro.remove(); return; }
+
+  const card = document.querySelector('.login-card'), bat = intro.querySelector('.in-bat');
+  try { localStorage.setItem('hub_intro_at', String(Date.now())); } catch (e) {}
+  const timers = [];
+  let ended = false;
+
+  // card starts at the battery's open lid and flies to its real place
+  function fly() {
+    if (!card || !bat) return;
+    const b = bat.getBoundingClientRect(), c = card.getBoundingClientRect();
+    card.style.setProperty('--dx', Math.round(b.left + b.width / 2 - (c.left + c.width / 2)) + 'px');
+    card.style.setProperty('--dy', Math.round(b.top + b.height * 0.33 - (c.top + c.height / 2)) + 'px');
+    card.classList.add('card-start');
+    void card.offsetWidth; // apply start position before animating
+    card.classList.add('card-out');
+  }
+  function end() {
+    if (ended) return;
+    ended = true;
+    timers.forEach(clearTimeout);
+    root.classList.remove('play-intro');
+    if (card) {
+      card.classList.remove('card-start', 'card-out');
+      card.style.removeProperty('--dx'); card.style.removeProperty('--dy');
+    }
+    intro.remove();
+    window.removeEventListener('keydown', end);
+  }
+
+  timers.push(setTimeout(fly, 2900));
+  timers.push(setTimeout(() => intro.classList.add('fade'), 4500));
+  timers.push(setTimeout(end, 5600));
+  intro.addEventListener('click', end);
+  window.addEventListener('keydown', end);
+})();
