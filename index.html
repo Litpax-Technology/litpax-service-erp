@@ -175,7 +175,8 @@
         <div class="success-sub">The Service Team will pick it up from the Tickets list and call the customer.</div>
         <div class="btn-row">
           <button class="btn btn-ghost" onclick="newReset()">➕ Create another</button>
-          <button class="btn btn-primary" id="newOpenBtn" onclick="openTicketFromNew(this.dataset.id)">Open ticket →</button>
+        <button class="btn btn-primary" id="newOpenBtn" onclick="openTicketFromNew(this.dataset.id)">Open ticket →</button>
+          <a class="btn btn-wa" id="newWa" target="_blank" rel="noopener" style="display:none" onclick="waMark(this)">📲 Send WhatsApp</a>
         </div>
       </div>
     </section>
@@ -254,6 +255,8 @@
 
 <div id="toast" class="toast"></div>
 
+<!-- AFTER -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="config.js"></script>
 <script src="app.js"></script>
 </body>
