@@ -970,3 +970,21 @@ async function mstRemove(el) {
   MASTERS = r.masters; cacheSet('masters', MASTERS);
   toast('🗑️ "' + v + '" removed'); mstRender();
 }
+
+/* ---------- LOGIN — cinematic hero mouse tilt ---------- */
+(function () {
+  const hero = document.querySelector('.login-hero'), tilt = document.getElementById('cineTilt');
+  if (!hero || !tilt) return;
+  if (!window.matchMedia('(hover: hover)').matches || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  let raf = 0;
+  hero.addEventListener('mousemove', e => {
+    const r = hero.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5;
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => {
+      tilt.style.setProperty('--ry', (x * 14).toFixed(2) + 'deg');
+      tilt.style.setProperty('--rx', (-y * 10).toFixed(2) + 'deg');
+    });
+  });
+  hero.addEventListener('mouseleave', () => { tilt.style.setProperty('--ry', '0deg'); tilt.style.setProperty('--rx', '0deg'); });
+})();
