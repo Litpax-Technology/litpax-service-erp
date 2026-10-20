@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Track Service — Litpax</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="top-in">
+    <div class="brand"><img id="brandLogo" alt="Litpax" hidden><span id="brandText" class="wordmark">LITPAX</span></div>
+    <span class="top-tag">Service Tracking</span>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ===== LOOKUP ===== -->
+  <section id="lookup" class="card">
+    <div class="kicker">Service &amp; Repair</div>
+    <h1>Track your service request</h1>
+    <p class="sub">Enter the Ticket ID from your receiving slip or WhatsApp message.</p>
+
+    <div class="field">
+      <label for="inId">Ticket ID</label>
+      <input id="inId" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="LTX-R-0001"
+             onkeydown="if(event.key==='Enter')$('inPh').focus()">
+    </div>
+    <div class="field">
+      <label for="inPh">Last 4 digits of your phone number</label>
+      <input id="inPh" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••"
+             onkeydown="if(event.key==='Enter')lookup()">
+    </div>
+
+    <div id="lkErr" class="err" hidden></div>
+    <button id="lkBtn" class="btn btn-primary btn-block" onclick="lookup()">Track status</button>
+    <div class="hint">Tip: scan the QR code on your receiving slip to open your status directly.</div>
+  </section>
+
+  <!-- ===== LOADING ===== -->
+  <section id="loading" class="card" hidden>
+    <div class="sk sk-h"></div><div class="sk"></div><div class="sk"></div><div class="sk sk-s"></div>
+  </section>
+
+  <!-- ===== RESULT ===== -->
+  <section id="result" hidden>
+    <div class="card">
+      <div class="sum-top"><span id="rId" class="tid"></span><span id="rStatus" class="pill"></span></div>
+      <div id="rCompany" class="company"></div>
+      <div id="rMeta" class="meta"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Progress</div>
+      <ol id="timeline" class="timeline"></ol>
+    </div>
+
+    <div id="itemsCard" class="card" hidden>
+      <div class="card-title">Your items</div>
+      <div id="items" class="items"></div>
+    </div>
+
+    <div id="fbCard" class="card" hidden></div>
+
+    <button class="btn btn-ghost btn-block" onclick="resetLookup()">Track another ticket</button>
+  </section>
+</main>
+
+<footer class="foot"><span id="fCompany"></span><span id="fSupport"></span></footer>
+<div id="toast" class="toast"></div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
