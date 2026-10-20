@@ -8,8 +8,36 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+  <script>
+  (function () {
+    try {
+      var HOURS = 6; // intro kitne ghante mein ek baar chale
+      var last = +localStorage.getItem('hub_intro_at') || 0;
+      var inApp = localStorage.getItem('hub_role') && localStorage.getItem('hub_token');
+      var calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!inApp && !calm && Date.now() - last > HOURS * 3600e3) document.documentElement.classList.add('play-intro');
+    } catch (e) {}
+  })();
+</script>
 </head>
 <body>
+  <!-- ================= INTRO ================= -->
+<div id="intro" class="intro" aria-hidden="true">
+  <div class="in-stage">
+    <div class="in-glow"></div>
+    <div class="in-floor"></div>
+    <div class="in-bat">
+      <div class="in-beam"></div>
+      <div class="in-core"></div>
+      <img class="in-body" src="assets/battery.png" alt="">
+      <img class="in-lid" src="assets/battery.png" alt="">
+      <div class="in-sheen"></div>
+    </div>
+  </div>
+  <div class="in-flash"></div>
+  <div class="in-text"><b>LITPAX</b><span>Service Hub</span></div>
+  <div class="in-skip">Click anywhere to skip</div>
+</div>
 
 <!-- ================= LOGIN ================= -->
 <div id="loginScreen" class="login">
