@@ -128,6 +128,87 @@ const STATUS_TONE = {
 };
 function pill(s) { return '<span class="pill pill-' + (STATUS_TONE[s] || 'blue') + '">' + esc(s || '—') + '</span>'; }
 
+/* ---------- TRACKING LINK + WHATSAPP (click-to-send) ---------- */
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function niceDate(s) { const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? (+m[3]) + ' ' + MON[+m[2] - 1] + ' ' + m[1] : String(s || ''); }
+
+function trackLink(t, fb) {
+  const id = t && t['Ticket ID'], c = t && t['Track Code'];
+  if (!id || !c || !CONFIG.TRACK_URL) return '';
+  return CONFIG.TRACK_URL + '?t=' + encodeURIComponent(id) + '&c=' + encodeURIComponent(c) + (fb ? '&fb=1' : '');
+}
+function itemsText(nb, nc) {
+  const a = [];
+  if (nb) a.push(nb + ' batter' + (nb === 1 ? 'y' : 'ies'));
+  if (nc) a.push(nc + ' charger' + (nc === 1 ? '' : 's'));
+  return a.join(' and ') || 'items';
+}
+// fills {placeholders}; a line whose placeholder is empty is dropped
+function waFill(tpl, v) {
+  return String(tpl || '').split('\n').filter(line =>
+    (line.match(/\{(\w+)\}/g) || []).every(k => String(v[k.slice(1, -1)] == null ? '' : v[k.slice(1, -1)]).trim() !== '')
+  ).map(line => line.replace(/\{(\w+)\}/g, (m, k) => v[k])).join('\n');
+}
+function waUrl(phone, text) {
+  const p = String(phone || '').replace(/\D/g, '').slice(-10);
+  if (p.length !== 10) return '';
+  return 'https://wa.me/' + (CONFIG.WA_COUNTRY || '91') + p + '?text=' + encodeURIComponent(text);
+}
+function waLog(t) { try { const a = JSON.parse(t['WA Log'] || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+function waBtn(ticketId, ev, url, label, sentAt) {
+  if (!url) return '<button class="btn btn-ghost btn-sm" disabled>📲 ' + label + ' — no valid phone</button>';
+  return '<a class="btn btn-wa btn-sm" href="' + esc(url) + '" target="_blank" rel="noopener" data-t="' + esc(ticketId) +
+    '" data-e="' + ev + '" onclick="waMark(this)"><span>📲 ' + label + '</span>' +
+    (sentAt ? '<span class="wa-sent">✓ ' + esc(sentAt) + '</span>' : '') + '</a>';
+}
+// link click → WhatsApp opens in a new tab; log it in the background
+function waMark(el) {
+  const t = el.dataset.t, e = el.dataset.e;
+  if (!t || !e) return;
+  jsonp({ action: 'markWa', ticketId: t, event: e }, r => {
+    if (!r || !r.ok) return;
+    toast('✅ WhatsApp marked as sent'); cacheDel('tickets');
+    if (CUR && CUR.ticket['Ticket ID'] === t) {
+      CUR.ticket['WA Log'] = JSON.stringify(r.log || []);
+      if (e === 'feedback' && !CUR.ticket['Feedback Asked At']) CUR.ticket['Feedback Asked At'] = 'just now';
+      if ($('drawer').classList.contains('open')) drawerRender();
+    }
+  }, () => {});
+}
+function qrImg(text, size) {
+  if (typeof QRCode === 'undefined' || !text) return '';
+  try {
+    const d = document.createElement('div');
+    new QRCode(d, { text, width: size, height: size, correctLevel: QRCode.CorrectLevel.M });
+    const c = d.querySelector('canvas');
+    const src = c ? c.toDataURL('image/png') : ((d.querySelector('img') || {}).src || '');
+    return src ? '<img class="slip-qr" src="' + src + '" alt="Track QR" width="' + size + '" height="' + size + '">' : '';
+  } catch (e) { return ''; }
+}
+const fbOpen = t => t['Status'] === 'Closed' && !!t['Received Date'] && !t['Rating'];
+
+function waSection() {
+  const t = CUR.ticket, items = CUR.items || [], log = waLog(t), T = CONFIG.WA_TEMPLATES;
+  if (!T) return '';
+  const sentAt = e => { const x = log.filter(l => l.e === e).pop(); return x ? x.t : ''; };
+  const base = { name: t['Contact Person'], id: t['Ticket ID'], link: trackLink(t), flink: trackLink(t, true) };
+  const mk = (e, label, extra) => waBtn(t['Ticket ID'], e, waUrl(t['Phone'], waFill(T[e], Object.assign({}, base, extra || {}))), label, sentAt(e));
+
+  const b = [mk('created', 'Ticket Created')];
+  if (t['Pickup By']) b.push(mk('pickup', 'Pickup Details', { date: niceDate(t['Pickup Date']), transport: t['Transport Name'], lr: t['LR No'] }));
+  if (t['Received Date']) b.push(mk('received', 'Items Received', { items: itemsText(+t['Battery Qty'] || 0, +t['Charger Qty'] || 0) }));
+  const disp = items.filter(i => String(i['Item Status']).toLowerCase() === 'dispatched');
+  if (disp.length) {
+    const lastDate = disp.map(i => String(i['Dispatch Date'] || '')).sort().pop();
+    const batch = disp.filter(i => String(i['Dispatch Date'] || '') === lastDate);
+    const nb = batch.filter(i => i['Item Type'] === 'Battery').length;
+    b.push(mk('dispatched', 'Dispatched', { items: itemsText(nb, batch.length - nb), date: niceDate(lastDate), transport: batch[0]['Transport (Outward)'] }));
+  }
+  if (fbOpen(t)) b.push(mk('feedback', 'Ask Feedback'));
+  return sec('📲 WhatsApp Updates', '<div class="wa-list">' + b.join('') + '</div>' +
+    '<div class="muted-sm">Opens WhatsApp with the message ready — just press Send.</div>');
+}
+
 /* ---------- SCREENS / NAV ---------- */
 const SCREENS = {
   newTicket: { id: 'scrNew',      icon: '➕', label: 'New Ticket',   title: 'New Ticket',   sub: 'Phase 1 — basic record for a call or walk-in', open: openNew },
@@ -237,6 +318,10 @@ async function ticketCreate() {
   afterChange();
   $('newForm').style.display = 'none'; $('newSuccess').style.display = 'block';
   $('newId').textContent = r.id; $('newOpenBtn').dataset.id = r.id;
+  const wa = $('newWa'), url = waUrl(d.phone, waFill((CONFIG.WA_TEMPLATES || {}).created,
+    { name: d.person, id: r.id, link: trackLink({ 'Ticket ID': r.id, 'Track Code': r.code }) }));
+  wa.dataset.t = r.id; wa.dataset.e = 'created';
+  if (url) { wa.href = url; wa.style.display = ''; } else wa.style.display = 'none';
   window.scrollTo(0, 0);
 }
 function openTicketFromNew(id) { go('tickets'); drawerOpen(id); }
@@ -248,17 +333,26 @@ let TK = [];
 let tkFilter = 'open';
 const TK_CHIPS = [
   ['open', 'Open'], ['New', 'New'], ['In Follow-up', 'Follow-up'], ['In Transit', 'In Transit'],
-  ['repair', 'In Repair'], ['due', '📅 Follow-up Due'], ['Closed', 'Closed'], ['all', 'All']
+  ['repair', 'In Repair'], ['due', '📅 Follow-up Due'], ['fb', '⭐ Feedback Due'], ['lowfb', '🔴 Low Feedback'],
+  ['Closed', 'Closed'], ['all', 'All']
 ];
 const REPAIR_SET = ['Received', 'In Repair', 'Partial Dispatch'];
 
 function isDue(t) { const f = t['Next Follow-up']; return !!f && t['Status'] !== 'Closed' && f.substring(0, 10) <= todayStr(); }
+function daysAgoStr(n) { const d = new Date(); d.setDate(d.getDate() - n); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+function isFbDue(t) {
+  const c = String(t['Closed At'] || '').substring(0, 10);
+  return fbOpen(t) && !t['Feedback Asked At'] && !!c && c <= daysAgoStr(CONFIG.FEEDBACK_AFTER_DAYS || 3);
+}
 function tkMatch(t, f) {
   const s = t['Status'];
   if (f === 'all') return true;
   if (f === 'open') return s !== 'Closed';
   if (f === 'repair') return REPAIR_SET.indexOf(s) !== -1;
-  if (f === 'due') return isDue(t);
+   if (f === 'due') return isDue(t);
+  if (f === 'fb') return isFbDue(t);
+  if (f === 'lowfb') return t['Feedback Flag'] === 'Low';
+  return s === f;
   return s === f;
 }
 
@@ -280,7 +374,7 @@ function tkSetFilter(f) { tkFilter = f; tkRender(); }
 function tkRender() {
   $('tkChips').innerHTML = TK_CHIPS.map(([k, l]) => {
     const n = TK.filter(t => tkMatch(t, k)).length;
-    return '<button class="chip' + (k === tkFilter ? ' active' : '') + (k === 'due' && n ? ' chip-red' : '') +
+   return '<button class="chip' + (k === tkFilter ? ' active' : '') + (['due', 'fb', 'lowfb'].indexOf(k) !== -1 && n ? ' chip-red' : '') +
       '" data-f="' + k + '" onclick="tkSetFilter(this.dataset.f)">' + l + ' <b>' + n + '</b></button>';
   }).join('');
 
@@ -298,8 +392,11 @@ function tkRender() {
     if (calls) tags.push('<span class="tag">📞 ' + calls + ' call' + (calls > 1 ? 's' : '') + '</span>');
     if (t['Next Follow-up'] && t['Status'] !== 'Closed') tags.push('<span class="tag ' + (due ? 'tag-red' : '') + '">📅 ' + esc(t['Next Follow-up']) + '</span>');
     if (items) tags.push('<span class="tag tag-teal">📦 ' + items + ' items</span>');
-    if (t['Outcome'] && t['Status'] === 'Closed') tags.push('<span class="tag tag-green">' + esc(t['Outcome']) + '</span>');
-    return '<div class="tk-card' + (due ? ' due' : '') + '" data-id="' + esc(t['Ticket ID']) + '" onclick="drawerOpen(this.dataset.id)">' +
+  if (t['Outcome'] && t['Status'] === 'Closed') tags.push('<span class="tag tag-green">' + esc(t['Outcome']) + '</span>');
+    if (isFbDue(t)) tags.push('<span class="tag tag-amber">⭐ Feedback due</span>');
+    if (t['Rating']) tags.push('<span class="tag ' + (t['Feedback Flag'] === 'Low' ? 'tag-red' : 'tag-green') + '">⭐ ' + esc(t['Rating']) + '/5</span>');
+    if (t['Feedback Flag'] === 'Low') tags.push('<span class="tag tag-red">🔴 Low feedback</span>');
+    return '<div class="tk-card' + (due || t['Feedback Flag'] === 'Low' ? ' due' : '') + '" data-id="' + esc(t['Ticket ID']) + '" onclick="drawerOpen(this.dataset.id)">' +
       '<div class="tk-top"><span class="tk-id">' + esc(t['Ticket ID']) + '</span>' + pill(t['Status']) + '</div>' +
       '<div class="tk-company">' + esc(t['Company Name']) + '</div>' +
       '<div class="tk-meta">' + esc(t['Contact Person']) + ' · ' + esc(t['Phone']) + ' · 🛵 ' + esc(t['Scooty Brand']) + '</div>' +
@@ -355,17 +452,19 @@ function drawerRender() {
   let h = stepper(t);
 
   // ---- actions (service team) ----
-  if (can('service') && open) {
+  const lowFb = t['Feedback Flag'] === 'Low';
+  if (can('service') && (open || lowFb)) {
     const b = [];
     b.push('<button class="btn btn-primary" onclick="callFormToggle()">📞 Add Call Log</button>');
     if (!sent && early) b.push('<button class="btn btn-green" onclick="ticketSolve(this)">✅ Solved on Call</button>');
     if (early || s === 'In Transit') b.push('<button class="btn btn-violet" onclick="pickupOpen()">🚚 ' + (s === 'In Transit' ? 'Edit Pickup' : 'Arrange Pickup') + '</button>');
     if (s === 'In Transit' || (sent && early)) b.push('<button class="btn btn-teal" onclick="receiveOpen()">📥 Mark Received</button>');
-    h += '<div class="dsec actions">' +
+h += '<div class="dsec actions">' +
+      (lowFb ? '<div class="note note-red">🔴 The customer gave low feedback. Call them and save a call log — that clears this flag.</div>' : '') +
       (sent && early ? '<div class="note">🚚 The customer has already sent the battery — no troubleshooting needed. Just note the problem and fill in the pickup details.</div>' : '') +
       '<div class="btn-wrap">' + b.join('') + '</div>' + callFormHtml(t) + '</div>';
   }
-
+  h += waSection();
   h += sec('📝 Phase 1 — Basic', kv([
     ['Company', t['Company Name']], ['Contact Person', t['Contact Person']], ['Phone', t['Phone']],
     ['Scooty Brand', t['Scooty Brand']], ['Battery Sent', t['Battery Sent']],
@@ -396,6 +495,12 @@ function drawerRender() {
     ).join('') + '</div>' : '') +
     '<button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="recvSlip()">🖨️ Receiving Slip</button>');
   }
+
+  if (t['Rating']) h += sec('⭐ Customer Feedback', kv([
+    ['Rating', t['Rating'] + ' / 5'], ['Problem Solved', t['Solved']], ['Comment', t['Feedback Comment']], ['Given On', t['Feedback At']],
+    ['Flag', t['Feedback Flag'] === 'Low' ? '🔴 Low — call pending' : (t['Feedback Flag'] === 'Resolved' ? '✅ Called back' : '')]
+  ]));
+  else if (t['Feedback Asked At']) h += sec('⭐ Customer Feedback', kv([['Asked On', t['Feedback Asked At']], ['Status', 'Waiting for customer']]));
 
   const calls = CUR.calls || [];
   h += sec('🗒️ Call Log (' + calls.length + ')', calls.length ? '<div class="timeline">' + calls.map(c =>
@@ -586,7 +691,13 @@ function slipHead(title, date) {
 function recvSlip() {
   if (!CUR) return;
   const t = CUR.ticket, items = CUR.items || [];
-  const nb = items.filter(i => i['Item Type'] === 'Battery').length, nc = items.length - nb;
+const nb = items.filter(i => i['Item Type'] === 'Battery').length, nc = items.length - nb;
+  const link = trackLink(t);
+  const track = link ? '<div class="slip-track">' + qrImg(link, 110) +
+    '<div><b>Track your service online</b><br>Scan the QR code, or open<br><span class="slip-url">' + esc(CONFIG.TRACK_URL) +
+    '</span><br>and enter Ticket ID <b>' + esc(t['Ticket ID']) + '</b> + last 4 digits of your phone.</div></div>' : '';
+  const wa = waBtn(t['Ticket ID'], 'received', waUrl(t['Phone'], waFill((CONFIG.WA_TEMPLATES || {}).received,
+    { name: t['Contact Person'], id: t['Ticket ID'], items: itemsText(nb, nc), link })), 'Send "Items Received" on WhatsApp', '');
   const html =
     '<div class="slip" id="slip">' + slipHead('Receiving Slip', t['Received Date']) +
       '<div class="slip-sec">Ticket: <b>' + esc(t['Ticket ID']) + '</b></div>' +
@@ -601,8 +712,10 @@ function recvSlip() {
         '</td><td>' + esc(it['Category'] || '—') + '</td><td>' + esc(it['Model'] || '—') + '</td></tr>').join('') +
       '</table>' +
       '<div class="slip-total">Total: ' + nb + ' batter' + (nb === 1 ? 'y' : 'ies') + ', ' + nc + ' charger' + (nc === 1 ? '' : 's') + '</div>' +
+ track +
       '<div class="slip-sign"><div>Received by (Litpax)</div><div>Customer / Transporter</div></div>' +
-    '</div><button class="btn btn-primary btn-block" onclick="slipPrint()">🖨️ Print Slip</button>';
+    '</div><button class="btn btn-primary btn-block" onclick="slipPrint()">🖨️ Print Slip</button>' +
+    '<div class="wa-after">' + wa + '</div>';
   modalOpen('📥 Receiving Slip — ' + t['Ticket ID'], html);
 }
 
@@ -767,14 +880,24 @@ async function dispSubmit() {
   if (!confirm(ids.length + ' item(s) will be dispatched. Continue?')) return;
   const r = await run(d, $('dSubmit')); if (!r) return;
 
-  const sel = dispItems.filter(it => dispSel[it.itemId]);
-  dispSlip(sel, d, r);
+const sel = dispItems.filter(it => dispSel[it.itemId]);
+  let tk = null;
+  try { const g = await api({ action: 'getTicket', ticketId: (r.tickets || [])[0] }); if (g && g.ok) tk = g.ticket; } catch (e) {}
+  dispSlip(sel, d, r, tk);
   ['d_transport', 'd_cost', 'd_problem', 'd_address', 'd_remarks'].forEach(id => { $(id).value = ''; });
   cacheDel('board_items'); cacheDel('tickets');
   dispLoad();
 }
 
-function dispSlip(sel, d, r) {
+function dispSlip(sel, d, r, tk) {
+  let wa = '';
+  if (tk) {
+    const nb = sel.filter(i => i.itemType === 'Battery').length;
+    wa = waBtn(tk['Ticket ID'], 'dispatched', waUrl(tk['Phone'], waFill((CONFIG.WA_TEMPLATES || {}).dispatched, {
+      name: tk['Contact Person'], id: tk['Ticket ID'], items: itemsText(nb, sel.length - nb),
+      date: niceDate(d.dispatchDate), transport: d.transport, link: trackLink(tk)
+    })), 'Send "Dispatched" on WhatsApp', '');
+  }
   const html =
     '<div class="slip" id="slip">' +
       slipHead('Dispatch Slip', d.dispatchDate) +
@@ -783,8 +906,9 @@ function dispSlip(sel, d, r) {
       '<table class="slip-table"><tr><th>#</th><th>Item ID</th><th>Item</th><th>Type</th><th>Model</th></tr>' +
       sel.map((it, i) => '<tr><td>' + (i + 1) + '</td><td>' + esc(it.itemId) + '</td><td>' + esc(it.itemType) + '</td><td>' + esc(it.category || '—') + '</td><td>' + esc(it.model || '—') + '</td></tr>').join('') +
       '</table>' +
-      '<div class="slip-sign"><div>Dispatched by (Litpax)</div><div>Received by (Customer / Transporter)</div></div>' +
-    '</div><button class="btn btn-primary btn-block" onclick="slipPrint()">🖨️ Print Slip</button>';
+'<div class="slip-sign"><div>Dispatched by (Litpax)</div><div>Received by (Customer / Transporter)</div></div>' +
+    '</div><button class="btn btn-primary btn-block" onclick="slipPrint()">🖨️ Print Slip</button>' +
+    (wa ? '<div class="wa-after">' + wa + '</div>' : '');
   modalOpen('✅ ' + r.dispatched + ' item(s) dispatched', html);
 }
 
