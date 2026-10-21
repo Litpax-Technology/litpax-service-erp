@@ -302,15 +302,31 @@ function afterChange() {
    ============================================================ */
 function openNew() { newReset(); }
 
+function brandOptions() {
+  const sel = $('n_brand');
+  if (sel.options.length) return;
+  sel.innerHTML = '<option value="">-- Select brand --</option>' +
+    (CONFIG.SCOOTY_BRANDS || []).map(b => '<option>' + esc(b) + '</option>').join('') +
+    '<option value="__other">Other (type name)</option>';
+}
+function brandPick(sel) {
+  const o = $('n_brandOther');
+  o.style.display = sel.value === '__other' ? 'block' : 'none';
+  if (sel.value === '__other') o.focus(); else o.value = '';
+}
+
 function newReset() {
-  ['n_company', 'n_person', 'n_phone', 'n_brand'].forEach(id => { $(id).value = ''; });
+  brandOptions();
+  ['n_company', 'n_person', 'n_phone', 'n_brand', 'n_brandOther'].forEach(id => { $(id).value = ''; });
+  $('n_brandOther').style.display = 'none';
   document.querySelectorAll('#n_sentSeg button').forEach(b => b.classList.remove('on'));
   $('newForm').style.display = 'block'; $('newSuccess').style.display = 'none';
 }
 
 async function ticketCreate() {
   const v = id => $(id).value.trim();
-  const d = { action: 'createTicket', company: v('n_company'), person: v('n_person'), phone: v('n_phone'), brand: v('n_brand'), batterySent: segVal('n_sentSeg') };
+  const brand = v('n_brand') === '__other' ? v('n_brandOther') : v('n_brand');
+  const d = { action: 'createTicket', company: v('n_company'), person: v('n_person'), phone: v('n_phone'), brand, batterySent: segVal('n_sentSeg') };
   if (!d.company || !d.person || !d.phone || !d.brand) return toast('⚠️ Please fill all fields');
   if (!/^\d{10}$/.test(d.phone)) return toast('⚠️ Phone must be 10 digits');
   if (!d.batterySent) return toast('⚠️ Select whether the battery has been sent');
