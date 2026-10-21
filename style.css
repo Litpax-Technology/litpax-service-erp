@@ -521,3 +521,55 @@ textarea { min-height: 70px; resize: vertical; }
 
 @media (max-width: 900px) { .ws { max-width: 320px; border-radius: 16px; } }
 @media (prefers-reduced-motion: reduce) { .ws * { animation: none !important; } }
+
+/* ---------- workshop v2 — bigger technician, better hands, more life (overrides above) ---------- */
+.t { transform: translate(268px, 321px) scale(1.25); }
+.arm-b { transform: rotate(-28deg); } .arm-b .fore { transform: rotate(-55deg); }
+.arm-f { transform: rotate(-52deg); } .arm-f .fore { transform: rotate(-69deg); }
+.ws-bubble { transform-origin: 248px 180px; }
+
+/* idle: screwdriver on the battery label */
+@keyframes wIdleArm { 0%, 100% { transform: rotate(-52deg); } 15% { transform: rotate(-58deg); } 25% { transform: rotate(-49deg); }
+  35% { transform: rotate(-58deg); } 45% { transform: rotate(-49deg); } 65% { transform: rotate(-54deg); } 85% { transform: rotate(-48deg); } }
+@keyframes wIdleFore { 0%, 100% { transform: rotate(-69deg); } 15% { transform: rotate(-62deg); } 25% { transform: rotate(-72deg); }
+  35% { transform: rotate(-62deg); } 45% { transform: rotate(-72deg); } 65% { transform: rotate(-66deg); } 85% { transform: rotate(-74deg); } }
+
+/* intro story re-fitted to the bigger technician */
+@keyframes wTech { 0%, 8% { transform: translate(-110px, 290px) scale(1.25); } 30%, 40% { transform: translate(250px, 290px) scale(1.25); }
+  50%, 100% { transform: translate(268px, 321px) scale(1.25); } }
+@keyframes wBat { 0%, 8% { transform: translate(-360px, -8px); } 30% { transform: translate(0, -8px); } 34% { transform: translate(0, -14px); } 38%, 100% { transform: translate(0, 0); } }
+@keyframes wArmF { 0%, 30% { transform: rotate(-50deg); } 34%, 38% { transform: rotate(-70deg); } 42% { transform: rotate(-10deg); }
+  50%, 54% { transform: rotate(-40deg); } 57% { transform: rotate(-101deg); } 61% { transform: rotate(-112deg); } 64% { transform: rotate(-98deg); }
+  67%, 73% { transform: rotate(-95deg); } 70%, 76% { transform: rotate(-102deg); } 79% { transform: rotate(-98deg); }
+  81% { transform: rotate(-125deg); } 84% { transform: rotate(-95deg); } 88%, 95% { transform: rotate(-170deg); } 100% { transform: rotate(-52deg); } }
+@keyframes wForeF { 0%, 30% { transform: rotate(-40deg); } 34%, 38% { transform: rotate(-10deg); } 42% { transform: rotate(0); }
+  50%, 54% { transform: rotate(-60deg); } 57% { transform: rotate(-96deg); } 61% { transform: rotate(-110deg); } 64% { transform: rotate(-60deg); }
+  67%, 73% { transform: rotate(-55deg); } 70%, 76% { transform: rotate(-65deg); } 79%, 81% { transform: rotate(-60deg); }
+  84% { transform: rotate(-40deg); } 88%, 95% { transform: rotate(-40deg); } 100% { transform: rotate(-69deg); } }
+@keyframes wArmB { 0%, 30% { transform: rotate(-50deg); } 34%, 38% { transform: rotate(-70deg); } 42% { transform: rotate(-10deg); } 50%, 100% { transform: rotate(-28deg); } }
+@keyframes wForeB { 0%, 30% { transform: rotate(-40deg); } 34%, 38% { transform: rotate(-10deg); } 42% { transform: rotate(0); } 50%, 100% { transform: rotate(-55deg); } }
+
+/* wall clock */
+.ws-sec { transform-origin: 120px 72px; animation: wSpin 60s steps(60) infinite; }
+.ws-min { transform-origin: 120px 72px; animation: wSpin 3600s linear infinite; }
+@keyframes wSpin { to { transform: rotate(360deg); } }
+
+/* dust floating in the lamp light */
+.ws-dust circle { fill: rgba(255,240,215,.85); opacity: 0; animation: wDust var(--t, 7s) linear infinite; animation-delay: var(--d, 0s); }
+@keyframes wDust { 0% { opacity: 0; transform: translate(0, 0); } 20% { opacity: .8; } 80% { opacity: .4; } 100% { opacity: 0; transform: translate(10px, -40px); } }
+
+/* multimeter probe — current flowing */
+.ws-flow { fill: none; stroke: #f5cd47; stroke-width: 2; stroke-dasharray: 3 9; stroke-linecap: round; opacity: .85; animation: wFlow 1s linear infinite; }
+@keyframes wFlow { to { stroke-dashoffset: -12; } }
+
+/* technician blinks */
+.eye { transform-box: fill-box; transform-origin: center; animation: wBlinkEye 4.5s infinite; }
+@keyframes wBlinkEye { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+
+/* live status tag above the battery */
+.ws-tag { animation: wTag 4s ease-in-out infinite; }
+.ws-tag text { font: 700 9px 'Inter', sans-serif; fill: #9df2c6; }
+@keyframes wTag { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+.play-intro .ws-tag { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) { .ws-dust circle, .ws-flow, .eye, .ws-tag, .ws-sec { animation: none !important; } }
