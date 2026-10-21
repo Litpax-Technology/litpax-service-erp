@@ -44,6 +44,14 @@
           <rect y="400" width="600" height="50" fill="#0b0c19"/>
           <rect y="399" width="600" height="2" fill="#262a4d"/>
 
+                    <!-- wall clock -->
+          <circle cx="120" cy="72" r="22" fill="#141734" stroke="#2c3160" stroke-width="2"/>
+          <circle cx="120" cy="72" r="18" fill="none" stroke="#2c3160" stroke-width="2" stroke-dasharray="1 8.42"/>
+          <line class="ws-min" x1="120" y1="72" x2="120" y2="57" stroke="#a7acc9" stroke-width="2" stroke-linecap="round"/>
+          <line x1="120" y1="72" x2="129" y2="72" stroke="#a7acc9" stroke-width="2.4" stroke-linecap="round"/>
+          <line class="ws-sec" x1="120" y1="76" x2="120" y2="54" stroke="#ef5359" stroke-width="1.2" stroke-linecap="round"/>
+          <circle cx="120" cy="72" r="2" fill="#ef5359"/>
+
           <!-- sign -->
           <rect x="56" y="118" width="128" height="50" rx="6" fill="#141734" stroke="#2c3160"/>
           <text x="120" y="139" text-anchor="middle" class="ws-t1">REPAIR BAY 02</text>
@@ -63,6 +71,16 @@
           <g class="ws-lamp">
             <line x1="352" y1="0" x2="352" y2="66" stroke="#2a2d48" stroke-width="2"/>
             <polygon class="ws-cone" points="336,92 368,92 478,312 226,312" fill="url(#wsCone)"/>
+            <g class="ws-dust">
+              <circle cx="330" cy="260" r="1.2" style="--d:0s;--t:7s"/>
+              <circle cx="372" cy="230" r="1" style="--d:-1.5s;--t:8s"/>
+              <circle cx="350" cy="200" r="1.4" style="--d:-3s;--t:6.5s"/>
+              <circle cx="400" cy="270" r="1" style="--d:-4.5s;--t:7.5s"/>
+              <circle cx="310" cy="290" r="1.3" style="--d:-2s;--t:9s"/>
+              <circle cx="385" cy="180" r="1" style="--d:-5.5s;--t:7s"/>
+              <circle cx="355" cy="150" r="1.2" style="--d:-1s;--t:8.5s"/>
+              <circle cx="420" cy="290" r="1.1" style="--d:-6s;--t:6s"/>
+            </g>
             <path d="M330 66h44l14 26h-72z" fill="#272a45"/>
             <path d="M316 90h72v3h-72z" fill="#ef5359"/>
             <ellipse class="ws-bulb" cx="352" cy="93" rx="12" ry="4" fill="#fff3c4"/>
@@ -86,10 +104,15 @@
           <path class="ws-steam s1" d="M525 286q-4-6 0-12q4-6 0-12"/>
           <path class="ws-steam s2" d="M531 286q-4-6 0-12q4-6 0-12"/>
 
+          <!-- probe cable: multimeter → battery -->
+          <path d="M480 306C456 334 418 330 398 292" stroke="#1a1b28" stroke-width="2.4" fill="none"/>
+          <path class="ws-flow" d="M480 306C456 334 418 330 398 292"/>
+          <circle cx="398" cy="292" r="2.5" fill="#ef5359"/>
+
           <!-- stool -->
-          <path d="M258 350L250 400M300 350L308 400" stroke="#2a2d48" stroke-width="5" stroke-linecap="round"/>
-          <path d="M254 378h50" stroke="#2a2d48" stroke-width="3"/>
-          <rect x="248" y="341" width="62" height="9" rx="4" fill="#3d4166"/>
+          <path d="M246 338L238 400M292 338L300 400" stroke="#2a2d48" stroke-width="5" stroke-linecap="round"/>
+          <path d="M242 372h54" stroke="#2a2d48" stroke-width="3"/>
+          <rect x="236" y="329" width="62" height="9" rx="4" fill="#3d4166"/>
 
           <!-- battery (real photo: body + lid) -->
           <g class="bat"><g class="bat-in">
@@ -105,6 +128,13 @@
             </g>
             <rect class="ws-mouth" x="338" y="224" width="28" height="8" fill="none"/>
           </g></g>
+
+          <!-- live status tag -->
+          <g class="ws-tag">
+            <rect x="404" y="168" width="86" height="22" rx="11" fill="rgba(70,227,155,.14)" stroke="rgba(70,227,155,.55)"/>
+            <circle cx="416" cy="179" r="3" fill="#46e39b"/>
+            <text x="424" y="182">74V · Healthy</text>
+          </g>
 
           <!-- technician -->
           <g class="t"><g class="t-bob">
@@ -122,7 +152,7 @@
               <g class="head">
                 <circle class="skin" cx="2" cy="-86" r="15"/>
                 <circle class="ear" cx="-3" cy="-85" r="3"/>
-                <circle cx="10" cy="-86" r="1.8" fill="#1a1f36"/>
+                <circle class="eye" cx="10" cy="-86" r="1.8" fill="#1a1f36"/>
                 <path d="M8-79q4 2 7-1" stroke="#1a1f36" stroke-width="1.4" fill="none" stroke-linecap="round"/>
                 <path d="M-13-90a15 15 0 0 1 30 0z" fill="#ef5359"/>
                 <rect x="12" y="-92" width="13" height="4" rx="2" fill="#c23037"/>
@@ -140,9 +170,9 @@
 
           <!-- done bubble -->
           <g class="ws-bubble">
-            <path d="M270 218L286 232L276 214Z" fill="#46e39b"/>
-            <circle cx="262" cy="206" r="16" fill="#46e39b"/>
-            <path d="M254 206l6 6l11-12" fill="none" stroke="#0f1124" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M256 194L274 210L262 190Z" fill="#46e39b"/>
+            <circle cx="248" cy="180" r="16" fill="#46e39b"/>
+            <path d="M240 180l6 6l11-12" fill="none" stroke="#0f1124" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
           </g>
         </svg>
       </div>
