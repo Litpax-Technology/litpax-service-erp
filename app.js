@@ -1153,11 +1153,6 @@ function trkRender() {
     kpi('Solved on call', solvedPct + '%', '', 'of closed tickets');
 
   // where open tickets are right now
-  const strip = [[2, 'Awaiting first call'], [3, 'Awaiting pickup'], [4, 'In transit'], [5, 'In repair'], [6, 'Ready to dispatch']];
-  $('trkStages').innerHTML = strip.map(([idx, lbl]) => {
-    const n = open.filter(m => m.curIdx === idx - 1 + 1 && !m.solved && m.curIdx === idx - 1 ? false : m.curIdx === idx - 1).length;
-    return '';
-  }).join('');
   $('trkStages').innerHTML = [[1, 'Awaiting first call'], [2, 'Awaiting pickup'], [3, 'In transit'], [4, 'In repair'], [5, 'Ready to dispatch']].map(([idx, lbl]) => {
     const n = open.filter(m => m.curIdx === idx).length, w = open.length ? Math.round(n / open.length * 100) : 0;
     return '<button class="trk-st' + (trkStage === String(idx) ? ' on' : '') + '" onclick="trkSetStage(\'' + idx + '\')"><b>' + n + '</b><span>' + lbl + '</span><div class="bar"><i style="width:' + w + '%"></i></div></button>';
