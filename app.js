@@ -282,6 +282,9 @@ function enterApp(r) {
   $('sbNav').innerHTML = R.nav.map(k =>
     '<button class="sb-item" data-nav="' + k + '" onclick="go(this.dataset.nav)"><span class="sb-ico">' + SCREENS[k].icon + '</span>' + SCREENS[k].label + '</button>'
   ).join('');
+  const sbLogo = document.querySelector('.sb-brand img'), cardLogo = document.querySelector('.card-logo');
+  if (sbLogo && cardLogo) sbLogo.src = cardLogo.src;
+  if ($('hdrDate')) $('hdrDate').textContent = new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
   ensureMasters();           // preload dropdown lists in the background
   go(R.nav[0]);
 }
