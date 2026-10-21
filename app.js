@@ -354,7 +354,6 @@ function tkMatch(t, f) {
   if (f === 'fb') return isFbDue(t);
   if (f === 'lowfb') return t['Feedback Flag'] === 'Low';
   return s === f;
-  return s === f;
 }
 
 function openTickets() { tkLoad(false); }
