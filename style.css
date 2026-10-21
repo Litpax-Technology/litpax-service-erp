@@ -573,3 +573,30 @@ textarea { min-height: 70px; resize: vertical; }
 .play-intro .ws-tag { opacity: 0; }
 
 @media (prefers-reduced-motion: reduce) { .ws-dust circle, .ws-flow, .eye, .ws-tag, .ws-sec { animation: none !important; } }
+
+/* ---------- workshop v3 — technician 1.5x ---------- */
+.t { transform: translate(255px, 305px) scale(1.5); }
+.arm-b { transform: rotate(-4deg); } .arm-b .fore { transform: rotate(-55deg); }
+.arm-f { transform: rotate(-52deg); } .arm-f .fore { transform: rotate(-44deg); }
+.ws-bubble { transform-origin: 232px 128px; }
+
+/* idle: screwdriver on the battery label */
+@keyframes wIdleArm { 0%, 100% { transform: rotate(-52deg); } 15% { transform: rotate(-57deg); } 25% { transform: rotate(-49deg); }
+  35% { transform: rotate(-57deg); } 45% { transform: rotate(-49deg); } 65% { transform: rotate(-54deg); } 85% { transform: rotate(-48deg); } }
+@keyframes wIdleFore { 0%, 100% { transform: rotate(-44deg); } 15% { transform: rotate(-38deg); } 25% { transform: rotate(-47deg); }
+  35% { transform: rotate(-38deg); } 45% { transform: rotate(-47deg); } 65% { transform: rotate(-42deg); } 85% { transform: rotate(-49deg); } }
+
+/* intro story at 1.5x */
+@keyframes wTech { 0%, 8% { transform: translate(-120px, 268px) scale(1.5); } 30%, 40% { transform: translate(238px, 268px) scale(1.5); }
+  50%, 100% { transform: translate(255px, 305px) scale(1.5); } }
+@keyframes wBat { 0%, 8% { transform: translate(-358px, -25px); } 30% { transform: translate(0, -25px); } 34% { transform: translate(0, -30px); } 38%, 100% { transform: translate(0, 0); } }
+@keyframes wArmF { 0%, 30% { transform: rotate(-50deg); } 34%, 38% { transform: rotate(-70deg); } 42% { transform: rotate(-10deg); }
+  50%, 54% { transform: rotate(-40deg); } 57% { transform: rotate(-57deg); } 61% { transform: rotate(-80deg); } 64% { transform: rotate(-64deg); }
+  67%, 73% { transform: rotate(-60deg); } 70%, 76% { transform: rotate(-68deg); } 79% { transform: rotate(-64deg); }
+  81% { transform: rotate(-90deg); } 84% { transform: rotate(-57deg); } 88%, 95% { transform: rotate(-170deg); } 100% { transform: rotate(-52deg); } }
+@keyframes wForeF { 0%, 30% { transform: rotate(-40deg); } 34%, 38% { transform: rotate(-10deg); } 42% { transform: rotate(0); }
+  50%, 54% { transform: rotate(-60deg); } 57% { transform: rotate(-127deg); } 61% { transform: rotate(-110deg); } 64% { transform: rotate(-80deg); }
+  67%, 73% { transform: rotate(-75deg); } 70%, 76% { transform: rotate(-85deg); } 79% { transform: rotate(-80deg); }
+  81% { transform: rotate(-100deg); } 84% { transform: rotate(-127deg); } 88%, 95% { transform: rotate(-40deg); } 100% { transform: rotate(-44deg); } }
+@keyframes wArmB { 0%, 30% { transform: rotate(-50deg); } 34%, 38% { transform: rotate(-70deg); } 42% { transform: rotate(-10deg); } 50%, 100% { transform: rotate(-4deg); } }
+@keyframes wForeB { 0%, 30% { transform: rotate(-40deg); } 34%, 38% { transform: rotate(-10deg); } 42% { transform: rotate(0); } 50%, 100% { transform: rotate(-55deg); } }
