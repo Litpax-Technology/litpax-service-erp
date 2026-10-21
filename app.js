@@ -215,7 +215,8 @@ const SCREENS = {
   tickets:   { id: 'scrTickets',  icon: '📋', label: 'Tickets',      title: 'Tickets',      sub: 'All tickets — status, call log and actions', open: openTickets },
   board:     { id: 'scrBoard',    icon: '🔧', label: 'Repair Board', title: 'Repair Board', sub: 'Phase 3 — item-wise planning and stages', open: openBoard },
   dispatch:  { id: 'scrDispatch', icon: '🚚', label: 'Dispatch',     title: 'Dispatch',     sub: 'Send out items that passed Final QC & Pack', open: openDispatch },
-  masters:   { id: 'scrMasters',  icon: '⚙️', label: 'Masters',      title: 'Masters',      sub: 'Dropdown lists — names and battery / charger types', open: openMasters }
+  masters:   { id: 'scrMasters',  icon: '⚙️', label: 'Masters',      title: 'Masters',      sub: 'Dropdown lists — names and battery / charger types', open: openMasters },
+  tracker:   { id: 'scrTracker',  icon: '🛰️', label: 'Ticket Tracker', title: 'Ticket Tracker', sub: 'Where every ticket and battery is right now — with SLA', open: openTracker }
 };
 let CURRENT = '';
 
@@ -1013,3 +1014,238 @@ async function mstRemove(el) {
   document.addEventListener('click', end, true);
   window.addEventListener('keydown', end);
 })();
+
+/* ============================================================
+   TICKET TRACKER — every ticket, every step, SLA
+   ============================================================ */
+let TRK = [], trkFilter = 'open', trkStage = '', trkTimer = 0;
+const TRK_STEPS = ['Registered', 'Service call', 'Pickup', 'Received', 'Repair', 'Dispatched'];
+const TRK_NOW = ['', 'Awaiting first call', 'Awaiting pickup', 'In transit', 'In repair', 'Ready to dispatch'];
+const TRK_MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const SLA_DEF = { firstCall: 4, transit: 72, queue: 24, repair: 72, dispatch: 24 };
+const slaMs = k => ((CONFIG.SLA_HOURS || {})[k] || SLA_DEF[k]) * 3600e3;
+const TRK_CHIPS = [['open', 'Open'], ['late', '🔴 Delayed'], ['risk', '🟡 At risk'], ['closed', 'Closed'], ['all', 'All']];
+
+function tsOf(s) {
+  const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  return m ? new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)).getTime() : 0;
+}
+function fmtDur(ms) {
+  if (!(ms > 0)) return '0m';
+  const m = Math.round(ms / 60000), h = Math.floor(m / 60), d = Math.floor(h / 24);
+  if (d) return d + 'd ' + (h % 24) + 'h';
+  if (h) return h + 'h ' + (m % 60) + 'm';
+  return m + 'm';
+}
+function fmtDT(ts) { if (!ts) return ''; const d = new Date(ts); return d.getDate() + ' ' + TRK_MON[d.getMonth()] + ', ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
+function fmtDay(ts) { const d = new Date(ts); return d.getDate() + ' ' + TRK_MON[d.getMonth()]; }
+
+// everything about one ticket, calculated
+function trkModel(t) {
+  const now = Date.now(), ST = CONFIG.STAGES || [], last = ST[ST.length - 1];
+  const created = tsOf(t.createdAt), call = tsOf(t.firstCallAt), pick = tsOf(t.pickupSetAt), recv = tsOf(t.receivedDate);
+  const closed = t.status === 'Closed', closedAt = closed ? (tsOf(t.closedAt) || now) : 0;
+  const solved = t.outcome === 'Solved on Call', sent = t.batterySent === 'Yes';
+
+  const items = (t.items || []).map(it => {
+    const ev = it.events || [], times = n => ev.filter(e => e.e === n).map(e => tsOf(e.t)).filter(Boolean);
+    const isDisp = String(it.status || '').toLowerCase() === 'dispatched';
+    const planned = times('Planned').sort((a, b) => a - b)[0] || 0;
+    const qc = times(last).sort((a, b) => b - a)[0] || 0;
+    const disp = times('Dispatched').sort((a, b) => b - a)[0] || 0;
+    const idx = ST.indexOf(it.status);
+    return Object.assign({}, it, { isDisp, planned, disp, qc: qc || (isDisp ? disp : 0), step: isDisp ? ST.length : (idx >= 0 ? idx + 1 : 0) });
+  });
+  const nItems = items.length, nDisp = items.filter(i => i.isDisp).length, qcCount = items.filter(i => i.qc).length;
+  const repStart = items.reduce((a, i) => (i.planned && (!a || i.planned < a)) ? i.planned : a, 0);
+  const qcDone = nItems && qcCount === nItems ? Math.max(...items.map(i => i.qc)) : 0;
+
+  const list = solved ? ['Registered', 'Service call', 'Solved on call'] : TRK_STEPS;
+  const times = solved ? [created, call || closedAt, closedAt]
+    : [created, call, pick || (sent ? created : 0), recv, qcDone, closedAt];
+  let curIdx = 1;
+  for (let i = times.length - 1; i >= 0; i--) if (times[i]) { curIdx = i + 1; break; }
+  const lastTs = Math.max(...times.filter(Boolean), created);
+
+  const segDefs = [
+    { k: 'firstCall', label: 'First response', from: created, to: call || recv || (solved ? closedAt : 0) },
+    { k: 'transit', label: 'Pickup → received', from: pick || (sent ? created : 0), to: recv },
+    { k: 'queue', label: 'Received → repair start', from: recv, to: repStart },
+    { k: 'repair', label: 'Repair → Final QC', from: repStart, to: qcDone },
+    { k: 'dispatch', label: 'Final QC → dispatch', from: qcDone, to: (closed && !solved) ? closedAt : 0 }
+  ];
+  const segs = segDefs.map(s => {
+    const tgt = slaMs(s.k);
+    if (!s.from || (solved && s.k !== 'firstCall')) return Object.assign(s, { tgt, state: 'todo', dur: 0 });
+    const running = !s.to && !closed, end = s.to || (closed ? closedAt : now);
+    const dur = Math.max(0, end - s.from), r = dur / tgt;
+    return Object.assign(s, { tgt, dur, running, state: running ? (r > 1 ? 'late' : r > .75 ? 'risk' : 'ok') : (r > 1 ? 'late-done' : 'done') });
+  });
+  const run = segs.find(s => s.running);
+  const sla = closed ? (segs.some(s => s.state === 'late-done') ? 'closed-late' : 'closed') : (run ? run.state : 'ok');
+
+  let eta = 0;
+  if (!closed && !solved) {
+    eta = now + segs.reduce((a, s) => a + (s.state === 'todo' ? s.tgt : s.running ? Math.max(s.tgt - s.dur, 0) : 0), 0);
+  }
+  const itemFrac = nItems ? items.reduce((a, i) => a + i.step / (ST.length || 1), 0) / nItems : 0;
+  const pct = closed ? 100 : Math.round(((curIdx - 1) + (curIdx === 5 ? itemFrac : 0)) / (list.length - 1) * 100);
+  const nowLabel = closed ? 'Completed' : (curIdx === 5 && !repStart ? 'Waiting for repair' : TRK_NOW[Math.min(curIdx, 5)]);
+
+  return {
+    t, created, closed, closedAt, solved, list, times, curIdx, nowLabel, pct, sla, segs, eta,
+    inStageMs: now - lastTs, ageMs: (closed ? closedAt : now) - created,
+    items, nItems, nDisp, qcCount,
+    respMs: segs[0].state === 'done' || segs[0].state === 'late-done' ? segs[0].dur : 0,
+    repairMs: segs[3].state === 'done' || segs[3].state === 'late-done' ? segs[3].dur : 0
+  };
+}
+
+function openTracker() {
+  trkLoad(false);
+  clearInterval(trkTimer);
+  trkTimer = setInterval(() => {
+    if (CURRENT !== 'tracker') return clearInterval(trkTimer);
+    if (document.visibilityState === 'visible') trkLoad(true);
+  }, 60000);
+}
+
+async function trkLoad(silent) {
+  const c = cacheGet('tracker');
+  if (c && !TRK.length) { TRK = c.val || []; trkRender(); }
+  if (!TRK.length && !silent) $('trkList').innerHTML = '<div class="skeleton sk-card"></div>'.repeat(3);
+  try {
+    const r = await api({ action: 'getTracker' });
+    if (!r || !r.ok) { if (!silent) toast('❌ ' + ((r && r.msg) || 'Could not load tracker')); return; }
+    TRK = r.tickets || []; cacheSet('tracker', TRK); trkRender();
+  } catch (e) { if (e !== 'auth' && !silent && !TRK.length) $('trkList').innerHTML = '<div class="empty">Could not load data ❌</div>'; }
+}
+
+function trkSetFilter(f) { trkFilter = f; trkRender(); }
+function trkSetStage(s) { trkStage = trkStage === s ? '' : s; if (trkStage) trkFilter = 'open'; trkRender(); }
+function trkMatch(m, f) {
+  if (f === 'all') return true;
+  if (f === 'open') return !m.closed;
+  if (f === 'closed') return m.closed;
+  return !m.closed && m.sla === f;
+}
+
+function trkRender() {
+  const all = TRK.map(trkModel), open = all.filter(m => !m.closed), closedM = all.filter(m => m.closed);
+  const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
+  const since = Date.now() - 30 * 864e5, today = todayStr();
+
+  // KPIs
+  const tat = avg(closedM.filter(m => !m.solved && m.closedAt >= since).map(m => m.ageMs));
+  const resp = avg(all.filter(m => m.respMs > 0).map(m => m.respMs));
+  const rep = avg(all.filter(m => m.repairMs > 0).map(m => m.repairMs));
+  const solvedPct = closedM.length ? Math.round(closedM.filter(m => m.solved).length / closedM.length * 100) : 0;
+  const late = open.filter(m => m.sla === 'late').length, risk = open.filter(m => m.sla === 'risk').length;
+  const kpi = (lbl, val, cls, sub) => '<div class="kpi ' + (cls || '') + '"><span>' + lbl + '</span><b>' + val + '</b>' + (sub ? '<small>' + sub + '</small>' : '') + '</div>';
+  $('trkKpis').innerHTML =
+    kpi('Open tickets', open.length) +
+    kpi('Raised today', all.filter(m => String(m.t.createdAt).slice(0, 10) === today).length) +
+    kpi('Delayed', late, late ? 'late' : 'good', 'past SLA') +
+    kpi('At risk', risk, risk ? 'risk' : 'good', '75%+ of SLA used') +
+    kpi('Avg turnaround', tat ? fmtDur(tat) : '—', '', 'last 30 days') +
+    kpi('Avg first response', resp ? fmtDur(resp) : '—', resp && resp <= slaMs('firstCall') ? 'good' : '', 'target ' + fmtDur(slaMs('firstCall'))) +
+    kpi('Avg repair time', rep ? fmtDur(rep) : '—', rep && rep <= slaMs('repair') ? 'good' : '', 'target ' + fmtDur(slaMs('repair'))) +
+    kpi('Solved on call', solvedPct + '%', '', 'of closed tickets');
+
+  // where open tickets are right now
+  const strip = [[2, 'Awaiting first call'], [3, 'Awaiting pickup'], [4, 'In transit'], [5, 'In repair'], [6, 'Ready to dispatch']];
+  $('trkStages').innerHTML = strip.map(([idx, lbl]) => {
+    const n = open.filter(m => m.curIdx === idx - 1 + 1 && !m.solved && m.curIdx === idx - 1 ? false : m.curIdx === idx - 1).length;
+    return '';
+  }).join('');
+  $('trkStages').innerHTML = [[1, 'Awaiting first call'], [2, 'Awaiting pickup'], [3, 'In transit'], [4, 'In repair'], [5, 'Ready to dispatch']].map(([idx, lbl]) => {
+    const n = open.filter(m => m.curIdx === idx).length, w = open.length ? Math.round(n / open.length * 100) : 0;
+    return '<button class="trk-st' + (trkStage === String(idx) ? ' on' : '') + '" onclick="trkSetStage(\'' + idx + '\')"><b>' + n + '</b><span>' + lbl + '</span><div class="bar"><i style="width:' + w + '%"></i></div></button>';
+  }).join('');
+
+  // chips
+  $('trkChips').innerHTML = TRK_CHIPS.map(([k, l]) => {
+    const n = all.filter(m => trkMatch(m, k)).length;
+    return '<button class="chip' + (k === trkFilter ? ' active' : '') + ((k === 'late' || k === 'risk') && n ? ' chip-red' : '') +
+      '" onclick="trkSetFilter(\'' + k + '\')">' + l + ' <b>' + n + '</b></button>';
+  }).join('');
+
+  // list
+  const q = ($('trkSearch').value || '').toLowerCase().trim();
+  const rank = { late: 0, risk: 1, ok: 2, 'closed-late': 3, closed: 3 };
+  const rows = all.filter(m => trkMatch(m, trkFilter) && (!trkStage || (!m.closed && String(m.curIdx) === trkStage)))
+    .filter(m => !q || [m.t.id, m.t.company, m.t.person, m.t.phone, m.t.brand].join(' ').toLowerCase().indexOf(q) !== -1)
+    .sort((a, b) => (rank[a.sla] - rank[b.sla]) || (b.created - a.created));
+  $('trkList').innerHTML = rows.length ? rows.map(trkCard).join('') : '<div class="empty">' + (TRK.length ? 'No tickets here 🔍' : 'No tickets yet ✅') + '</div>';
+}
+
+function trkCard(m) {
+  const t = m.t;
+  const badge = { late: ['🔴 Delayed', 'late'], risk: ['🟡 At risk', 'risk'], ok: ['🟢 On track', 'ok'],
+    closed: ['✅ Completed', 'done'], 'closed-late': ['✅ Completed · late', 'donelate'] }[m.sla];
+  const steps = m.list.map((lbl, i) => {
+    const cls = (i < m.curIdx || m.closed) ? 'done' : (i === m.curIdx ? 'now ' + m.sla : '');
+    const tm = m.times[i] ? fmtDT(m.times[i]) : '';
+    return '<div class="tr-step ' + cls + '"><span class="tr-dot"></span><span class="tr-lbl">' + esc(lbl) + '</span><span class="tr-tm">' + esc(tm) + '</span></div>';
+  }).join('');
+  const foot = [];
+  if (!m.closed) foot.push('<span>⏱ ' + esc(m.nowLabel) + ' for <b>' + fmtDur(m.inStageMs) + '</b></span>');
+  foot.push('<span>' + (m.closed ? 'Turnaround' : 'Age') + ' <b>' + fmtDur(m.ageMs) + '</b></span>');
+  if (m.nItems) foot.push('<span>📦 ' + m.nItems + ' item' + (m.nItems > 1 ? 's' : '') + ' · ' + m.qcCount + '/' + m.nItems + ' QC' + (m.nDisp ? ' · ' + m.nDisp + ' dispatched' : '') + '</span>');
+  if (m.eta) foot.push('<span>🎯 Ready by <b>' + fmtDay(m.eta) + '</b></span>');
+  return '<div class="tr-card ' + (m.closed ? '' : m.sla) + '" style="--p:' + m.pct + '%" data-id="' + esc(t.id) + '" onclick="trkOpen(this.dataset.id)">' +
+    '<div class="tr-top"><span class="tr-id">' + esc(t.id) + '</span><span class="tr-badge ' + badge[1] + '">' + badge[0] + '</span></div>' +
+    '<div class="tr-co">' + esc(t.company) + ' <span>· ' + esc(t.person) + ' · 🛵 ' + esc(t.brand) + '</span></div>' +
+    '<div class="tr-steps">' + steps + '</div>' +
+    '<div class="tr-foot">' + foot.join('') + '</div></div>';
+}
+
+function trkEvLabel(e) {
+  const ST = CONFIG.STAGES || [], last = ST[ST.length - 1];
+  if (e === 'Planned') return 'Planned for repair';
+  if (e === 'Dispatched') return 'Dispatched';
+  if (e === 'Removed from plan') return 'Removed from plan';
+  if (e === last) return 'Final QC & Pack — ready';
+  return 'Repair stage: ' + e;
+}
+
+function trkOpen(id) {
+  const raw = TRK.find(x => x.id === id);
+  if (!raw) return;
+  const m = trkModel(raw), t = raw, ST = CONFIG.STAGES || [];
+
+  const sum = '<div class="trd-sum">' +
+    '<div><span>Now</span><b>' + esc(m.nowLabel) + '</b></div>' +
+    '<div><span>' + (m.closed ? 'Turnaround' : 'Age') + '</span><b>' + fmtDur(m.ageMs) + '</b></div>' +
+    '<div><span>' + (m.closed ? 'Closed on' : 'Ready by') + '</span><b>' + (m.closed ? fmtDT(m.closedAt) : (m.eta ? fmtDay(m.eta) : '—')) + '</b></div></div>';
+
+  const SLA_TXT = { todo: ['—', 'muted'], ok: ['On track', 'ok'], risk: ['At risk', 'risk'], late: ['Delayed', 'late'], done: ['Within SLA', 'ok'], 'late-done': ['Late', 'late'] };
+  const sla = '<div class="trd-h2">⏱ SLA</div><table class="trd-sla"><tr><th>Step</th><th>Target</th><th>Actual</th><th></th></tr>' +
+    m.segs.map(s => '<tr><td>' + s.label + '</td><td>' + fmtDur(s.tgt) + '</td><td>' + (s.state === 'todo' ? '—' : fmtDur(s.dur) + (s.running ? ' <small>(running)</small>' : '')) +
+      '</td><td><span class="tr-pill ' + SLA_TXT[s.state][1] + '">' + SLA_TXT[s.state][0] + '</span></td></tr>').join('') + '</table>';
+
+  const items = m.nItems ? '<div class="trd-h2">📦 Items</div><div class="trd-items">' + m.items.map(it =>
+    '<div class="trd-item"><div class="r1"><b>' + (/charg/i.test(it.type || '') ? '⚡ ' : '🔋 ') + esc(it.id) + '</b><span>' +
+    esc([it.category, it.model].filter(Boolean).join(' · ')) + '</span></div>' +
+    '<div class="r1"><span>' + esc(it.isDisp ? 'Dispatched' : (it.status || 'Received')) + '</span><span>' + it.step + '/' + ST.length + '</span></div>' +
+    '<div class="bar"><i style="width:' + Math.round(it.step / (ST.length || 1) * 100) + '%"></i></div></div>').join('') + '</div>' : '';
+
+  const evs = [], add = (ts, title, sub, tag) => { if (ts) evs.push({ ts, title, sub, tag }); };
+  add(m.created, 'Ticket registered', t.createdBy ? 'by ' + t.createdBy : '');
+  add(tsOf(t.firstCallAt), 'First service call', t.calls + ' call' + (t.calls === 1 ? '' : 's') + ' logged');
+  add(tsOf(t.pickupSetAt), 'Pickup arranged', [t.pickupBy && 'by ' + t.pickupBy, t.transport, t.lr && 'LR ' + t.lr].filter(Boolean).join(' · '));
+  add(tsOf(t.receivedDate), 'Received at service center', m.nItems + ' item' + (m.nItems === 1 ? '' : 's'));
+  (t.items || []).forEach(it => {
+    const tag = (/charg/i.test(it.type || '') ? '⚡ #' : '🔋 #') + String(it.id).split('-').pop();
+    (it.events || []).forEach(e => add(tsOf(e.t), trkEvLabel(e.e), e.by ? 'by ' + e.by : '', tag));
+  });
+  if (m.closed) add(m.closedAt, m.solved ? 'Solved on call — closed' : 'Ticket closed', t.outcome || '');
+  evs.sort((a, b) => a.ts - b.ts);
+  const tl = '<div class="trd-h2">🧭 Full timeline</div><div class="trd-tl">' + (evs.length ? evs.map((e, i) =>
+    '<div class="trd-ev"><span class="trd-dot"></span><div><div class="trd-h"><b>' + esc(e.title) + '</b><span>' + fmtDT(e.ts) + '</span></div>' +
+    (e.tag ? '<span class="trd-tag">' + esc(e.tag) + '</span>' : '') + '<span class="trd-sub">' + esc(e.sub || '') + '</span>' +
+    (i ? '<div class="trd-gap">+' + fmtDur(e.ts - evs[i - 1].ts) + ' after previous step</div>' : '') + '</div></div>'
+  ).join('') : '<div class="empty sm">No events yet</div>') + '</div>';
+
+  modalOpen('🛰️ ' + t.id + ' · ' + t.company, sum + sla + items + tl);
+}
