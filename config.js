@@ -36,6 +36,9 @@ const CONFIG = {
   TRACK_URL: 'https://mis-darpan.github.io/YOUR-REPO/track/',   // ⚠️ apna repo naam daalo, end mein / zaroori
   WA_COUNTRY: '91',
   FEEDBACK_AFTER_DAYS: 3,
+   // New Ticket → Scooty Brand dropdown (add new brands here)
+  SCOOTY_BRANDS: ['Evey', 'Warivo', 'Zelio', 'YBK', 'Urban', 'Maxim', 'Jiva', 'Yakuza', 'J Bros', 'Neovolt',
+                  'Navix', 'G Byke', 'Electric Pay', 'GenZ', 'Mega Green', 'Durasol', 'Ampfuel', 'Marudhar'],
      SLA_HOURS: {
     firstCall: 4,    // ticket created → first service call
     transit:   72,   // pickup arranged → received
