@@ -12,7 +12,7 @@ const CONFIG = {
 
   // nav = sidebar items for the role (the first one opens after login)
   ROLES: {
-    attendant: { label: 'Call Attendant', icon: '📞', nav: ['newTicket', 'tickets'] },
+    attendant: { label: 'Call Attendant', icon: '📞', nav: ['newTicket', 'tracker'] },
     service:   { label: 'Service Team',   icon: '🎧', nav: ['tickets', 'newTicket'] },
     repair:    { label: 'Repair Team',    icon: '🔧', nav: ['board', 'dispatch', 'tickets'] },
     admin:     { label: 'Admin',          icon: '👑', nav: ['tickets', 'newTicket', 'board', 'dispatch', 'masters'] }
@@ -36,6 +36,13 @@ const CONFIG = {
   TRACK_URL: 'https://mis-darpan.github.io/YOUR-REPO/track/',   // ⚠️ apna repo naam daalo, end mein / zaroori
   WA_COUNTRY: '91',
   FEEDBACK_AFTER_DAYS: 3,
+     SLA_HOURS: {
+    firstCall: 4,    // ticket created → first service call
+    transit:   72,   // pickup arranged → received
+    queue:     24,   // received → repair planned
+    repair:    72,   // repair planned → Final QC & Pack
+    dispatch:  24    // Final QC → dispatched
+  },
 
   // {placeholder} khaali ho toh wo poori line message se hat jaati hai
   WA_TEMPLATES: {
