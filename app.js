@@ -971,41 +971,23 @@ async function mstRemove(el) {
   toast('🗑️ "' + v + '" removed'); mstRender();
 }
 
-/* ---------- LOGIN — cinematic hero mouse tilt ---------- */
-(function () {
-  const hero = document.querySelector('.login-hero'), tilt = document.getElementById('cineTilt');
-  if (!hero || !tilt) return;
-  if (!window.matchMedia('(hover: hover)').matches || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  let raf = 0;
-  hero.addEventListener('mousemove', e => {
-    const r = hero.getBoundingClientRect();
-    const x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5;
-    cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(() => {
-      tilt.style.setProperty('--ry', (x * 14).toFixed(2) + 'deg');
-      tilt.style.setProperty('--rx', (-y * 10).toFixed(2) + 'deg');
-    });
-  });
-  hero.addEventListener('mouseleave', () => { tilt.style.setProperty('--ry', '0deg'); tilt.style.setProperty('--rx', '0deg'); });
-})();
-
-/* ---------- LOGIN INTRO — the hero battery opens and the login card comes out ---------- */
+/* ---------- LOGIN INTRO — technician story; the login card comes out of the battery ---------- */
 (function () {
   const root = document.documentElement;
   if (!root.classList.contains('play-intro')) return;
 
-  const card = document.querySelector('.login-card'), bat = document.querySelector('.cine-bat');
+  const card = document.querySelector('.login-card'), mouth = document.querySelector('.ws-mouth');
   try { localStorage.setItem('hub_intro_at', String(Date.now())); } catch (e) {}
   const timers = [];
   let ended = false;
 
-  // start the card at the open lid of the hero battery, then fly it to its real place
+  // start the card inside the open battery, then fly it to its real place
   function fly() {
     if (!card) return;
-    const b = bat ? bat.getBoundingClientRect() : null, c = card.getBoundingClientRect();
-    const ok = b && b.width > 0;
-    const ox = ok ? b.left + b.width / 2 : c.left + c.width / 2;
-    const oy = ok ? b.top + b.height * 0.33 : c.top + c.height / 2;
+    const m = mouth ? mouth.getBoundingClientRect() : null, c = card.getBoundingClientRect();
+    const ok = m && m.width > 0;
+    const ox = ok ? m.left + m.width / 2 : c.left + c.width / 2;
+    const oy = ok ? m.top + m.height / 2 : c.top + c.height / 2;
     card.style.setProperty('--dx', Math.round(ox - (c.left + c.width / 2)) + 'px');
     card.style.setProperty('--dy', Math.round(oy - (c.top + c.height / 2)) + 'px');
     card.classList.add('card-start');
@@ -1016,9 +998,7 @@ async function mstRemove(el) {
     if (ended) return;
     ended = true;
     timers.forEach(clearTimeout);
-    if (card && !card.classList.contains('card-out')) card.classList.add('card-out');
     root.classList.remove('play-intro', 'intro-reveal');
-    root.classList.add('intro-done');
     if (card) {
       card.classList.remove('card-start', 'card-out');
       card.style.removeProperty('--dx'); card.style.removeProperty('--dy');
@@ -1027,9 +1007,9 @@ async function mstRemove(el) {
     window.removeEventListener('keydown', end);
   }
 
-  timers.push(setTimeout(fly, 2900));
-  timers.push(setTimeout(() => root.classList.add('intro-reveal'), 4400));
-  timers.push(setTimeout(end, 5800));
+  timers.push(setTimeout(fly, 5900));
+  timers.push(setTimeout(() => root.classList.add('intro-reveal'), 9000));
+  timers.push(setTimeout(end, 10400));
   document.addEventListener('click', end, true);
   window.addEventListener('keydown', end);
 })();
