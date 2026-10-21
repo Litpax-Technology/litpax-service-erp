@@ -287,6 +287,18 @@
       <div id="tkList" class="tk-list"></div>
     </section>
 
+        <!-- ===== TICKET TRACKER ===== -->
+    <section id="scrTracker" class="screen">
+      <div id="trkKpis" class="trk-kpis"></div>
+      <div id="trkStages" class="trk-stages"></div>
+      <div class="toolbar">
+        <input id="trkSearch" class="search" placeholder="🔍 Ticket ID, company, phone, brand..." oninput="trkRender()">
+        <button class="btn btn-ghost btn-icon" title="Refresh" onclick="trkLoad(false)">↻</button>
+      </div>
+      <div id="trkChips" class="chips"></div>
+      <div id="trkList" class="trk-list"></div>
+    </section>
+
     <!-- ===== PHASE 3: REPAIR BOARD ===== -->
     <section id="scrBoard" class="screen">
       <div class="board-grid">
