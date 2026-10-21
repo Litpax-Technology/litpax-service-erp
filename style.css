@@ -407,7 +407,8 @@ textarea { min-height: 70px; resize: vertical; }
 .leg { transform-origin: 0 0; } .shin { transform-origin: 0 42px; }
 .arm { transform-origin: 0 -52px; } .fore { transform-origin: 0 -20px; }
 .t-up { transform-origin: 0 0; } .head { transform-origin: 0 -72px; }
-.lid { transform-origin: 388px 246px; } .bat-beam { transform-origin: 352px 246px; }
+.lid { transform-origin: 396px 229px; } .bat-beam { transform-origin: 352px 229px; }
+.bat-img { filter: drop-shadow(0 0 1px rgba(255,255,255,.45)) drop-shadow(0 0 10px rgba(239,83,89,.25)); }
 .ws-lamp { transform-origin: 352px 0; } .ws-bubble { transform-origin: 262px 222px; }
 
 /* idle: seated, working on the battery */
