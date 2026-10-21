@@ -91,27 +91,19 @@
           <path d="M254 378h50" stroke="#2a2d48" stroke-width="3"/>
           <rect x="248" y="341" width="62" height="9" rx="4" fill="#3d4166"/>
 
-          <!-- battery -->
+          <!-- battery (real photo: body + lid) -->
           <g class="bat"><g class="bat-in">
-            <polygon class="bat-beam" points="324,246 380,246 404,130 300,130" fill="url(#wsBeam)"/>
-            <rect x="319" y="245" width="66" height="67" rx="3" fill="#15161f"/>
-            <rect x="377" y="245" width="8" height="67" fill="#0e0f16"/>
-            <rect x="319" y="251" width="66" height="4" fill="#ef5359"/>
-            <rect x="326" y="262" width="50" height="40" rx="3" fill="url(#wsLabel)"/>
-            <text x="351" y="277" text-anchor="middle" class="ws-blbl">LITPAX</text>
-            <circle cx="334" cy="291" r="6" fill="#ef5359"/><text x="334" y="293" text-anchor="middle" class="ws-bv">74V</text>
-            <circle class="bat-led" cx="381" cy="306" r="2.4"/>
-            <ellipse class="bat-light" cx="352" cy="246" rx="36" ry="8" fill="url(#wsGlow)"/>
+            <defs>
+              <clipPath id="batBot"><rect x="290" y="228" width="130" height="90"/></clipPath>
+              <clipPath id="batTop"><rect x="290" y="160" width="130" height="69.5"/></clipPath>
+            </defs>
+            <polygon class="bat-beam" points="322,229 382,229 408,100 296,100" fill="url(#wsBeam)"/>
+            <ellipse class="bat-light" cx="352" cy="229" rx="42" ry="9" fill="url(#wsGlow)"/>
+            <image class="bat-img" href="assets/battery.png" x="307.5" y="180" width="89" height="132" clip-path="url(#batBot)"/>
             <g class="lid">
-              <path d="M398 232c2-14-4-22 4-32" stroke="#111" stroke-width="3" fill="none"/>
-              <path d="M392 232c0-12-2-20 6-28" stroke="#ef5359" stroke-width="2.4" fill="none"/>
-              <rect x="396" y="188" width="14" height="14" rx="2.5" fill="#9fd3a8"/>
-              <rect x="316" y="232" width="72" height="14" rx="3" fill="#1e1f2d"/>
-              <rect x="316" y="232" width="72" height="2.5" rx="1.25" fill="#3b3d56"/>
-              <rect x="340" y="226" width="24" height="5" rx="2" fill="#9a9db5"/>
-              <circle cx="378" cy="231" r="3" fill="#2a2c3e"/>
+              <image class="bat-img" href="assets/battery.png" x="307.5" y="180" width="89" height="132" clip-path="url(#batTop)"/>
             </g>
-            <rect class="ws-mouth" x="340" y="238" width="24" height="8" fill="none"/>
+            <rect class="ws-mouth" x="338" y="224" width="28" height="8" fill="none"/>
           </g></g>
 
           <!-- technician -->
