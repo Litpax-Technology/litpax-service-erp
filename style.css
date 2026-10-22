@@ -1021,3 +1021,39 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .sel-add select, .sel-add input { flex: 1; min-width: 0; }
 .sel-add .btn { white-space: nowrap; padding: 9px 14px; }
 .fg label .opt { font-weight: 500; color: var(--muted); }
+
+/* ---------- v3 — new data fields, edit / cancel, item details ---------- */
+.pill-gray { background: #f1f2f6; color: #6b7280; }
+.pill-gray::before { background: #9ca3af; }
+.note-gray { background: #f4f5f8; color: var(--text2); border: 1px solid var(--border); }
+.muted-txt { color: var(--text2); font-size: 12.5px; }
+.btn-danger { color: var(--red); }
+.btn-danger:hover { background: var(--red-soft); border-color: #f5c9c9; }
+.btn-danger-solid { background: var(--red); color: #fff; border: 0; }
+.btn-danger-solid:hover { background: #b91c1c; }
+
+/* receive: type · model · serial · warranty per unit */
+.u-row { grid-template-columns: 28px minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr) 152px; }
+.modal:has(.u-row) { max-width: 700px; }
+@media (max-width: 640px) {
+  .u-row { grid-template-columns: 26px minmax(0, 1fr) minmax(0, 1fr); }
+  .u-row .u-serial { grid-column: 2; }
+  .u-row .u-war { grid-column: 3; }
+}
+
+/* items inside the ticket drawer */
+.im-row { align-items: flex-start; }
+.im-main { flex: 1; min-width: 0; }
+.im-main small { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+.im-main .tag { margin-top: 4px; display: inline-block; }
+
+/* repair board + dispatch: serial / repeat / fault */
+.bc-info { display: flex; flex-wrap: wrap; gap: 5px; font-size: 11.5px; color: var(--text2); }
+.bc-info span:not(.tag) { background: #f4f5f9; border-radius: 6px; padding: 2px 7px; }
+.bc-fault { display: block; width: 100%; text-align: left; border: 1px solid var(--border); background: #fafbfd; border-radius: 9px;
+  padding: 7px 10px; font-size: 12.5px; font-weight: 500; color: var(--text); cursor: pointer; transition: border-color .15s, background .15s; }
+.bc-fault:hover { border-color: var(--primary); background: var(--primary-soft); }
+.bc-fault.empty { color: var(--primary-ink); border-style: dashed; }
+.ms-main { flex: 1; min-width: 0; }
+.ms-main .bc-fault { margin-top: 7px; width: auto; display: inline-block; }
+.ms-main .bc-fault.empty { color: var(--amber); border-color: #f5d9a8; background: #fffaf0; }
