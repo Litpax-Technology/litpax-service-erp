@@ -123,7 +123,8 @@ const STATUS_PUBLIC = {
   'Received':         ['Received', 'teal'],
   'In Repair':        ['Under repair', 'teal'],
   'Partial Dispatch': ['Partially dispatched', 'amber'],
-  'Closed':           ['Completed', 'green']
+  'Closed':           ['Completed', 'green'],
+  'Cancelled':        ['Cancelled', 'gray']
 };
 
 function render() {
@@ -142,6 +143,12 @@ function render() {
 
 // s: 'done' | 'now' | ''
 function buildSteps(t, items) {
+  if (t.status === 'Cancelled') {
+    return [
+      { l: 'Complaint Registered', d: t.createdAt, s: 'done' },
+      { l: 'Request Cancelled', d: t.closedAt, x: 'Please contact our service team if you still need help', s: 'done' }
+    ];
+  }
   if (t.outcome === 'Solved on Call') {
     return [
       { l: 'Complaint Registered', d: t.createdAt, s: 'done' },
