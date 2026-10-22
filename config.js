@@ -32,7 +32,10 @@ const CONFIG = {
   // ⚠️ Must EXACTLY match REPAIR_STAGES in Code.gs (same order) — last = Final QC & Pack
   STAGES: ['Diagnosis', 'Cell Testing', 'Repair Work', 'Charging Test', 'Final QC & Pack'],
 
-  // ── Customer tracking page + WhatsApp (click-to-send) ──
+  // ── Customer tracking page (track/ folder also reads this file) + WhatsApp (click-to-send) ──
+  COMPANY: 'Litpax Technology Pvt. Ltd.',
+  SUPPORT_PHONE: '',                         // optional — toll-free / support number in the tracking page footer
+  TRACK_LOGO_URL: '../assets/logo-white.png', // logo on the tracking page header
   TRACK_URL: 'https://mis-darpan.github.io/YOUR-REPO/track/',   // ⚠️ apna repo naam daalo, end mein / zaroori
   WA_COUNTRY: '91',
   FEEDBACK_AFTER_DAYS: 3,
