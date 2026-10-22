@@ -81,7 +81,7 @@ function segVal(id) { const b = document.querySelector('#' + id + ' button.on');
 
 /* ---------- MASTERS (dropdown lists: sheet-driven + admin UI) ---------- */
 let MASTERS = null;
-const EMPTY_MASTERS = { attendedBy: [], dispatchedBy: [], batteryType: [], chargerType: [] };
+const EMPTY_MASTERS = { attendedBy: [], dispatchedBy: [], batteryType: [], chargerType: [], dealer: [] };
 const M = () => MASTERS || EMPTY_MASTERS;
 
 async function ensureMasters(force) {
@@ -305,15 +305,36 @@ function afterChange() {
    ============================================================ */
 function openNew() { newReset(); }
 
+function dealerList() { const l = M().dealer || []; return l.length ? l : (CONFIG.SCOOTY_BRANDS || []); }
 function brandOptions() {
-  const sel = $('n_brand');
-  if (sel.options.length) return;
-  sel.innerHTML = '<option value="">-- Select dealer --</option>' +
-    (CONFIG.SCOOTY_BRANDS || []).map(b => '<option>' + esc(b) + '</option>').join('');
+  const sel = $('n_brand'), cur = sel.value;
+  sel.innerHTML = '<option value="">-- Select dealer (optional) --</option>' +
+    dealerList().map(b => '<option' + (b === cur ? ' selected' : '') + '>' + esc(b) + '</option>').join('');
+}
+function dealerAddToggle(show) {
+  $('dealerAddRow').style.display = show ? 'flex' : 'none';
+  if (show) { $('n_dealerNew').value = ''; $('n_dealerNew').focus(); }
+}
+function dealerSelect(v) {
+  const o = Array.from($('n_brand').options).find(x => x.value.toLowerCase() === v.toLowerCase());
+  if (o) $('n_brand').value = o.value;
+  return !!o;
+}
+async function dealerAdd(btn) {
+  const v = $('n_dealerNew').value.trim();
+  if (!v) return toast('⚠️ Enter dealer name');
+  if (dealerSelect(v)) { dealerAddToggle(false); return toast('ℹ️ "' + v + '" is already in the list — selected'); }
+  const r = await run({ action: 'addDealer', value: v }, btn);
+  if (!r) return;
+  MASTERS = r.masters; cacheSet('masters', MASTERS);
+  brandOptions(); dealerSelect(v); dealerAddToggle(false);
+  toast('✅ Dealer "' + v + '" added');
 }
 
 function newReset() {
   brandOptions();
+  ensureMasters().then(brandOptions);
+  dealerAddToggle(false);
   ['n_company', 'n_person', 'n_phone', 'n_brand'].forEach(id => { $(id).value = ''; });
   document.querySelectorAll('#n_sentSeg button').forEach(b => b.classList.remove('on'));
   $('newForm').style.display = 'block'; $('newSuccess').style.display = 'none';
@@ -322,7 +343,7 @@ function newReset() {
 async function ticketCreate() {
   const v = id => $(id).value.trim();
   const d = { action: 'createTicket', company: v('n_company'), person: v('n_person'), phone: v('n_phone'), brand: v('n_brand'), batterySent: segVal('n_sentSeg') };
-  if (!d.company || !d.person || !d.phone || !d.brand) return toast('⚠️ Please fill all fields');
+   if (!d.company || !d.person || !d.phone) return toast('⚠️ Please fill all required fields');
   if (!/^\d{10}$/.test(d.phone)) return toast('⚠️ Phone must be 10 digits');
   if (!d.batterySent) return toast('⚠️ Select whether the battery has been sent');
   const r = await run(d, $('n_submit'));
@@ -937,7 +958,8 @@ const MST_LISTS = [
   ['attendedBy',   'Attended By',   'Names in the call log dropdown',          '🎧'],
   ['dispatchedBy', 'Dispatched By', 'Names in the Dispatch form dropdown',     '🚚'],
   ['batteryType',  'Battery Type',  'Types offered when receiving batteries',  '🔋'],
-  ['chargerType',  'Charger Type',  'Types offered when receiving chargers',   '⚡']
+['chargerType',  'Charger Type',  'Types offered when receiving chargers',   '⚡'],
+  ['dealer',       'Dealer',        'Dealers in the New Ticket form',          '🏪']
 ];
 
 function openMasters() {
