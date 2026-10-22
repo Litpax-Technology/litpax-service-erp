@@ -81,7 +81,7 @@ function segVal(id) { const b = document.querySelector('#' + id + ' button.on');
 
 /* ---------- MASTERS (dropdown lists: sheet-driven + admin UI) ---------- */
 let MASTERS = null;
-const EMPTY_MASTERS = { attendedBy: [], dispatchedBy: [], batteryType: [], chargerType: [], dealer: [] };
+const EMPTY_MASTERS = { attendedBy: [], dispatchedBy: [], batteryType: [], chargerType: [], dealer: [], faultCode: [], complaint: [] };
 const M = () => MASTERS || EMPTY_MASTERS;
 
 async function ensureMasters(force) {
@@ -124,9 +124,13 @@ function cacheDel(k) { try { sessionStorage.removeItem(k); } catch (e) {} }
 const STATUS_TONE = {
   'New': 'blue', 'In Follow-up': 'amber', 'In Transit': 'violet', 'Received': 'teal',
   'In Repair': 'teal', 'Partial Dispatch': 'amber', 'Closed': 'green',
-  'In Planning': 'amber', 'Dispatched': 'green'
+  'In Planning': 'amber', 'Dispatched': 'green', 'Cancelled': 'gray'
 };
 function pill(s) { return '<span class="pill pill-' + (STATUS_TONE[s] || 'blue') + '">' + esc(s || '—') + '</span>'; }
+const dealerOf = t => t['Dealer'] || t['Scooty Brand'] || '';
+const isEnded = s => s === 'Closed' || s === 'Cancelled';
+const rupee = v => v === '' || v == null ? '' : '₹' + Number(v).toLocaleString('en-IN');
+function repeatTag(n) { n = parseInt(n, 10) || 0; return n ? '<span class="tag tag-red" title="This serial number came before">🔁 Repeat ×' + n + '</span>' : ''; }
 
 /* ---------- TRACKING LINK + WHATSAPP (click-to-send) ---------- */
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -282,8 +286,6 @@ function enterApp(r) {
   $('sbNav').innerHTML = R.nav.map(k =>
     '<button class="sb-item" data-nav="' + k + '" onclick="go(this.dataset.nav)"><span class="sb-ico">' + SCREENS[k].icon + '</span>' + SCREENS[k].label + '</button>'
   ).join('');
-  const sbLogo = document.querySelector('.sb-brand img'), cardLogo = document.querySelector('.card-logo');
-  if (sbLogo && cardLogo) sbLogo.src = cardLogo.src;
   if ($('hdrDate')) $('hdrDate').textContent = new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
   ensureMasters();           // preload dropdown lists in the background
   go(R.nav[0]);
@@ -296,7 +298,7 @@ function logout() {
 
 // clear stale cached data after any change
 function afterChange() {
-  ['tickets', 'board_items'].forEach(cacheDel);
+  ['tickets', 'board_items', 'tracker'].forEach(cacheDel);
   if (CURRENT === 'tickets') tkLoad(true);
 }
 
@@ -331,18 +333,25 @@ async function dealerAdd(btn) {
   toast('✅ Dealer "' + v + '" added');
 }
 
-function newReset() {
+function newSelects() {
   brandOptions();
-  ensureMasters().then(brandOptions);
+  const cpl = $('n_complaint').value, st = $('n_state').value;
+  $('n_complaint').innerHTML = optList(M().complaint, cpl, '-- Select complaint (optional) --');
+  $('n_state').innerHTML = optList(CONFIG.STATES || [], st, '-- Select state --');
+}
+function newReset() {
+  ['n_company', 'n_person', 'n_phone', 'n_brand', 'n_city', 'n_state', 'n_complaint'].forEach(id => { $(id).value = ''; });
+  newSelects();
+  ensureMasters().then(newSelects);
   dealerAddToggle(false);
-  ['n_company', 'n_person', 'n_phone', 'n_brand'].forEach(id => { $(id).value = ''; });
   document.querySelectorAll('#n_sentSeg button').forEach(b => b.classList.remove('on'));
   $('newForm').style.display = 'block'; $('newSuccess').style.display = 'none';
 }
 
 async function ticketCreate() {
   const v = id => $(id).value.trim();
-  const d = { action: 'createTicket', company: v('n_company'), person: v('n_person'), phone: v('n_phone'), brand: v('n_brand'), batterySent: segVal('n_sentSeg') };
+  const d = { action: 'createTicket', company: v('n_company'), person: v('n_person'), phone: v('n_phone'), brand: v('n_brand'),
+    city: v('n_city'), state: v('n_state'), complaint: v('n_complaint'), batterySent: segVal('n_sentSeg') };
    if (!d.company || !d.person || !d.phone) return toast('⚠️ Please fill all required fields');
   if (!/^\d{10}$/.test(d.phone)) return toast('⚠️ Phone must be 10 digits');
   if (!d.batterySent) return toast('⚠️ Select whether the battery has been sent');
@@ -367,11 +376,11 @@ let tkFilter = 'open';
 const TK_CHIPS = [
   ['open', 'Open'], ['New', 'New'], ['In Follow-up', 'Follow-up'], ['In Transit', 'In Transit'],
   ['repair', 'In Repair'], ['due', '📅 Follow-up Due'], ['fb', '⭐ Feedback Due'], ['lowfb', '🔴 Low Feedback'],
-  ['Closed', 'Closed'], ['all', 'All']
+  ['Closed', 'Closed'], ['Cancelled', 'Cancelled'], ['all', 'All']
 ];
 const REPAIR_SET = ['Received', 'In Repair', 'Partial Dispatch'];
 
-function isDue(t) { const f = t['Next Follow-up']; return !!f && t['Status'] !== 'Closed' && f.substring(0, 10) <= todayStr(); }
+function isDue(t) { const f = t['Next Follow-up']; return !!f && !isEnded(t['Status']) && f.substring(0, 10) <= todayStr(); }
 function daysAgoStr(n) { const d = new Date(); d.setDate(d.getDate() - n); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
 function isFbDue(t) {
   const c = String(t['Closed At'] || '').substring(0, 10);
@@ -380,7 +389,7 @@ function isFbDue(t) {
 function tkMatch(t, f) {
   const s = t['Status'];
   if (f === 'all') return true;
-  if (f === 'open') return s !== 'Closed';
+  if (f === 'open') return !isEnded(s);
   if (f === 'repair') return REPAIR_SET.indexOf(s) !== -1;
    if (f === 'due') return isDue(t);
   if (f === 'fb') return isFbDue(t);
@@ -412,7 +421,7 @@ function tkRender() {
 
   const q = $('tkSearch').value.toLowerCase().trim();
   const rows = TK.filter(t => tkMatch(t, tkFilter)).filter(t => !q ||
-    [t['Ticket ID'], t['Company Name'], t['Contact Person'], t['Phone'], t['Scooty Brand']].join(' ').toLowerCase().indexOf(q) !== -1
+    [t['Ticket ID'], t['Company Name'], t['Contact Person'], t['Phone'], dealerOf(t), t['City'], t['Complaint']].join(' ').toLowerCase().indexOf(q) !== -1
   ).sort((a, b) => idNum(b['Ticket ID']) - idNum(a['Ticket ID']));
 
   if (!rows.length) { $('tkList').innerHTML = '<div class="empty">' + (TK.length ? 'No matches 🔍' : 'No tickets yet ✅') + '</div>'; return; }
@@ -420,9 +429,10 @@ function tkRender() {
   $('tkList').innerHTML = rows.map(t => {
     const due = isDue(t), calls = parseInt(t['Total Calls'], 10) || 0, items = parseInt(t['Total Items'], 10) || 0;
     const tags = [];
-    if (t['Battery Sent'] === 'Yes' && REPAIR_SET.indexOf(t['Status']) === -1 && t['Status'] !== 'Closed') tags.push('<span class="tag tag-violet">🚚 Battery sent</span>');
+    if (t['Battery Sent'] === 'Yes' && REPAIR_SET.indexOf(t['Status']) === -1 && !isEnded(t['Status'])) tags.push('<span class="tag tag-violet">🚚 Battery sent</span>');
+    if (t['Complaint'] && !isEnded(t['Status'])) tags.push('<span class="tag">⚠️ ' + esc(t['Complaint']) + '</span>');
     if (calls) tags.push('<span class="tag">📞 ' + calls + ' call' + (calls > 1 ? 's' : '') + '</span>');
-    if (t['Next Follow-up'] && t['Status'] !== 'Closed') tags.push('<span class="tag ' + (due ? 'tag-red' : '') + '">📅 ' + esc(t['Next Follow-up']) + '</span>');
+    if (t['Next Follow-up'] && !isEnded(t['Status'])) tags.push('<span class="tag ' + (due ? 'tag-red' : '') + '">📅 ' + esc(t['Next Follow-up']) + '</span>');
     if (items) tags.push('<span class="tag tag-teal">📦 ' + items + ' items</span>');
   if (t['Outcome'] && t['Status'] === 'Closed') tags.push('<span class="tag tag-green">' + esc(t['Outcome']) + '</span>');
     if (isFbDue(t)) tags.push('<span class="tag tag-amber">⭐ Feedback due</span>');
@@ -431,7 +441,7 @@ function tkRender() {
     return '<div class="tk-card' + (due || t['Feedback Flag'] === 'Low' ? ' due' : '') + '" data-id="' + esc(t['Ticket ID']) + '" onclick="drawerOpen(this.dataset.id)">' +
       '<div class="tk-top"><span class="tk-id">' + esc(t['Ticket ID']) + '</span>' + pill(t['Status']) + '</div>' +
       '<div class="tk-company">' + esc(t['Company Name']) + '</div>' +
-      '<div class="tk-meta">' + esc(t['Contact Person']) + ' · ' + esc(t['Phone']) + ' · 🛵 ' + esc(t['Scooty Brand']) + '</div>' +
+      '<div class="tk-meta">' + esc(t['Contact Person']) + ' · ' + esc(t['Phone']) + (dealerOf(t) ? ' · 🏪 ' + esc(dealerOf(t)) : '') + (t['City'] ? ' · 📍 ' + esc(t['City']) : '') + '</div>' +
       '<div class="tk-foot"><div class="tags">' + tags.join('') + '</div><span class="tk-date">' + esc(String(t['Created At'] || '').substring(0, 10)) + '</span></div>' +
     '</div>';
   }).join('');
@@ -445,7 +455,9 @@ let CUR = null; // {ticket, calls, items}
 async function drawerOpen(id) {
   CUR = null;
   $('drTitle').textContent = id;
-  $('drBody').innerHTML = '<div class="skeleton sk-block"></div><div class="skeleton sk-block"></div>';
+  const pre = TK.find(x => x['Ticket ID'] === id);
+  $('drBody').innerHTML = (pre ? sec('📝 ' + esc(pre['Company Name']), kv([['Contact Person', pre['Contact Person']], ['Phone', pre['Phone']], ['Status', pre['Status']]])) : '') +
+    '<div class="skeleton sk-block"></div><div class="skeleton sk-block"></div>';
   $('drawer').classList.add('open'); $('drawerOv').classList.add('show');
   try {
     const [r] = await Promise.all([api({ action: 'getTicket', ticketId: id }), ensureMasters()]);
@@ -477,11 +489,13 @@ function stepper(t) {
 }
 
 function drawerRender() {
-  const t = CUR.ticket, s = t['Status'], sent = t['Battery Sent'] === 'Yes', open = s !== 'Closed';
+  const t = CUR.ticket, s = t['Status'], sent = t['Battery Sent'] === 'Yes', open = !isEnded(s), cancelled = s === 'Cancelled';
   const early = s === 'New' || s === 'In Follow-up';
   $('drTitle').innerHTML = esc(t['Ticket ID']) + ' ' + pill(s);
 
-  let h = stepper(t);
+  let h = cancelled ? '' : stepper(t);
+  if (cancelled) h += '<div class="dsec actions"><div class="note note-gray">🚫 <b>Cancelled</b> on ' + esc(t['Closed At']) + '<br>Reason: ' + esc(t['Cancel Reason'] || '—') + '</div>' +
+    (can('admin') ? '<button class="btn btn-ghost" onclick="ticketReopen(this)">↩️ Reopen ticket</button>' : '<div class="muted-sm">Only admin can reopen a cancelled ticket.</div>') + '</div>';
 
   // ---- actions (service team) ----
   const lowFb = t['Feedback Flag'] === 'Low';
@@ -491,15 +505,18 @@ function drawerRender() {
     if (!sent && early) b.push('<button class="btn btn-green" onclick="ticketSolve(this)">✅ Solved on Call</button>');
     if (early || s === 'In Transit') b.push('<button class="btn btn-violet" onclick="pickupOpen()">🚚 ' + (s === 'In Transit' ? 'Edit Pickup' : 'Arrange Pickup') + '</button>');
     if (s === 'In Transit' || (sent && early)) b.push('<button class="btn btn-teal" onclick="receiveOpen()">📥 Mark Received</button>');
+    if (open) b.push('<button class="btn btn-ghost" onclick="editOpen()">✏️ Edit details</button>');
+    if (early || s === 'In Transit') b.push('<button class="btn btn-ghost btn-danger" onclick="cancelOpen()">🚫 Cancel ticket</button>');
 h += '<div class="dsec actions">' +
       (lowFb ? '<div class="note note-red">🔴 The customer gave low feedback. Call them and save a call log — that clears this flag.</div>' : '') +
       (sent && early ? '<div class="note">🚚 The customer has already sent the battery — no troubleshooting needed. Just note the problem and fill in the pickup details.</div>' : '') +
       '<div class="btn-wrap">' + b.join('') + '</div>' + callFormHtml(t) + '</div>';
   }
-  h += waSection();
+  if (!cancelled) h += waSection();
   h += sec('📝 Phase 1 — Basic', kv([
     ['Company', t['Company Name']], ['Contact Person', t['Contact Person']], ['Phone', t['Phone']],
-    ['Scooty Brand', t['Scooty Brand']], ['Battery Sent', t['Battery Sent']],
+    ['Dealer', dealerOf(t)], ['City / State', [t['City'], t['State']].filter(Boolean).join(', ')], ['Complaint', t['Complaint']],
+    ['Battery Sent', t['Battery Sent']],
     ['Created', t['Created At'] + (t['Created By'] ? ' · ' + t['Created By'] : '')]
   ]) + (t['Phone'] ? '<a class="call-link" href="tel:' + esc(t['Phone']) + '">📲 Call ' + esc(t['Phone']) + '</a>' : ''));
 
@@ -522,8 +539,10 @@ h += '<div class="dsec actions">' +
       ['Batteries', t['Battery Qty'] || 0], ['Chargers', t['Charger Qty'] || 0],
       ['Remarks', t['Receive Remarks']]
     ]) + (items.length ? '<div class="items-mini">' + items.map(it =>
-      '<div class="im-row"><span class="im-id">' + esc(it['Item ID']) + '</span><span>' + (it['Item Type'] === 'Charger' ? '⚡' : '🔋') + ' ' +
-      esc([it['Category'], it['Model']].filter(Boolean).join(' · ')) + '</span>' + pill(it['Item Status']) + '</div>'
+      '<div class="im-row"><span class="im-id">' + esc(it['Item ID']) + '</span><span class="im-main">' + (it['Item Type'] === 'Charger' ? '⚡' : '🔋') + ' ' +
+      esc([it['Category'], it['Model']].filter(Boolean).join(' · ')) +
+      '<small>' + esc([it['Serial No'] && 'SN ' + it['Serial No'], it['Warranty'], it['Fault Code'] && 'Fault: ' + it['Fault Code'], rupee(it['Repair Cost'])].filter(Boolean).join(' · ')) + '</small>' +
+      repeatTag(it['Repeat Count']) + '</span>' + pill(it['Item Status']) + '</div>'
     ).join('') + '</div>' : '') +
     '<button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="recvSlip()">🖨️ Receiving Slip</button>');
   }
@@ -541,9 +560,57 @@ h += '<div class="dsec actions">' +
     (c['Next Follow-up'] ? '<div class="tl-next">📅 Next follow-up: ' + esc(c['Next Follow-up']) + '</div>' : '') + '</div>'
   ).join('') + '</div>' : '<div class="empty sm">No call logs yet</div>');
 
-  if (t['Closed At']) h += sec('✅ Closed', kv([['Closed At', t['Closed At']], ['Outcome', t['Outcome']]]));
+  if (t['Closed At'] && !cancelled) h += sec('✅ Closed', kv([['Closed At', t['Closed At']], ['Outcome', t['Outcome']]]));
+
+  const hist = CUR.history || [];
+  if (hist.length) h += sec('🕘 Change History (' + hist.length + ')', '<div class="timeline">' + hist.map(x =>
+    '<div class="tl-item"><div class="tl-head"><b>' + esc(x['Action']) + (x['Item ID'] ? ' · ' + esc(x['Item ID']) : '') + '</b><span>' + esc(x['Time']) + ' · ' + esc(x['User']) + '</span></div>' +
+    '<div class="tl-body muted-txt">' + esc(x['Details']) + '</div></div>').join('') + '</div>');
 
   $('drBody').innerHTML = h;
+}
+
+/* ---- Edit / Cancel / Reopen ---- */
+function editOpen() {
+  const t = CUR.ticket;
+  modalOpen('✏️ Edit ticket — ' + t['Ticket ID'],
+    '<div class="form-grid">' +
+      '<div class="fg full"><label>Customer Company Name <b>*</b></label><input id="e_company" maxlength="150" value="' + esc(t['Company Name']) + '"></div>' +
+      fg('Contact Person <b>*</b>', 'e_person', 'text', t['Contact Person'], ' maxlength="100"') +
+      fg('Phone <b>*</b>', 'e_phone', 'text', t['Phone'], ' maxlength="10" inputmode="numeric"') +
+      '<div class="fg full"><label>Dealer</label><select id="e_brand">' + optList(dealerList(), dealerOf(t), '-- No dealer --') + '</select></div>' +
+      fg('City', 'e_city', 'text', t['City'], ' maxlength="80"') +
+      '<div class="fg"><label>State</label><select id="e_state">' + optList(CONFIG.STATES || [], t['State'] || '', '-- Select state --') + '</select></div>' +
+      '<div class="fg full"><label>Complaint</label><select id="e_complaint">' + optList(M().complaint, t['Complaint'] || '', '-- Select complaint --') + '</select></div>' +
+    '</div><div class="muted-sm" style="margin:-4px 0 14px">Every change is saved in the ticket history.</div>' +
+    '<button class="btn btn-primary btn-block" onclick="editSave(this)">Save changes ✓</button>');
+}
+async function editSave(btn) {
+  const v = id => $(id).value.trim();
+  const d = { action: 'editTicket', ticketId: CUR.ticket['Ticket ID'], company: v('e_company'), person: v('e_person'), phone: v('e_phone'),
+    brand: v('e_brand'), city: v('e_city'), state: v('e_state'), complaint: v('e_complaint') };
+  if (!d.company || !d.person) return toast('⚠️ Company and contact person are required');
+  if (!/^\d{10}$/.test(d.phone)) return toast('⚠️ Phone must be 10 digits');
+  const r = await run(d, btn); if (!r) return;
+  modalClose(); toast(r.changed ? '✅ ' + r.changed + ' change(s) saved' : 'ℹ️ Nothing changed'); afterChange(); drawerReload();
+}
+function cancelOpen() {
+  modalOpen('🚫 Cancel ticket — ' + CUR.ticket['Ticket ID'],
+    '<div class="note note-red">Use this for duplicate or wrong tickets. The ticket stays in records as <b>Cancelled</b> and admin can reopen it.</div>' +
+    '<div class="fg full" style="margin-bottom:14px"><label>Reason <b>*</b></label><textarea id="x_reason" maxlength="300" placeholder="e.g. Duplicate of LTX-R-0042 / customer called by mistake"></textarea></div>' +
+    '<button class="btn btn-danger-solid btn-block" onclick="cancelSave(this)">Cancel this ticket</button>');
+  setTimeout(() => $('x_reason').focus(), 50);
+}
+async function cancelSave(btn) {
+  const reason = $('x_reason').value.trim();
+  if (!reason) return toast('⚠️ Enter the reason');
+  const r = await run({ action: 'cancelTicket', ticketId: CUR.ticket['Ticket ID'], reason }, btn); if (!r) return;
+  modalClose(); toast('🚫 Ticket cancelled'); afterChange(); drawerReload();
+}
+async function ticketReopen(btn) {
+  if (!confirm('Reopen this cancelled ticket?')) return;
+  const r = await run({ action: 'reopenTicket', ticketId: CUR.ticket['Ticket ID'] }, btn); if (!r) return;
+  toast('↩️ Reopened — status: ' + r.status); afterChange(); drawerReload();
 }
 
 /* ---- Call log ---- */
@@ -652,19 +719,21 @@ const qtyVal = id => Math.max(0, Math.min(50, parseInt($(id).value, 10) || 0));
 function recvUnits() {
   // keep what was already typed when quantities change
   const keep = k => Array.from(document.querySelectorAll('.u-row[data-u="' + k + '"]'))
-    .map(r => ({ c: r.querySelector('select').value, m: r.querySelector('input').value }));
+    .map(r => ({ c: r.querySelector('.u-type').value, m: r.querySelector('.u-model').value, s: r.querySelector('.u-serial').value, w: r.querySelector('.u-war').value }));
   const kb = keep('B'), kc = keep('C');
   const bq = qtyVal('r_bq'), cq = qtyVal('r_cq');
 
   const block = (k, label, n, list, prev, ico) => {
     if (!n) return '';
     let s = '<div class="u-block"><div class="u-head"><span>' + ico + ' ' + (label === 'Battery' ? 'Batteries' : label + 's') + ' (' + n + ')</span>' +
-      (n > 1 ? '<button type="button" class="link-btn" onclick="recvCopy(\'' + k + '\')">Copy #1 to all</button>' : '') + '</div>';
+      (n > 1 ? '<button type="button" class="link-btn" onclick="recvCopy(\'' + k + '\')">Copy #1 type, model &amp; warranty to all</button>' : '') + '</div>';
     for (let i = 0; i < n; i++) {
       const p = prev[i] || {};
       s += '<div class="u-row" data-u="' + k + '"><span class="u-no">#' + (i + 1) + '</span>' +
-        '<select>' + optList(list, p.c || '', '-- ' + label + ' type --') + '</select>' +
-        '<input maxlength="100" placeholder="' + label + ' model" value="' + esc(p.m || '') + '"></div>';
+        '<select class="u-type">' + optList(list, p.c || '', '-- ' + label + ' type --') + '</select>' +
+        '<input class="u-model" maxlength="100" placeholder="' + label + ' model *" value="' + esc(p.m || '') + '">' +
+        '<input class="u-serial" maxlength="60" placeholder="Serial No" value="' + esc(p.s || '') + '">' +
+        '<select class="u-war">' + optList(CONFIG.WARRANTY || [], p.w || '', 'Warranty?') + '</select></div>';
     }
     return s + '</div>';
   };
@@ -681,8 +750,8 @@ function recvUnits() {
 function recvCopy(k) {
   const rows = document.querySelectorAll('.u-row[data-u="' + k + '"]');
   if (!rows.length) return;
-  const c = rows[0].querySelector('select').value, m = rows[0].querySelector('input').value;
-  rows.forEach(r => { r.querySelector('select').value = c; r.querySelector('input').value = m; });
+  const c = rows[0].querySelector('.u-type').value, m = rows[0].querySelector('.u-model').value, w = rows[0].querySelector('.u-war').value;
+  rows.forEach(r => { r.querySelector('.u-type').value = c; r.querySelector('.u-model').value = m; r.querySelector('.u-war').value = w; });
 }
 
 async function recvSave(btn) {
@@ -691,9 +760,10 @@ async function recvSave(btn) {
   for (const [k, type] of [['B', 'Battery'], ['C', 'Charger']]) {
     const rows = document.querySelectorAll('.u-row[data-u="' + k + '"]');
     for (let i = 0; i < rows.length; i++) {
-      const c = rows[i].querySelector('select').value, m = rows[i].querySelector('input').value.trim();
+      const c = rows[i].querySelector('.u-type').value, m = rows[i].querySelector('.u-model').value.trim();
+      const sn = rows[i].querySelector('.u-serial').value.trim(), w = rows[i].querySelector('.u-war').value;
       if (!c || !m) return toast('⚠️ ' + type + ' #' + (i + 1) + ': select type and enter model');
-      items.push({ type, category: c, model: m });
+      items.push({ type, category: c, model: m, serial: sn, warranty: w });
     }
   }
   if (!items.length) return toast('⚠️ Enter battery or charger quantity');
@@ -703,7 +773,9 @@ async function recvSave(btn) {
   const r = await run({ action: 'markReceived', ticketId: id, receivedDate: $('r_date').value, items, remarks: $('r_rem').value.trim() }, btn, true);
   if (!r) return;
   afterChange();
-  toast('✅ ' + r.items + ' items moved to Repair');
+  const rep = r.repeats || [];
+  toast(rep.length ? '🔁 ' + rep.length + ' repeat batter' + (rep.length > 1 ? 'ies' : 'y') + ' found: ' + rep.map(x => x.serial + ' (×' + x.count + ')').join(', ')
+                   : '✅ ' + r.items + ' items moved to Repair');
   try {
     const t = await api({ action: 'getTicket', ticketId: id });
     if (t && t.ok) { CUR = t; drawerRender(); recvSlip(); return; }
@@ -735,13 +807,14 @@ const nb = items.filter(i => i['Item Type'] === 'Battery').length, nc = items.le
       '<div class="slip-sec">Ticket: <b>' + esc(t['Ticket ID']) + '</b></div>' +
       kv([
         ['Company', t['Company Name']], ['Contact', [t['Contact Person'], t['Phone']].filter(Boolean).join(' · ')],
-        ['Scooty Brand', t['Scooty Brand']], ['Received By', t['Received By']],
+        ['Dealer', dealerOf(t)], ['Received By', t['Received By']],
         ['Pickup By', t['Pickup By']], ['Transport', t['Transport Name']], ['LR No', t['LR No']],
         ['No. of Boxes', t['No. of Boxes']], ['Remarks', t['Receive Remarks']]
       ]) +
-      '<table class="slip-table"><tr><th>#</th><th>Item ID</th><th>Item</th><th>Type</th><th>Model</th></tr>' +
+      '<table class="slip-table"><tr><th>#</th><th>Item ID</th><th>Item</th><th>Type</th><th>Model</th><th>Serial No</th><th>Warranty</th></tr>' +
       items.map((it, i) => '<tr><td>' + (i + 1) + '</td><td>' + esc(it['Item ID']) + '</td><td>' + esc(it['Item Type']) +
-        '</td><td>' + esc(it['Category'] || '—') + '</td><td>' + esc(it['Model'] || '—') + '</td></tr>').join('') +
+        '</td><td>' + esc(it['Category'] || '—') + '</td><td>' + esc(it['Model'] || '—') + '</td><td>' + esc(it['Serial No'] || '—') +
+        ((parseInt(it['Repeat Count'], 10) || 0) ? ' 🔁' : '') + '</td><td>' + esc(it['Warranty'] || '—') + '</td></tr>').join('') +
       '</table>' +
       '<div class="slip-total">Total: ' + nb + ' batter' + (nb === 1 ? 'y' : 'ies') + ', ' + nc + ' charger' + (nc === 1 ? '' : 's') + '</div>' +
  track +
@@ -762,7 +835,9 @@ function mapItem(it) {
   return {
     itemId: it['Item ID'], ticketId: it['Ticket ID'], itemType: it['Item Type'], model: it['Model'],
     status: it['Item Status'], planDate: String(it['Plan Date'] || '').substring(0, 10), planned: it['Planned'] === 'Yes',
-    stageAt: it['Stage Updated At'], customer: it['Customer'] || '', category: it['Category'] || ''
+    stageAt: it['Stage Updated At'], customer: it['Customer'] || '', category: it['Category'] || '',
+    serial: it['Serial No'] || '', warranty: it['Warranty'] || '', repeat: parseInt(it['Repeat Count'], 10) || 0,
+    fault: it['Fault Code'] || '', cost: it['Repair Cost'] === '' || it['Repair Cost'] == null ? '' : it['Repair Cost']
   };
 }
 // "🔋 Battery · 2 Wheeler · LFP-48V"
@@ -796,7 +871,7 @@ function boardRender() {
     $('boardPending').innerHTML =
       '<div class="ms-list">' + pending.map(it =>
         '<label class="ms-opt"><input type="checkbox" data-id="' + esc(it.itemId) + '"' + (boardSel[it.itemId] ? ' checked' : '') + ' onchange="boardToggle(this)">' +
-        '<span><b>' + esc(it.itemId) + '</b> · ' + esc(it.customer) + '<br><small>' + itemDesc(it) + '</small></span></label>'
+        '<span><b>' + esc(it.itemId) + '</b> · ' + esc(it.customer) + ' ' + repeatTag(it.repeat) + '<br><small>' + itemDesc(it) + (it.serial ? ' · SN ' + esc(it.serial) : '') + '</small></span></label>'
       ).join('') + '</div>' +
       '<div class="board-pick"><input type="date" id="boardPlanDate" value="' + todayStr() + '">' +
       '<button class="btn btn-primary" onclick="boardAddSelected(this)">➕ Plan (<span id="selN">' + n + '</span>)</button></div>';
@@ -812,6 +887,10 @@ function boardRender() {
         '<button class="bc-remove" title="Move back to Pending" data-id="' + esc(it.itemId) + '" onclick="boardRemovePlan(this.dataset.id)">✕</button></div>' +
       '<div class="bc-cust">' + esc(it.customer || '—') + '</div>' +
       '<div class="bc-meta">' + itemDesc(it) + ' · 📅 ' + esc(it.planDate) + '</div>' +
+      '<div class="bc-info">' + (it.serial ? '<span>SN ' + esc(it.serial) + '</span>' : '') + repeatTag(it.repeat) +
+        (it.warranty ? '<span>' + esc(it.warranty) + '</span>' : '') + '</div>' +
+      '<button type="button" class="bc-fault' + (it.fault ? '' : ' empty') + '" data-id="' + esc(it.itemId) + '" onclick="itemInfoOpen(this.dataset.id)">' +
+        (it.fault ? '🔎 ' + esc(it.fault) + (it.cost !== '' ? ' · ' + rupee(it.cost) : '') : '＋ Add fault code &amp; cost') + '</button>' +
       '<div class="bc-prog"><div style="width:' + pct + '%"></div></div>' +
       '<div class="bc-lbl">' + (inPlan ? 'In Planning — pick a stage' : 'Stage ' + (idx + 1) + '/' + STAGES.length + (idx === last ? ' · Ready ✅' : '')) + '</div>' +
       '<select data-id="' + esc(it.itemId) + '" onchange="boardSetStage(this.dataset.id, this.value)">' +
@@ -819,6 +898,33 @@ function boardRender() {
       (it.stageAt ? '<div class="bc-at">Updated: ' + esc(it.stageAt) + '</div>' : '') +
     '</div>';
   }).join('') : '<div class="empty">' + (df ? 'No items planned for this date 📅' : 'No planned items') + '</div>';
+}
+
+/* ---- item details: fault code, repair cost, serial, warranty ---- */
+function itemInfoOpen(itemId) {
+  const it = boardItems.find(x => x.itemId === itemId) || dispItems.find(x => x.itemId === itemId);
+  if (!it) return;
+  modalOpen('🔎 ' + it.itemId + ' — fault & cost',
+    '<div class="muted-sm" style="margin:0 0 14px">' + itemDesc(it) + ' · ' + esc(it.customer) + '</div>' +
+    '<div class="form-grid">' +
+      '<div class="fg full"><label>Fault Code</label><select id="i_fault">' + optList(M().faultCode, it.fault, '-- Select fault found --') + '</select></div>' +
+      fg('Repair Cost (₹)', 'i_cost', 'number', it.cost, ' min="0" step="1" inputmode="decimal" placeholder="0"') +
+      '<div class="fg"><label>Warranty</label><select id="i_war">' + optList(CONFIG.WARRANTY || [], it.warranty, '-- Select --') + '</select></div>' +
+      fg('Serial No', 'i_serial', 'text', it.serial, ' maxlength="60"') +
+    '</div><button class="btn btn-primary btn-block" data-id="' + esc(it.itemId) + '" onclick="itemInfoSave(this)">Save ✓</button>');
+}
+async function itemInfoSave(btn) {
+  const itemId = btn.dataset.id;
+  const d = { action: 'setItemInfo', itemId, fault: $('i_fault').value, cost: $('i_cost').value.trim(), warranty: $('i_war').value, serial: $('i_serial').value.trim() };
+  if (d.cost !== '' && !(Number(d.cost) >= 0)) return toast('⚠️ Repair cost must be a number');
+  const r = await run(d, btn); if (!r) return;
+  [boardItems, dispItems].forEach(list => {
+    const it = list.find(x => x.itemId === itemId);
+    if (it) Object.assign(it, { fault: d.fault, cost: d.cost === '' ? '' : Number(d.cost), warranty: d.warranty, serial: d.serial, repeat: r.repeat !== undefined && d.serial !== it.serial ? r.repeat : it.repeat });
+  });
+  modalClose(); cacheDel('board_items'); cacheDel('tracker');
+  toast(r.changed ? '✅ Saved' + (r.repeat ? ' — 🔁 this serial came ' + r.repeat + ' time(s) before' : '') : 'ℹ️ Nothing changed');
+  if (CURRENT === 'board') boardRender(); else if (CURRENT === 'dispatch') dispRender();
 }
 
 function boardToggle(el) {
@@ -833,7 +939,7 @@ async function boardAddSelected(btn) {
   const r = await run({ action: 'markPlanning', itemIds: JSON.stringify(ids), planDate }, btn);
   if (!r) return;
   boardSel = {}; toast('✅ ' + r.updated + ' item(s) planned for ' + planDate);
-  $('boardDateFilter').value = planDate; cacheDel('tickets'); boardLoad(true);
+  $('boardDateFilter').value = planDate; cacheDel('tickets'); cacheDel('tracker'); boardLoad(true);
 }
 
 async function boardRemovePlan(itemId) {
@@ -849,7 +955,7 @@ async function boardSetStage(itemId, stage) {
   if (it) { it.status = stage; it.stageAt = 'just now'; boardRender(); }
   const r = await run({ action: 'updateStage', itemId, stage });
   if (!r) { if (it) { it.status = prev; boardRender(); } return; }
-  cacheSet('board_items', boardItems); cacheDel('tickets');
+  cacheSet('board_items', boardItems); cacheDel('tickets'); cacheDel('tracker');
   if (stage === STAGES[STAGES.length - 1]) toast('✅ ' + itemId + ' is ready — it will appear in Dispatch');
 }
 
@@ -879,10 +985,12 @@ async function dispLoad() {
 
 function dispRender() {
   const q = $('dSearch').value.toLowerCase().trim();
-  const rows = dispItems.filter(it => !q || (it.itemId + ' ' + it.ticketId + ' ' + it.customer + ' ' + it.category + ' ' + it.model).toLowerCase().indexOf(q) !== -1);
+  const rows = dispItems.filter(it => !q || (it.itemId + ' ' + it.ticketId + ' ' + it.customer + ' ' + it.category + ' ' + it.model + ' ' + it.serial).toLowerCase().indexOf(q) !== -1);
   $('dList').innerHTML = rows.length ? rows.map(it =>
     '<label class="ms-opt"><input type="checkbox" data-id="' + esc(it.itemId) + '"' + (dispSel[it.itemId] ? ' checked' : '') + ' onchange="dispToggle(this)">' +
-    '<span><b>' + esc(it.itemId) + '</b> · ' + esc(it.customer) + '<br><small>' + itemDesc(it) + '</small></span></label>'
+    '<span class="ms-main"><b>' + esc(it.itemId) + '</b> · ' + esc(it.customer) + ' ' + repeatTag(it.repeat) + '<br><small>' + itemDesc(it) + (it.serial ? ' · SN ' + esc(it.serial) : '') + '</small>' +
+    '<button type="button" class="bc-fault' + (it.fault ? '' : ' empty') + '" data-id="' + esc(it.itemId) + '" onclick="event.preventDefault();itemInfoOpen(this.dataset.id)">' +
+      (it.fault ? '🔎 ' + esc(it.fault) + (it.cost !== '' ? ' · ' + rupee(it.cost) : '') : '⚠️ No fault code — add') + '</button></span></label>'
   ).join('') : '<div class="empty">' + (dispItems.length ? 'No matches 🔍' : 'No items at Final QC & Pack ✅') + '</div>';
   $('dSelCount').textContent = Object.keys(dispSel).filter(k => dispSel[k]).length;
 }
@@ -904,12 +1012,14 @@ async function dispSubmit() {
   if (!ids.length) return toast('⚠️ Select at least one item');
   const d = {
     action: 'dispatch', itemIds: JSON.stringify(ids), dispatchDate: $('d_date').value, dispatchedBy: $('d_by').value.trim(),
-    transport: $('d_transport').value.trim(), anyCost: $('d_cost').value.trim(), actualProblem: $('d_problem').value.trim(),
+    transport: $('d_transport').value.trim(), charges: $('d_cost').value.trim(), actualProblem: $('d_problem').value.trim(),
     address: $('d_address').value.trim(), remarks: $('d_remarks').value.trim()
   };
   if (!d.dispatchDate) return toast('⚠️ Enter dispatch date');
   if (!d.dispatchedBy) return toast('⚠️ Select Dispatched By');
-  if (!confirm(ids.length + ' item(s) will be dispatched. Continue?')) return;
+  if (d.charges !== '' && !(Number(d.charges) >= 0)) return toast('⚠️ Dispatch charges must be a number');
+  const noFault = dispItems.filter(it => dispSel[it.itemId] && !it.fault).length;
+  if (!confirm((noFault ? '⚠️ ' + noFault + ' item(s) have no fault code — the fault report will miss them.\n\n' : '') + ids.length + ' item(s) will be dispatched. Continue?')) return;
   const r = await run(d, $('dSubmit')); if (!r) return;
 
 const sel = dispItems.filter(it => dispSel[it.itemId]);
@@ -917,7 +1027,7 @@ const sel = dispItems.filter(it => dispSel[it.itemId]);
   try { const g = await api({ action: 'getTicket', ticketId: (r.tickets || [])[0] }); if (g && g.ok) tk = g.ticket; } catch (e) {}
   dispSlip(sel, d, r, tk);
   ['d_transport', 'd_cost', 'd_problem', 'd_address', 'd_remarks'].forEach(id => { $(id).value = ''; });
-  cacheDel('board_items'); cacheDel('tickets');
+  cacheDel('board_items'); cacheDel('tickets'); cacheDel('tracker');
   dispLoad();
 }
 
@@ -934,9 +1044,10 @@ function dispSlip(sel, d, r, tk) {
     '<div class="slip" id="slip">' +
       slipHead('Dispatch Slip', d.dispatchDate) +
       '<div class="slip-sec">Ticket: <b>' + esc((r.tickets || []).join(', ')) + '</b> · ' + esc(sel[0] ? sel[0].customer : '') + '</div>' +
-      kv([['Dispatched By', d.dispatchedBy], ['Transport', d.transport], ['Address', d.address], ['Any Cost', d.anyCost], ['Problem Found', d.actualProblem]]) +
-      '<table class="slip-table"><tr><th>#</th><th>Item ID</th><th>Item</th><th>Type</th><th>Model</th></tr>' +
-      sel.map((it, i) => '<tr><td>' + (i + 1) + '</td><td>' + esc(it.itemId) + '</td><td>' + esc(it.itemType) + '</td><td>' + esc(it.category || '—') + '</td><td>' + esc(it.model || '—') + '</td></tr>').join('') +
+      kv([['Dispatched By', d.dispatchedBy], ['Transport', d.transport], ['Address', d.address], ['Charges', rupee(d.charges)], ['Problem Found', d.actualProblem]]) +
+      '<table class="slip-table"><tr><th>#</th><th>Item ID</th><th>Item</th><th>Type</th><th>Model</th><th>Serial No</th><th>Fault</th></tr>' +
+      sel.map((it, i) => '<tr><td>' + (i + 1) + '</td><td>' + esc(it.itemId) + '</td><td>' + esc(it.itemType) + '</td><td>' + esc(it.category || '—') + '</td><td>' + esc(it.model || '—') +
+        '</td><td>' + esc(it.serial || '—') + '</td><td>' + esc(it.fault || '—') + '</td></tr>').join('') +
       '</table>' +
 '<div class="slip-sign"><div>Dispatched by (Litpax)</div><div>Received by (Customer / Transporter)</div></div>' +
     '</div><button class="btn btn-primary btn-block" onclick="slipPrint()">🖨️ Print Slip</button>' +
@@ -959,7 +1070,9 @@ const MST_LISTS = [
   ['dispatchedBy', 'Dispatched By', 'Names in the Dispatch form dropdown',     '🚚'],
   ['batteryType',  'Battery Type',  'Types offered when receiving batteries',  '🔋'],
 ['chargerType',  'Charger Type',  'Types offered when receiving chargers',   '⚡'],
-  ['dealer',       'Dealer',        'Dealers in the New Ticket form',          '🏪']
+  ['dealer',       'Dealer',        'Dealers in the New Ticket form',          '🏪'],
+  ['complaint',    'Complaint',     'What the customer reports (New Ticket)',  '⚠️'],
+  ['faultCode',    'Fault Code',    'Fault found by the repair team',          '🔎']
 ];
 
 function openMasters() {
@@ -1056,7 +1169,7 @@ const TRK_NOW = ['', 'Awaiting first call', 'Awaiting pickup', 'In transit', 'In
 const TRK_MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const SLA_DEF = { firstCall: 4, transit: 72, queue: 24, repair: 72, dispatch: 24 };
 const slaMs = k => ((CONFIG.SLA_HOURS || {})[k] || SLA_DEF[k]) * 3600e3;
-const TRK_CHIPS = [['open', 'Open'], ['late', '🔴 Delayed'], ['risk', '🟡 At risk'], ['closed', 'Closed'], ['all', 'All']];
+const TRK_CHIPS = [['open', 'Open'], ['late', '🔴 Delayed'], ['risk', '🟡 At risk'], ['closed', 'Closed'], ['cancelled', 'Cancelled'], ['all', 'All']];
 
 function tsOf(s) {
   const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
@@ -1076,7 +1189,7 @@ function fmtDay(ts) { const d = new Date(ts); return d.getDate() + ' ' + TRK_MON
 function trkModel(t) {
   const now = Date.now(), ST = CONFIG.STAGES || [], last = ST[ST.length - 1];
   const created = tsOf(t.createdAt), call = tsOf(t.firstCallAt), pick = tsOf(t.pickupSetAt), recv = tsOf(t.receivedDate);
-  const closed = t.status === 'Closed', closedAt = closed ? (tsOf(t.closedAt) || now) : 0;
+  const cancelled = t.status === 'Cancelled', closed = t.status === 'Closed' || cancelled, closedAt = closed ? (tsOf(t.closedAt) || now) : 0;
   const solved = t.outcome === 'Solved on Call', sent = t.batterySent === 'Yes';
 
   const items = (t.items || []).map(it => {
@@ -1114,7 +1227,7 @@ function trkModel(t) {
     return Object.assign(s, { tgt, dur, running, state: running ? (r > 1 ? 'late' : r > .75 ? 'risk' : 'ok') : (r > 1 ? 'late-done' : 'done') });
   });
   const run = segs.find(s => s.running);
-  const sla = closed ? (segs.some(s => s.state === 'late-done') ? 'closed-late' : 'closed') : (run ? run.state : 'ok');
+  const sla = cancelled ? 'cancelled' : closed ? (segs.some(s => s.state === 'late-done') ? 'closed-late' : 'closed') : (run ? run.state : 'ok');
 
   let eta = 0;
   if (!closed && !solved) {
@@ -1122,10 +1235,10 @@ function trkModel(t) {
   }
   const itemFrac = nItems ? items.reduce((a, i) => a + i.step / (ST.length || 1), 0) / nItems : 0;
   const pct = closed ? 100 : Math.round(((curIdx - 1) + (curIdx === 5 ? itemFrac : 0)) / (list.length - 1) * 100);
-  const nowLabel = closed ? 'Completed' : (curIdx === 5 && !repStart ? 'Waiting for repair' : TRK_NOW[Math.min(curIdx, 5)]);
+  const nowLabel = cancelled ? 'Cancelled' : closed ? 'Completed' : (curIdx === 5 && !repStart ? 'Waiting for repair' : TRK_NOW[Math.min(curIdx, 5)]);
 
   return {
-    t, created, closed, closedAt, solved, list, times, curIdx, nowLabel, pct, sla, segs, eta,
+    t, created, closed, cancelled, closedAt, solved, list, times, curIdx, nowLabel, pct, sla, segs, eta,
     inStageMs: now - lastTs, ageMs: (closed ? closedAt : now) - created,
     items, nItems, nDisp, qcCount,
     respMs: segs[0].state === 'done' || segs[0].state === 'late-done' ? segs[0].dur : 0,
@@ -1158,12 +1271,13 @@ function trkSetStage(s) { trkStage = trkStage === s ? '' : s; if (trkStage) trkF
 function trkMatch(m, f) {
   if (f === 'all') return true;
   if (f === 'open') return !m.closed;
-  if (f === 'closed') return m.closed;
+  if (f === 'closed') return m.closed && !m.cancelled;
+  if (f === 'cancelled') return m.cancelled;
   return !m.closed && m.sla === f;
 }
 
 function trkRender() {
-  const all = TRK.map(trkModel), open = all.filter(m => !m.closed), closedM = all.filter(m => m.closed);
+  const every = TRK.map(trkModel), all = every.filter(m => !m.cancelled), open = all.filter(m => !m.closed), closedM = all.filter(m => m.closed);
   const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
   const since = Date.now() - 30 * 864e5, today = todayStr();
 
@@ -1192,16 +1306,16 @@ function trkRender() {
 
   // chips
   $('trkChips').innerHTML = TRK_CHIPS.map(([k, l]) => {
-    const n = all.filter(m => trkMatch(m, k)).length;
+    const n = every.filter(m => trkMatch(m, k)).length;
     return '<button class="chip' + (k === trkFilter ? ' active' : '') + ((k === 'late' || k === 'risk') && n ? ' chip-red' : '') +
       '" onclick="trkSetFilter(\'' + k + '\')">' + l + ' <b>' + n + '</b></button>';
   }).join('');
 
   // list
   const q = ($('trkSearch').value || '').toLowerCase().trim();
-  const rank = { late: 0, risk: 1, ok: 2, 'closed-late': 3, closed: 3 };
-  const rows = all.filter(m => trkMatch(m, trkFilter) && (!trkStage || (!m.closed && String(m.curIdx) === trkStage)))
-    .filter(m => !q || [m.t.id, m.t.company, m.t.person, m.t.phone, m.t.brand].join(' ').toLowerCase().indexOf(q) !== -1)
+  const rank = { late: 0, risk: 1, ok: 2, 'closed-late': 3, closed: 3, cancelled: 4 };
+  const rows = every.filter(m => trkMatch(m, trkFilter) && (!trkStage || (!m.closed && String(m.curIdx) === trkStage)))
+    .filter(m => !q || [m.t.id, m.t.company, m.t.person, m.t.phone, m.t.brand, m.t.city, m.t.complaint].join(' ').toLowerCase().indexOf(q) !== -1)
     .sort((a, b) => (rank[a.sla] - rank[b.sla]) || (b.created - a.created));
   $('trkList').innerHTML = rows.length ? rows.map(trkCard).join('') : '<div class="empty">' + (TRK.length ? 'No tickets here 🔍' : 'No tickets yet ✅') + '</div>';
 }
@@ -1209,7 +1323,7 @@ function trkRender() {
 function trkCard(m) {
   const t = m.t;
   const badge = { late: ['🔴 Delayed', 'late'], risk: ['🟡 At risk', 'risk'], ok: ['🟢 On track', 'ok'],
-    closed: ['✅ Completed', 'done'], 'closed-late': ['✅ Completed · late', 'donelate'] }[m.sla];
+    closed: ['✅ Completed', 'done'], 'closed-late': ['✅ Completed · late', 'donelate'], cancelled: ['🚫 Cancelled', 'donelate'] }[m.sla];
   const steps = m.list.map((lbl, i) => {
     const cls = (i < m.curIdx || m.closed) ? 'done' : (i === m.curIdx ? 'now ' + m.sla : '');
     const tm = m.times[i] ? fmtDT(m.times[i]) : '';
@@ -1222,7 +1336,8 @@ function trkCard(m) {
   if (m.eta) foot.push('<span>🎯 Ready by <b>' + fmtDay(m.eta) + '</b></span>');
   return '<div class="tr-card ' + (m.closed ? '' : m.sla) + '" style="--p:' + m.pct + '%" data-id="' + esc(t.id) + '" onclick="trkOpen(this.dataset.id)">' +
     '<div class="tr-top"><span class="tr-id">' + esc(t.id) + '</span><span class="tr-badge ' + badge[1] + '">' + badge[0] + '</span></div>' +
-    '<div class="tr-co">' + esc(t.company) + ' <span>· ' + esc(t.person) + ' · 🛵 ' + esc(t.brand) + '</span></div>' +
+    '<div class="tr-co">' + esc(t.company) + ' <span>· ' + esc(t.person) + (t.brand ? ' · 🏪 ' + esc(t.brand) : '') + (t.city ? ' · 📍 ' + esc(t.city) : '') +
+      (t.complaint ? ' · ⚠️ ' + esc(t.complaint) : '') + '</span></div>' +
     '<div class="tr-steps">' + steps + '</div>' +
     '<div class="tr-foot">' + foot.join('') + '</div></div>';
 }
@@ -1254,6 +1369,7 @@ function trkOpen(id) {
   const items = m.nItems ? '<div class="trd-h2">📦 Items</div><div class="trd-items">' + m.items.map(it =>
     '<div class="trd-item"><div class="r1"><b>' + (/charg/i.test(it.type || '') ? '⚡ ' : '🔋 ') + esc(it.id) + '</b><span>' +
     esc([it.category, it.model].filter(Boolean).join(' · ')) + '</span></div>' +
+    ((it.serial || it.fault) ? '<div class="r1"><span>' + esc([it.serial && 'SN ' + it.serial, it.fault && 'Fault: ' + it.fault].filter(Boolean).join(' · ')) + '</span>' + repeatTag(it.repeat) + '</div>' : '') +
     '<div class="r1"><span>' + esc(it.isDisp ? 'Dispatched' : (it.status || 'Received')) + '</span><span>' + it.step + '/' + ST.length + '</span></div>' +
     '<div class="bar"><i style="width:' + Math.round(it.step / (ST.length || 1) * 100) + '%"></i></div></div>').join('') + '</div>' : '';
 
@@ -1266,7 +1382,7 @@ function trkOpen(id) {
     const tag = (/charg/i.test(it.type || '') ? '⚡ #' : '🔋 #') + String(it.id).split('-').pop();
     (it.events || []).forEach(e => add(tsOf(e.t), trkEvLabel(e.e), e.by ? 'by ' + e.by : '', tag));
   });
-  if (m.closed) add(m.closedAt, m.solved ? 'Solved on call — closed' : 'Ticket closed', t.outcome || '');
+  if (m.closed) add(m.closedAt, m.cancelled ? 'Ticket cancelled' : m.solved ? 'Solved on call — closed' : 'Ticket closed', m.cancelled ? t.cancelReason : (t.outcome || ''));
   evs.sort((a, b) => a.ts - b.ts);
   const tl = '<div class="trd-h2">🧭 Full timeline</div><div class="trd-tl">' + (evs.length ? evs.map((e, i) =>
     '<div class="trd-ev"><span class="trd-dot"></span><div><div class="trd-h"><b>' + esc(e.title) + '</b><span>' + fmtDT(e.ts) + '</span></div>' +
