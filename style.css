@@ -1015,3 +1015,9 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   .pr-rot b:first-child { transform: none; opacity: 1; }
   .pr-strike::after { transform: scaleX(1); }
 }
+
+/* dealer: dropdown + add button */
+.sel-add { display: flex; gap: 8px; }
+.sel-add select, .sel-add input { flex: 1; min-width: 0; }
+.sel-add .btn { white-space: nowrap; padding: 9px 14px; }
+.fg label .opt { font-weight: 500; color: var(--muted); }
