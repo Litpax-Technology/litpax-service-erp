@@ -258,7 +258,14 @@
           <div class="fg full"><label>Customer Company Name <b>*</b></label><input id="n_company" maxlength="150" placeholder="e.g. ABC Motors"></div>
           <div class="fg"><label>Contact Person <b>*</b></label><input id="n_person" maxlength="100"></div>
           <div class="fg"><label>Phone <b>*</b></label><input id="n_phone" inputmode="numeric" maxlength="10" placeholder="10 digit"></div>
-          <div class="fg full"><label>Dealer <b>*</b></label><select id="n_brand"></select></div>
+          <div class="fg full"><label>Dealer <span class="opt">(optional)</span></label>
+            <div class="sel-add"><select id="n_brand"></select><button type="button" class="btn btn-ghost" onclick="dealerAddToggle(true)">＋ Add</button></div>
+            <div id="dealerAddRow" class="sel-add" style="display:none;margin-top:8px">
+              <input id="n_dealerNew" maxlength="100" placeholder="New dealer name" onkeydown="if(event.key==='Enter')dealerAdd($('dealerAddBtn'))">
+              <button type="button" id="dealerAddBtn" class="btn btn-primary" onclick="dealerAdd(this)">Save</button>
+              <button type="button" class="btn btn-ghost" onclick="dealerAddToggle(false)">Cancel</button>
+            </div>
+          </div>
           <div class="fg full"><label>Has the battery been sent to the company? <b>*</b></label>
             <div class="seg" id="n_sentSeg">
               <button type="button" data-v="Yes" onclick="segPick(this)">🚚 Yes, already sent</button>
