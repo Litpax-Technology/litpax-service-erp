@@ -126,3 +126,5 @@ h1 { font-size: 22px; line-height: 1.25; margin: 6px 0; letter-spacing: -.3px; }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+.pill-gray { background: #f1f2f6; color: #6b7280; }
