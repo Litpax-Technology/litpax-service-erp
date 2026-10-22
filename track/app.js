@@ -44,7 +44,7 @@ function api(params) {
     const cb = '__trk' + (++_seq) + '_' + Date.now();
     const s = document.createElement('script');
     let done = false;
-    const timer = setTimeout(() => { if (!done) { cleanup(); rej('timeout'); } }, CONFIG.TIMEOUT_MS);
+    const timer = setTimeout(() => { if (!done) { cleanup(); rej('timeout'); } }, (CONFIG.JSONP_TIMEOUT_MS || 20000));
     function cleanup() { done = true; clearTimeout(timer); delete window[cb]; if (s.parentNode) s.parentNode.removeChild(s); }
     window[cb] = d => { cleanup(); res(d); };
     s.onerror = () => { if (!done) { cleanup(); rej('network'); } };
@@ -60,10 +60,10 @@ window.addEventListener('load', () => {
   if (CONFIG.SUPPORT_PHONE) {
     $('fSupport').innerHTML = ' · Support: <a href="tel:' + esc(CONFIG.SUPPORT_PHONE) + '">' + esc(CONFIG.SUPPORT_PHONE) + '</a>';
   }
-  if (CONFIG.LOGO_URL) {
+  if (CONFIG.TRACK_LOGO_URL) {
     const im = $('brandLogo');
     im.onload = () => { im.hidden = false; $('brandText').hidden = true; };
-    im.src = CONFIG.LOGO_URL;
+    im.src = CONFIG.TRACK_LOGO_URL;
   }
 
   const q = new URLSearchParams(location.search);
