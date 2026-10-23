@@ -13,9 +13,9 @@ const CONFIG = {
   // nav = sidebar items for the role (the first one opens after login)
   ROLES: {
     attendant: { label: 'Call Attendant', icon: '📞', nav: ['newTicket', 'tracker'] },
-    service:   { label: 'Service Team',   icon: '🎧', nav: ['tickets', 'newTicket'] },
+    service:   { label: 'Service Team',   icon: '🎧', nav: ['tickets', 'tracker', 'newTicket'] },
     repair:    { label: 'Repair Team',    icon: '🔧', nav: ['board', 'dispatch', 'tickets'] },
-    admin:     { label: 'Admin',          icon: '👑', nav: ['tickets', 'newTicket', 'board', 'dispatch', 'masters'] }
+    admin:     { label: 'Admin',          icon: '👑', nav: ['tickets', 'tracker', 'newTicket', 'board', 'dispatch', 'masters'] }
   },
 
   // ⚠️ Keep in sync with ROLE_PERMS in Code.gs
@@ -36,9 +36,18 @@ const CONFIG = {
   COMPANY: 'Litpax Technology Pvt. Ltd.',
   SUPPORT_PHONE: '',                         // optional — toll-free / support number in the tracking page footer
   TRACK_LOGO_URL: '../assets/logo-white.png', // logo on the tracking page header
-  TRACK_URL: 'https://mis-darpan.github.io/YOUR-REPO/track/',   // ⚠️ apna repo naam daalo, end mein / zaroori
+  TRACK_URL: 'https://litpax-technology.github.io/litpax-service-erp/track/',   // customer tracking page (end mein / zaroori)
   WA_COUNTRY: '91',
   FEEDBACK_AFTER_DAYS: 3,
+  // ⚠️ Must EXACTLY match WARRANTY in Code.gs
+  WARRANTY: ['In Warranty', 'Out of Warranty', 'Not Sure'],
+
+  // New Ticket → State dropdown
+  STATES: ['Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 'Haryana',
+           'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur',
+           'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana',
+           'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal', 'Andaman & Nicobar', 'Chandigarh',
+           'Dadra & Nagar Haveli and Daman & Diu', 'Delhi', 'Jammu & Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry'],
    // New Ticket → Scooty Brand dropdown (add new brands here)
   SCOOTY_BRANDS: ['Evey', 'Warivo', 'Zelio', 'YBK', 'Urban', 'Maxim', 'Jiva', 'Yakuza', 'J Bros', 'Neovolt',
                   'Navix', 'G Byke', 'Electric Pay', 'GenZ', 'Mega Green', 'Durasol', 'Ampfuel', 'Marudhar'],
