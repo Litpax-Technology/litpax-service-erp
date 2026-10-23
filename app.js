@@ -81,7 +81,8 @@ function segVal(id) { const b = document.querySelector('#' + id + ' button.on');
 
 /* ---------- MASTERS (dropdown lists: sheet-driven + admin UI) ---------- */
 let MASTERS = null;
-const EMPTY_MASTERS = { attendedBy: [], dispatchedBy: [], batteryType: [], chargerType: [], dealer: [], faultCode: [], complaint: [] };
+const EMPTY_MASTERS = { attendedBy: [], dispatchedBy: [], batteryType: [], chargerType: [], dealer: [], faultCode: [], complaint: [],
+  customerType: [], source: [], checks: [], callFix: [], condition: [], accessory: [] };
 const M = () => MASTERS || EMPTY_MASTERS;
 
 async function ensureMasters(force) {
@@ -220,7 +221,8 @@ const SCREENS = {
   board:     { id: 'scrBoard',    icon: '🔧', label: 'Repair Board', title: 'Repair Board', sub: 'Phase 3 — item-wise planning and stages', open: openBoard },
   dispatch:  { id: 'scrDispatch', icon: '🚚', label: 'Dispatch',     title: 'Dispatch',     sub: 'Send out items that passed Final QC & Pack', open: openDispatch },
   masters:   { id: 'scrMasters',  icon: '⚙️', label: 'Masters',      title: 'Masters',      sub: 'Dropdown lists — names and battery / charger types', open: openMasters },
-  tracker:   { id: 'scrTracker',  icon: '🛰️', label: 'Ticket Tracker', title: 'Ticket Tracker', sub: 'Where every ticket and battery is right now — with SLA', open: openTracker }
+  tracker:   { id: 'scrTracker',  icon: '🛰️', label: 'Ticket Tracker', title: 'Ticket Tracker', sub: 'Where every ticket and battery is right now — with SLA', open: openTracker },
+  settings:  { id: 'scrSettings', icon: '🛠️', label: 'Settings',     title: 'Settings',     sub: 'SLA targets, lists, WhatsApp messages and screens per role', open: openSettings }
 };
 let CURRENT = '';
 
@@ -288,6 +290,7 @@ function enterApp(r) {
   ).join('');
   if ($('hdrDate')) $('hdrDate').textContent = new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
   ensureMasters();           // preload dropdown lists in the background
+  ensureSettings().then(applySettings);   // SLA, lists, WhatsApp text, screens — from the Settings tab
   go(R.nav[0]);
 }
 
@@ -335,12 +338,17 @@ async function dealerAdd(btn) {
 
 function newSelects() {
   brandOptions();
-  const cpl = $('n_complaint').value, st = $('n_state').value;
+  const keep = id => $(id).value;
+  const cpl = keep('n_complaint'), st = keep('n_state'), ct = keep('n_ctype'), src = keep('n_source');
   $('n_complaint').innerHTML = optList(M().complaint, cpl, '-- Select complaint (optional) --');
   $('n_state').innerHTML = optList(CONFIG.STATES || [], st, '-- Select state --');
+  $('n_ctype').innerHTML = optList(M().customerType, ct, '-- Select --');
+  $('n_source').innerHTML = optList(M().source, src, '-- Select --');
 }
 function newReset() {
-  ['n_company', 'n_person', 'n_phone', 'n_brand', 'n_city', 'n_state', 'n_complaint'].forEach(id => { $(id).value = ''; });
+  ['n_company', 'n_person', 'n_phone', 'n_brand', 'n_city', 'n_state', 'n_complaint', 'n_ctype', 'n_source',
+   'n_vehicle', 'n_invoice', 'n_pdate', 'n_expB', 'n_expC'].forEach(id => { $(id).value = ''; });
+  $('n_phoneInfo').style.display = 'none'; $('n_phoneInfo').innerHTML = '';
   newSelects();
   ensureMasters().then(newSelects);
   dealerAddToggle(false);
@@ -351,10 +359,13 @@ function newReset() {
 async function ticketCreate() {
   const v = id => $(id).value.trim();
   const d = { action: 'createTicket', company: v('n_company'), person: v('n_person'), phone: v('n_phone'), brand: v('n_brand'),
-    city: v('n_city'), state: v('n_state'), complaint: v('n_complaint'), batterySent: segVal('n_sentSeg') };
-   if (!d.company || !d.person || !d.phone) return toast('⚠️ Please fill all required fields');
+    city: v('n_city'), state: v('n_state'), complaint: v('n_complaint'), customerType: v('n_ctype'), source: v('n_source'),
+    vehicle: v('n_vehicle'), invoice: v('n_invoice'), purchaseDate: v('n_pdate'), expB: v('n_expB'), expC: v('n_expC'),
+    batterySent: segVal('n_sentSeg') };
+  if (!d.company || !d.person || !d.phone) return toast('⚠️ Please fill all required fields');
   if (!/^\d{10}$/.test(d.phone)) return toast('⚠️ Phone must be 10 digits');
-  if (!d.batterySent) return toast('⚠️ Select whether the battery has been sent');
+  if (d.purchaseDate && d.purchaseDate > todayStr()) return toast('⚠️ Purchase date cannot be in the future');
+  if (!d.batterySent) return toast('⚠️ Select whether the items have been sent');
   const r = await run(d, $('n_submit'));
   if (!r) return;
   afterChange();
@@ -367,6 +378,27 @@ async function ticketCreate() {
   window.scrollTo(0, 0);
 }
 function openTicketFromNew(id) { go('tickets'); drawerOpen(id); }
+
+// phone typed → earlier tickets of this customer + fill the empty fields from the last one
+let _phoneSeq = 0;
+async function phoneCheck() {
+  const ph = $('n_phone').value.replace(/\D/g, ''), box = $('n_phoneInfo'), seq = ++_phoneSeq;
+  if (ph.length !== 10) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  let r;
+  try { r = await api({ action: 'lookupPhone', phone: ph }); } catch (e) { return; }
+  if (seq !== _phoneSeq || !r || !r.ok) return;
+  if (!r.count) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const L = r.last || {}, filled = [];
+  const fill = (id, v) => { if (v && !$(id).value) { $(id).value = v; if ($(id).value === v) filled.push(id); } };
+  fill('n_company', L.company); fill('n_person', L.person); fill('n_city', L.city); fill('n_vehicle', L.vehicle);
+  fill('n_state', L.state); fill('n_ctype', L.customerType);
+  if (L.dealer && !$('n_brand').value && dealerSelect(L.dealer)) filled.push('n_brand');
+  box.innerHTML = '<div class="note">🔁 <b>Repeat customer</b> — ' + r.count + ' earlier ticket' + (r.count > 1 ? 's' : '') +
+    '. Last: <b>' + esc(L.id) + '</b> (' + esc(L.status) + ', ' + esc(niceDate(L.created)) + ').' + (filled.length ? ' Empty fields filled from it — please check.' : '') + '</div>' +
+    ((r.open || []).length ? '<div class="note note-red">⚠️ Open ticket already: ' + r.open.map(o => '<b>' + esc(o.id) + '</b> (' + esc(o.status) + (o.complaint ? ' · ' + esc(o.complaint) : '') + ')').join(', ') +
+      ' — check it before creating a new one.</div>' : '');
+  box.style.display = 'block';
+}
 
 /* ============================================================
    TICKETS LIST
@@ -421,7 +453,7 @@ function tkRender() {
 
   const q = $('tkSearch').value.toLowerCase().trim();
   const rows = TK.filter(t => tkMatch(t, tkFilter)).filter(t => !q ||
-    [t['Ticket ID'], t['Company Name'], t['Contact Person'], t['Phone'], dealerOf(t), t['City'], t['Complaint']].join(' ').toLowerCase().indexOf(q) !== -1
+    [t['Ticket ID'], t['Company Name'], t['Contact Person'], t['Phone'], dealerOf(t), t['City'], t['Complaint'], t['Vehicle Model']].join(' ').toLowerCase().indexOf(q) !== -1
   ).sort((a, b) => idNum(b['Ticket ID']) - idNum(a['Ticket ID']));
 
   if (!rows.length) { $('tkList').innerHTML = '<div class="empty">' + (TK.length ? 'No matches 🔍' : 'No tickets yet ✅') + '</div>'; return; }
@@ -431,6 +463,7 @@ function tkRender() {
     const tags = [];
     if (t['Battery Sent'] === 'Yes' && REPAIR_SET.indexOf(t['Status']) === -1 && !isEnded(t['Status'])) tags.push('<span class="tag tag-violet">🚚 Battery sent</span>');
     if (t['Complaint'] && !isEnded(t['Status'])) tags.push('<span class="tag">⚠️ ' + esc(t['Complaint']) + '</span>');
+    if (+t['Previous Tickets']) tags.push('<span class="tag tag-amber" title="Earlier tickets from this phone">🔁 Repeat customer</span>');
     if (calls) tags.push('<span class="tag">📞 ' + calls + ' call' + (calls > 1 ? 's' : '') + '</span>');
     if (t['Next Follow-up'] && !isEnded(t['Status'])) tags.push('<span class="tag ' + (due ? 'tag-red' : '') + '">📅 ' + esc(t['Next Follow-up']) + '</span>');
     if (items) tags.push('<span class="tag tag-teal">📦 ' + items + ' items</span>');
@@ -509,20 +542,24 @@ function drawerRender() {
     if (early || s === 'In Transit') b.push('<button class="btn btn-ghost btn-danger" onclick="cancelOpen()">🚫 Cancel ticket</button>');
 h += '<div class="dsec actions">' +
       (lowFb ? '<div class="note note-red">🔴 The customer gave low feedback. Call them and save a call log — that clears this flag.</div>' : '') +
-      (sent && early ? '<div class="note">🚚 The customer has already sent the battery — no troubleshooting needed. Just note the problem and fill in the pickup details.</div>' : '') +
+      (sent && early ? '<div class="note">🚚 The customer has already sent the items — no troubleshooting needed. Just note the problem and fill in the pickup details.</div>' : '') +
       '<div class="btn-wrap">' + b.join('') + '</div>' + callFormHtml(t) + '</div>';
   }
   if (!cancelled) h += waSection();
   h += sec('📝 Phase 1 — Basic', kv([
     ['Company', t['Company Name']], ['Contact Person', t['Contact Person']], ['Phone', t['Phone']],
+    ['Customer Type', t['Customer Type']], ['Source', t['Source']],
     ['Dealer', dealerOf(t)], ['City / State', [t['City'], t['State']].filter(Boolean).join(', ')], ['Complaint', t['Complaint']],
-    ['Battery Sent', t['Battery Sent']],
+    ['Vehicle', t['Vehicle Model']], ['Invoice / Purchase', [t['Invoice No'], t['Purchase Date'] && niceDate(t['Purchase Date'])].filter(Boolean).join(' · ')],
+    ['Items expected', (+t['Exp Battery Qty'] || +t['Exp Charger Qty']) ? itemsText(+t['Exp Battery Qty'] || 0, +t['Exp Charger Qty'] || 0) : ''],
+    ['Earlier tickets', +t['Previous Tickets'] ? t['Previous Tickets'] + ' (repeat customer)' : ''],
+    ['Items Sent', t['Battery Sent']],
     ['Created', t['Created At'] + (t['Created By'] ? ' · ' + t['Created By'] : '')]
   ]) + (t['Phone'] ? '<a class="call-link" href="tel:' + esc(t['Phone']) + '">📲 Call ' + esc(t['Phone']) + '</a>' : ''));
 
   h += sec('🎧 Phase 2 — Service', kv([
     ['Attended By', t['Attended By']], ['Purchase Age', t['Purchase Age']], ['Outcome', t['Outcome']],
-    ['Next Follow-up', open ? t['Next Follow-up'] : ''], ['Total Calls', t['Total Calls']]
+    ['Next Follow-up', open ? t['Next Follow-up'] : ''], ['Total Calls', t['Total Calls']], ['Solved by', t['Call Fix']]
   ]));
 
   if (t['Pickup By']) h += sec('🚚 Pickup / Transport', kv([
@@ -537,12 +574,17 @@ h += '<div class="dsec actions">' +
     h += sec('📥 Received → Phase 3 Repair', kv([
       ['Received Date', t['Received Date']], ['Received By', t['Received By']],
       ['Batteries', t['Battery Qty'] || 0], ['Chargers', t['Charger Qty'] || 0],
-      ['Remarks', t['Receive Remarks']]
-    ]) + (items.length ? '<div class="items-mini">' + items.map(it =>
+      ['Accessories', t['Accessories']], ['Remarks', t['Receive Remarks']]
+    ]) + (t['Qty Note'] ? '<div class="note note-red" style="margin-top:10px">⚠️ ' + esc(t['Qty Note']) + '</div>' : '') +
+    (items.length ? '<div class="items-mini">' + items.map(it =>
       '<div class="im-row"><span class="im-id">' + esc(it['Item ID']) + '</span><span class="im-main">' + (it['Item Type'] === 'Charger' ? '⚡' : '🔋') + ' ' +
       esc([it['Category'], it['Model']].filter(Boolean).join(' · ')) +
-      '<small>' + esc([it['Serial No'] && 'SN ' + it['Serial No'], it['Warranty'], it['Fault Code'] && 'Fault: ' + it['Fault Code'], rupee(it['Repair Cost'])].filter(Boolean).join(' · ')) + '</small>' +
-      repeatTag(it['Repeat Count']) + '</span>' + pill(it['Item Status']) + '</div>'
+      '<small>' + esc([it['Serial No'] && 'SN ' + it['Serial No'], it['Warranty'], it['Condition'] && 'Arrived: ' + it['Condition'], it['Voltage'] !== '' && it['Voltage'] != null && it['Voltage'] + ' V',
+        it['Mfg Month'] && 'Mfg ' + it['Mfg Month'], it['Batch No'] && 'Batch ' + it['Batch No'], it['Usage Months'] !== '' && it['Usage Months'] != null && 'Used ' + it['Usage Months'] + ' mo',
+        it['Fault Code'] && 'Fault: ' + it['Fault Code'], rupee(it['Repair Cost'])].filter(Boolean).join(' · ')) + '</small>' +
+      repeatTag(it['Repeat Count']) +
+      (can('service') ? '<button type="button" class="link-btn" data-id="' + esc(it['Item ID']) + '" onclick="itemEditOpen(this.dataset.id)">✏️ Correct details</button>' : '') +
+      '</span>' + pill(it['Item Status']) + '</div>'
     ).join('') + '</div>' : '') +
     '<button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="recvSlip()">🖨️ Receiving Slip</button>');
   }
@@ -557,6 +599,7 @@ h += '<div class="dsec actions">' +
   h += sec('🗒️ Call Log (' + calls.length + ')', calls.length ? '<div class="timeline">' + calls.map(c =>
     '<div class="tl-item"><div class="tl-head"><b>' + esc(c['Attended By'] || c['Logged By']) + '</b><span>' + esc(c['Time']) + '</span></div>' +
     '<div class="tl-body">' + esc(c['Notes']) + '</div>' +
+    (c['Checks'] ? '<div class="tl-checks">🧰 ' + esc(c['Checks']) + '</div>' : '') +
     (c['Next Follow-up'] ? '<div class="tl-next">📅 Next follow-up: ' + esc(c['Next Follow-up']) + '</div>' : '') + '</div>'
   ).join('') + '</div>' : '<div class="empty sm">No call logs yet</div>');
 
@@ -582,13 +625,23 @@ function editOpen() {
       fg('City', 'e_city', 'text', t['City'], ' maxlength="80"') +
       '<div class="fg"><label>State</label><select id="e_state">' + optList(CONFIG.STATES || [], t['State'] || '', '-- Select state --') + '</select></div>' +
       '<div class="fg full"><label>Complaint</label><select id="e_complaint">' + optList(M().complaint, t['Complaint'] || '', '-- Select complaint --') + '</select></div>' +
+      '<div class="fg"><label>Customer Type</label><select id="e_ctype">' + optList(M().customerType, t['Customer Type'] || '', '-- Select --') + '</select></div>' +
+      '<div class="fg"><label>Source</label><select id="e_source">' + optList(M().source, t['Source'] || '', '-- Select --') + '</select></div>' +
+      fg('Vehicle Model', 'e_vehicle', 'text', t['Vehicle Model'], ' maxlength="80"') +
+      fg('Invoice No', 'e_invoice', 'text', t['Invoice No'], ' maxlength="60"') +
+      fg('Purchase Date', 'e_pdate', 'date', String(t['Purchase Date'] || '').substring(0, 10), ' max="' + todayStr() + '"') + '<div class="fg"></div>' +
+      fg('Batteries expected', 'e_expB', 'number', t['Exp Battery Qty'], ' min="0" max="50"') +
+      fg('Chargers expected', 'e_expC', 'number', t['Exp Charger Qty'], ' min="0" max="50"') +
     '</div><div class="muted-sm" style="margin:-4px 0 14px">Every change is saved in the ticket history.</div>' +
     '<button class="btn btn-primary btn-block" onclick="editSave(this)">Save changes ✓</button>');
 }
 async function editSave(btn) {
   const v = id => $(id).value.trim();
   const d = { action: 'editTicket', ticketId: CUR.ticket['Ticket ID'], company: v('e_company'), person: v('e_person'), phone: v('e_phone'),
-    brand: v('e_brand'), city: v('e_city'), state: v('e_state'), complaint: v('e_complaint') };
+    brand: v('e_brand'), city: v('e_city'), state: v('e_state'), complaint: v('e_complaint'),
+    customerType: v('e_ctype'), source: v('e_source'), vehicle: v('e_vehicle'), invoice: v('e_invoice'), purchaseDate: v('e_pdate'),
+    expB: v('e_expB'), expC: v('e_expC') };
+  if (d.purchaseDate && d.purchaseDate > todayStr()) return toast('⚠️ Purchase date cannot be in the future');
   if (!d.company || !d.person) return toast('⚠️ Company and contact person are required');
   if (!/^\d{10}$/.test(d.phone)) return toast('⚠️ Phone must be 10 digits');
   const r = await run(d, btn); if (!r) return;
@@ -619,7 +672,9 @@ function callFormHtml(t) {
   return '<div id="callForm" class="call-form" style="display:none"><div class="form-grid">' +
     '<div class="fg"><label>Attended By <b>*</b></label><select id="c_by">' + optList(M().attendedBy, t['Attended By'] || '', '-- Select name --') + '</select></div>' +
     '<div class="fg"><label>Battery Purchase Age</label><select id="c_age"><option value="">-- Select --</option>' + ages + '</select></div>' +
-    '<div class="fg full"><label>Call notes <b>*</b></label><textarea id="c_notes" maxlength="1000" placeholder="Problem, troubleshooting steps, what the customer said..."></textarea></div>' +
+    '<div class="fg full"><label>Troubleshooting done</label><div id="c_checks" class="chk-list">' +
+      ((M().checks || []).length ? M().checks.map(x => '<label class="set-chk"><input type="checkbox" value="' + esc(x) + '"> ' + esc(x) + '</label>').join('') : '<span class="muted-sm">No checklist — admin can add it in Masters → Troubleshooting</span>') + '</div></div>' +
+    '<div class="fg full"><label>Call notes <b>*</b></label><textarea id="c_notes" maxlength="1000" placeholder="Problem, what the customer said, what you advised..."></textarea></div>' +
     '<div class="fg"><label>Next Follow-up</label><input type="date" id="c_next"></div>' +
     '</div><button class="btn btn-primary btn-block" onclick="callSave(this)">Save Call ✓</button></div>';
 }
@@ -628,7 +683,8 @@ function callFormToggle() { const f = $('callForm'); if (f) { f.style.display = 
 async function callSave(btn) {
   const d = {
     action: 'addCall', ticketId: CUR.ticket['Ticket ID'], attendedBy: $('c_by').value.trim(),
-    purchaseAge: $('c_age').value, notes: $('c_notes').value.trim(), nextFollowUp: $('c_next').value
+    purchaseAge: $('c_age').value, notes: $('c_notes').value.trim(), nextFollowUp: $('c_next').value,
+    checks: Array.from(document.querySelectorAll('#c_checks input:checked')).map(i => i.value).join(',')
   };
   if (!d.attendedBy) return toast('⚠️ Select Attended By');
   if (!d.notes) return toast('⚠️ Please add call notes');
@@ -636,10 +692,17 @@ async function callSave(btn) {
   toast('✅ Call log saved'); afterChange(); drawerReload();
 }
 
-async function ticketSolve(btn) {
-  if (!confirm('Mark this ticket as "Solved on Call" and close it?')) return;
-  const r = await run({ action: 'solveTicket', ticketId: CUR.ticket['Ticket ID'] }, btn); if (!r) return;
-  toast('✅ Ticket closed — Solved on Call'); afterChange(); drawerReload();
+function ticketSolve() {
+  modalOpen('✅ Solved on Call — ' + CUR.ticket['Ticket ID'],
+    '<div class="fg full" style="margin-bottom:8px"><label>What solved the problem? <b>*</b></label><select id="s_fix">' + optList(M().callFix, '', '-- Select --') + '</select></div>' +
+    '<div class="muted-sm" style="margin:0 0 14px">The ticket will be closed. Save a call log first if you want to note details.</div>' +
+    '<button class="btn btn-green btn-block" onclick="solveSave(this)">Close ticket — Solved on Call</button>');
+}
+async function solveSave(btn) {
+  const fix = $('s_fix').value;
+  if (!fix) return toast('⚠️ Select what solved the problem');
+  const r = await run({ action: 'solveTicket', ticketId: CUR.ticket['Ticket ID'], fix }, btn); if (!r) return;
+  modalClose(); toast('✅ Ticket closed — Solved on Call'); afterChange(); drawerReload();
 }
 
 /* ---- Modal ---- */
@@ -702,16 +765,21 @@ async function pickupSave(btn) {
 /* ---- Received (one row per unit: type + model) ---- */
 async function receiveOpen() {
   await ensureMasters();
+  const t = CUR.ticket, eb = +t['Exp Battery Qty'] || 0, ec = +t['Exp Charger Qty'] || 0;
   modalOpen('📥 Mark Received',
     '<div class="form-grid">' +
-      fg('Received Date <b>*</b>', 'r_date', 'date', todayStr()) + '<div class="fg"></div>' +
-      fg('Battery Qty', 'r_bq', 'number', 0, ' min="0" max="50" oninput="recvUnits()"') +
-      fg('Charger Qty', 'r_cq', 'number', 0, ' min="0" max="50" oninput="recvUnits()"') +
+      fg('Received Date <b>*</b>', 'r_date', 'date', todayStr()) +
+      '<div class="fg"><label>Expected (from ticket)</label><div class="r-exp">' + ((eb || ec) ? esc(itemsText(eb, ec)) : 'Not given') + '</div></div>' +
+      fg('Battery Qty', 'r_bq', 'number', eb, ' min="0" max="50" oninput="recvUnits()"') +
+      fg('Charger Qty', 'r_cq', 'number', ec, ' min="0" max="50" oninput="recvUnits()"') +
     '</div>' +
     '<div id="r_units"></div>' +
+    '<div class="fg full" style="margin-bottom:12px"><label>Received along with the items</label><div id="r_acc" class="chk-list">' +
+      ((M().accessory || []).length ? M().accessory.map(x => '<label class="set-chk"><input type="checkbox" value="' + esc(x) + '"> ' + esc(x) + '</label>').join('') : '<span class="muted-sm">Admin can add these in Masters → Accessory</span>') + '</div></div>' +
     '<div class="fg full" style="margin-bottom:12px"><label>Remarks</label><textarea id="r_rem" maxlength="500"></textarea></div>' +
     '<div id="r_prev" class="note">Enter quantities — a detail row opens for every unit</div>' +
     '<button class="btn btn-teal btn-block" onclick="recvSave(this)">Mark Received ✓</button>');
+  if (eb || ec) recvUnits();
 }
 
 const qtyVal = id => Math.max(0, Math.min(50, parseInt($(id).value, 10) || 0));
@@ -719,21 +787,27 @@ const qtyVal = id => Math.max(0, Math.min(50, parseInt($(id).value, 10) || 0));
 function recvUnits() {
   // keep what was already typed when quantities change
   const keep = k => Array.from(document.querySelectorAll('.u-row[data-u="' + k + '"]'))
-    .map(r => ({ c: r.querySelector('.u-type').value, m: r.querySelector('.u-model').value, s: r.querySelector('.u-serial').value, w: r.querySelector('.u-war').value }));
+    .map(r => ({ c: r.querySelector('.u-type').value, m: r.querySelector('.u-model').value, s: r.querySelector('.u-serial').value, w: r.querySelector('.u-war').value,
+      cond: r.querySelector('.u-cond').value, v: r.querySelector('.u-volt').value, mfg: r.querySelector('.u-mfg').value, b: r.querySelector('.u-batch').value }));
   const kb = keep('B'), kc = keep('C');
   const bq = qtyVal('r_bq'), cq = qtyVal('r_cq');
 
   const block = (k, label, n, list, prev, ico) => {
     if (!n) return '';
     let s = '<div class="u-block"><div class="u-head"><span>' + ico + ' ' + (label === 'Battery' ? 'Batteries' : label + 's') + ' (' + n + ')</span>' +
-      (n > 1 ? '<button type="button" class="link-btn" onclick="recvCopy(\'' + k + '\')">Copy #1 type, model &amp; warranty to all</button>' : '') + '</div>';
+      (n > 1 ? '<button type="button" class="link-btn" onclick="recvCopy(\'' + k + '\')">Copy #1 to all (not serial / voltage)</button>' : '') + '</div>' +
+      '<div class="u-cols"><span></span><div><span>Type / Condition *</span><span>Model * / Voltage (V)</span><span>Serial No / Mfg month</span><span>Warranty / Batch No</span></div></div>';
     for (let i = 0; i < n; i++) {
       const p = prev[i] || {};
-      s += '<div class="u-row" data-u="' + k + '"><span class="u-no">#' + (i + 1) + '</span>' +
+      s += '<div class="u-row u-card" data-u="' + k + '"><span class="u-no">#' + (i + 1) + '</span><div class="u-fields">' +
         '<select class="u-type">' + optList(list, p.c || '', '-- ' + label + ' type --') + '</select>' +
         '<input class="u-model" maxlength="100" placeholder="' + label + ' model *" value="' + esc(p.m || '') + '">' +
         '<input class="u-serial" maxlength="60" placeholder="Serial No" value="' + esc(p.s || '') + '">' +
-        '<select class="u-war">' + optList(CONFIG.WARRANTY || [], p.w || '', 'Warranty?') + '</select></div>';
+        '<select class="u-war">' + optList(CONFIG.WARRANTY || [], p.w || '', 'Warranty?') + '</select>' +
+        '<select class="u-cond">' + optList(M().condition, p.cond || '', 'Condition *') + '</select>' +
+        '<input class="u-volt" type="number" min="0" step="0.1" inputmode="decimal" placeholder="Voltage (V)" value="' + esc(p.v || '') + '">' +
+        '<input class="u-mfg" type="month" title="Manufacturing month" value="' + esc(p.mfg || '') + '">' +
+        '<input class="u-batch" maxlength="60" placeholder="Batch No" value="' + esc(p.b || '') + '"></div></div>';
     }
     return s + '</div>';
   };
@@ -741,17 +815,22 @@ function recvUnits() {
     block('B', 'Battery', bq, M().batteryType, kb, '🔋') +
     block('C', 'Charger', cq, M().chargerType, kc, '⚡');
 
-  const n = bq + cq, id = CUR.ticket['Ticket ID'];
-  $('r_prev').innerHTML = n
+  const n = bq + cq, id = CUR.ticket['Ticket ID'], eb = +CUR.ticket['Exp Battery Qty'] || 0, ec = +CUR.ticket['Exp Charger Qty'] || 0;
+  const miss = (eb || ec) && (eb !== bq || ec !== cq);
+  $('r_prev').className = 'note' + (miss ? ' note-red' : '');
+  $('r_prev').innerHTML = (n
     ? '📦 <b>' + n + '</b> items will be created: ' + esc(id) + '-01 … ' + esc(id) + '-' + pad2(n)
-    : 'Enter quantities — a detail row opens for every unit';
+    : 'Enter quantities — a detail row opens for every unit') +
+    (miss ? '<br>⚠️ Expected ' + esc(itemsText(eb, ec)) + ' — this will be noted on the ticket.' : '');
 }
 
 function recvCopy(k) {
   const rows = document.querySelectorAll('.u-row[data-u="' + k + '"]');
   if (!rows.length) return;
-  const c = rows[0].querySelector('.u-type').value, m = rows[0].querySelector('.u-model').value, w = rows[0].querySelector('.u-war').value;
-  rows.forEach(r => { r.querySelector('.u-type').value = c; r.querySelector('.u-model').value = m; r.querySelector('.u-war').value = w; });
+  ['.u-type', '.u-model', '.u-war', '.u-cond', '.u-mfg', '.u-batch'].forEach(sel => {
+    const v = rows[0].querySelector(sel).value;
+    rows.forEach(r => { r.querySelector(sel).value = v; });
+  });
 }
 
 async function recvSave(btn) {
@@ -762,25 +841,63 @@ async function recvSave(btn) {
     for (let i = 0; i < rows.length; i++) {
       const c = rows[i].querySelector('.u-type').value, m = rows[i].querySelector('.u-model').value.trim();
       const sn = rows[i].querySelector('.u-serial').value.trim(), w = rows[i].querySelector('.u-war').value;
+      const cond = rows[i].querySelector('.u-cond').value, volt = rows[i].querySelector('.u-volt').value.trim();
+      const mfg = rows[i].querySelector('.u-mfg').value, batch = rows[i].querySelector('.u-batch').value.trim();
       if (!c || !m) return toast('⚠️ ' + type + ' #' + (i + 1) + ': select type and enter model');
-      items.push({ type, category: c, model: m, serial: sn, warranty: w });
+      if (!cond) return toast('⚠️ ' + type + ' #' + (i + 1) + ': select the condition it arrived in');
+      if (volt !== '' && !(Number(volt) >= 0)) return toast('⚠️ ' + type + ' #' + (i + 1) + ': voltage must be a number');
+      items.push({ type, category: c, model: m, serial: sn, warranty: w, condition: cond, voltage: volt, mfg, batch });
     }
   }
   if (!items.length) return toast('⚠️ Enter battery or charger quantity');
   if (!$('r_date').value) return toast('⚠️ Enter received date');
   if (!confirm(items.length + ' items will be received and sent to Repair. Continue?')) return;
 
-  const r = await run({ action: 'markReceived', ticketId: id, receivedDate: $('r_date').value, items, remarks: $('r_rem').value.trim() }, btn, true);
+  const accessories = Array.from(document.querySelectorAll('#r_acc input:checked')).map(i => i.value);
+  const r = await run({ action: 'markReceived', ticketId: id, receivedDate: $('r_date').value, items, accessories, remarks: $('r_rem').value.trim() }, btn, true);
   if (!r) return;
   afterChange();
   const rep = r.repeats || [];
   toast(rep.length ? '🔁 ' + rep.length + ' repeat batter' + (rep.length > 1 ? 'ies' : 'y') + ' found: ' + rep.map(x => x.serial + ' (×' + x.count + ')').join(', ')
-                   : '✅ ' + r.items + ' items moved to Repair');
+                   : r.qtyNote ? '⚠️ Received — ' + r.qtyNote : '✅ ' + r.items + ' items moved to Repair');
   try {
     const t = await api({ action: 'getTicket', ticketId: id });
     if (t && t.ok) { CUR = t; drawerRender(); recvSlip(); return; }
   } catch (e) {}
   modalClose(); drawerReload();
+}
+
+/* ---- Correct a received item (service) — type, model, serial, condition ... ---- */
+function itemEditOpen(itemId) {
+  const it = (CUR.items || []).find(x => x['Item ID'] === itemId);
+  if (!it) return;
+  const isC = it['Item Type'] === 'Charger';
+  modalOpen('✏️ ' + itemId + ' — correct details',
+    '<div class="form-grid">' +
+      '<div class="fg"><label>Item <b>*</b></label><select id="ie_type" onchange="itemEditType()"><option' + (!isC ? ' selected' : '') + '>Battery</option><option' + (isC ? ' selected' : '') + '>Charger</option></select></div>' +
+      '<div class="fg"><label>Type <b>*</b></label><select id="ie_cat">' + optList(isC ? M().chargerType : M().batteryType, it['Category'] || '', '-- Select --') + '</select></div>' +
+      fg('Model <b>*</b>', 'ie_model', 'text', it['Model'], ' maxlength="100"') +
+      fg('Serial No', 'ie_serial', 'text', it['Serial No'], ' maxlength="60"') +
+      '<div class="fg"><label>Warranty</label><select id="ie_war">' + optList(CONFIG.WARRANTY || [], it['Warranty'] || '', '-- Select --') + '</select></div>' +
+      '<div class="fg"><label>Condition at receipt</label><select id="ie_cond">' + optList(M().condition, it['Condition'] || '', '-- Select --') + '</select></div>' +
+      fg('Voltage (V)', 'ie_volt', 'number', it['Voltage'], ' min="0" step="0.1"') +
+      fg('Mfg month', 'ie_mfg', 'month', it['Mfg Month'], '') +
+      fg('Batch No', 'ie_batch', 'text', it['Batch No'], ' maxlength="60"') +
+    '</div><div class="muted-sm" style="margin:-4px 0 14px">Every change is saved in the ticket history.</div>' +
+    '<button class="btn btn-primary btn-block" data-id="' + esc(itemId) + '" onclick="itemEditSave(this)">Save ✓</button>');
+}
+function itemEditType() {
+  const list = $('ie_type').value === 'Charger' ? M().chargerType : M().batteryType;
+  $('ie_cat').innerHTML = optList(list, '', '-- Select --');
+}
+async function itemEditSave(btn) {
+  const v = id => $(id).value.trim();
+  const d = { action: 'editItem', itemId: btn.dataset.id, type: v('ie_type'), category: v('ie_cat'), model: v('ie_model'), serial: v('ie_serial'),
+    warranty: v('ie_war'), condition: v('ie_cond'), voltage: v('ie_volt'), mfg: v('ie_mfg'), batch: v('ie_batch') };
+  if (!d.category || !d.model) return toast('⚠️ Select the type and enter the model');
+  const r = await run(d, btn); if (!r) return;
+  modalClose(); toast(r.changed ? '✅ ' + r.changed + ' change(s) saved' : 'ℹ️ Nothing changed');
+  ['board_items', 'tracker'].forEach(cacheDel); drawerReload();
 }
 
 /* ---- Slips (receiving + dispatch) ---- */
@@ -809,12 +926,13 @@ const nb = items.filter(i => i['Item Type'] === 'Battery').length, nc = items.le
         ['Company', t['Company Name']], ['Contact', [t['Contact Person'], t['Phone']].filter(Boolean).join(' · ')],
         ['Dealer', dealerOf(t)], ['Received By', t['Received By']],
         ['Pickup By', t['Pickup By']], ['Transport', t['Transport Name']], ['LR No', t['LR No']],
-        ['No. of Boxes', t['No. of Boxes']], ['Remarks', t['Receive Remarks']]
+        ['No. of Boxes', t['No. of Boxes']], ['Received with items', t['Accessories']], ['Quantity check', t['Qty Note']], ['Remarks', t['Receive Remarks']]
       ]) +
-      '<table class="slip-table"><tr><th>#</th><th>Item ID</th><th>Item</th><th>Type</th><th>Model</th><th>Serial No</th><th>Warranty</th></tr>' +
-      items.map((it, i) => '<tr><td>' + (i + 1) + '</td><td>' + esc(it['Item ID']) + '</td><td>' + esc(it['Item Type']) +
-        '</td><td>' + esc(it['Category'] || '—') + '</td><td>' + esc(it['Model'] || '—') + '</td><td>' + esc(it['Serial No'] || '—') +
-        ((parseInt(it['Repeat Count'], 10) || 0) ? ' 🔁' : '') + '</td><td>' + esc(it['Warranty'] || '—') + '</td></tr>').join('') +
+      '<table class="slip-table"><tr><th>#</th><th>Item ID</th><th>Item</th><th>Model</th><th>Serial No</th><th>Warranty</th><th>Condition</th><th>Volt</th></tr>' +
+      items.map((it, i) => '<tr><td>' + (i + 1) + '</td><td>' + esc(it['Item ID']) + '</td><td>' + esc(it['Item Type'] + (it['Category'] ? ' · ' + it['Category'] : '')) +
+        '</td><td>' + esc(it['Model'] || '—') + '</td><td>' + esc(it['Serial No'] || '—') +
+        ((parseInt(it['Repeat Count'], 10) || 0) ? ' 🔁' : '') + '</td><td>' + esc(it['Warranty'] || '—') + '</td><td>' + esc(it['Condition'] || '—') +
+        '</td><td>' + esc(it['Voltage'] === '' || it['Voltage'] == null ? '—' : it['Voltage']) + '</td></tr>').join('') +
       '</table>' +
       '<div class="slip-total">Total: ' + nb + ' batter' + (nb === 1 ? 'y' : 'ies') + ', ' + nc + ' charger' + (nc === 1 ? '' : 's') + '</div>' +
  track +
@@ -1072,7 +1190,13 @@ const MST_LISTS = [
 ['chargerType',  'Charger Type',  'Types offered when receiving chargers',   '⚡'],
   ['dealer',       'Dealer',        'Dealers in the New Ticket form',          '🏪'],
   ['complaint',    'Complaint',     'What the customer reports (New Ticket)',  '⚠️'],
-  ['faultCode',    'Fault Code',    'Fault found by the repair team',          '🔎']
+  ['faultCode',    'Fault Code',    'Fault found by the repair team',          '🔎'],
+  ['customerType', 'Customer Type', 'Who the customer is (New Ticket)',        '👤'],
+  ['source',       'Source',        'How the customer reached us (New Ticket)', '📣'],
+  ['checks',       'Troubleshooting', 'Checklist in the call log',             '🧰'],
+  ['callFix',      'Call Fix',      'What solved it on call',                  '✅'],
+  ['condition',    'Condition',     'Item condition when received',            '📦'],
+  ['accessory',    'Accessory',     'Things received along with the items',    '🔌']
 ];
 
 function openMasters() {
@@ -1391,4 +1515,122 @@ function trkOpen(id) {
   ).join('') : '<div class="empty sm">No events yet</div>') + '</div>';
 
   modalOpen('🛰️ ' + t.id + ' · ' + t.company, sum + sla + items + tl);
+}
+
+/* ============================================================
+   SETTINGS — values come from the "Settings" tab of the sheet (config.js is only a fallback)
+   ============================================================ */
+let SETTINGS = null;
+const SCREEN_NEED = { newTicket: 'create', board: 'repair', dispatch: 'repair', masters: 'admin', settings: 'admin' };
+const ROLE_OF_NAV = { NAV_ATTENDANT: 'attendant', NAV_SERVICE: 'service', NAV_REPAIR: 'repair', NAV_ADMIN: 'admin' };
+
+async function ensureSettings(force) {
+  const c = cacheGet('settings');
+  if (!force && SETTINGS) return SETTINGS;
+  if (!force && c && c.fresh) { SETTINGS = c.val; return SETTINGS; }
+  try {
+    const r = await api({ action: 'getSettings' });
+    if (r && r.ok) { SETTINGS = r; cacheSet('settings', r); }
+  } catch (e) {}
+  return SETTINGS || (c && c.val) || null;
+}
+
+// copy sheet values into CONFIG — the rest of the app keeps reading CONFIG as before
+function applySettings(S) {
+  if (!S || !S.cfg) return;
+  const c = S.cfg;
+  if (c.STAGES && c.STAGES.length >= 2) CONFIG.STAGES.splice(0, CONFIG.STAGES.length, ...c.STAGES);
+  ['PURCHASE_AGE', 'WARRANTY', 'STATES'].forEach(k => { if (c[k] && c[k].length) CONFIG[k] = c[k]; });
+  ['TRACK_URL', 'WA_COUNTRY', 'COMPANY'].forEach(k => { if (c[k]) CONFIG[k] = c[k]; });
+  CONFIG.SUPPORT_PHONE = c.SUPPORT_PHONE || '';
+  if (c.FEEDBACK_AFTER_DAYS >= 0) CONFIG.FEEDBACK_AFTER_DAYS = c.FEEDBACK_AFTER_DAYS;
+  if (c.SLA_HOURS) CONFIG.SLA_HOURS = c.SLA_HOURS;
+  if (c.WA_TEMPLATES) CONFIG.WA_TEMPLATES = Object.assign({}, CONFIG.WA_TEMPLATES, c.WA_TEMPLATES);
+  const r = role(), R = CONFIG.ROLES[r];
+  if (R && c.NAV && c.NAV[r] && c.NAV[r].length) {
+    const nav = c.NAV[r].filter(k => SCREENS[k] && (!SCREEN_NEED[k] || can(SCREEN_NEED[k])));
+    if (r === 'admin' && nav.indexOf('settings') === -1) nav.push('settings');
+    if (nav.length) R.nav = nav;
+  }
+  if (R && $('appWrap').style.display !== 'none') {
+    $('sbNav').innerHTML = R.nav.map(k =>
+      '<button class="sb-item' + (k === CURRENT ? ' active' : '') + '" data-nav="' + k + '" onclick="go(this.dataset.nav)"><span class="sb-ico">' + SCREENS[k].icon + '</span>' + SCREENS[k].label + '</button>'
+    ).join('');
+    if (CURRENT && R.nav.indexOf(CURRENT) === -1) go(R.nav[0]);
+  }
+}
+// other users pick up changes every 5 minutes (or on refresh)
+setInterval(() => { if (localStorage.getItem('hub_token') && CURRENT !== 'settings') ensureSettings(true).then(applySettings); }, 300000);
+
+/* ---- Settings screen (admin) ---- */
+function openSettings() {
+  $('setForm').innerHTML = '<div class="skeleton sk-block"></div><div class="skeleton sk-block"></div>';
+  ensureSettings(true).then(setRender);
+}
+
+const setList = v => String(v || '').split(/[\n,]/).map(x => x.trim()).filter(Boolean);
+
+function setField(x) {
+  const id = 'set_' + x.key;
+  let input;
+  if (x.type === 'tpl') {
+    input = '<textarea id="' + id + '" rows="6">' + esc(x.value) + '</textarea>';
+  } else if (x.type === 'list' || x.type === 'stages') {
+    const l = setList(x.value);
+    input = '<textarea id="' + id + '" rows="' + Math.min(10, Math.max(3, l.length)) + '" placeholder="One per line">' + esc(l.join('\n')) + '</textarea>';
+  } else if (x.type === 'nav') {
+    const r = ROLE_OF_NAV[x.key], perms = CONFIG.PERMS[r] || [], cur = setList(x.value);
+    const allowed = Object.keys(SCREENS).filter(k => !SCREEN_NEED[k] || perms.indexOf(SCREEN_NEED[k]) !== -1);
+    input = '<div id="' + id + '" class="set-nav">' +
+      '<div class="set-checks">' + allowed.map(k => '<label class="set-chk"><input type="checkbox" value="' + k + '"' + (cur.indexOf(k) !== -1 ? ' checked' : '') +
+        (r === 'admin' && k === 'settings' ? ' checked disabled' : '') + '> ' + SCREENS[k].icon + ' ' + esc(SCREENS[k].label) + '</label>').join('') + '</div>' +
+      '<label class="set-first">Opens after login <select>' + allowed.map(k => '<option value="' + k + '"' + (cur[0] === k ? ' selected' : '') + '>' + esc(SCREENS[k].label) + '</option>').join('') + '</select></label></div>';
+  } else {
+    input = '<input id="' + id + '" ' + (x.type === 'num' ? 'type="number" min="0" step="any"' : 'type="text"') + ' value="' + esc(x.value) + '">';
+  }
+  return '<div class="set-row"><div class="set-lbl"><b>' + esc(x.label) + '</b><small>' + esc(x.desc) + '</small></div><div class="set-in">' + input + '</div></div>';
+}
+
+function setRender() {
+  const rows = (SETTINGS && SETTINGS.rows) || [];
+  if (!rows.length) { $('setForm').innerHTML = '<div class="empty">Settings not found — run <b>🔧 Litpax Hub → Setup Sheets</b> once, then refresh.</div>'; return; }
+  const groups = {};
+  rows.forEach(x => (groups[x.group] = groups[x.group] || []).push(x));
+  $('setForm').innerHTML = Object.keys(groups).map(g =>
+    '<div class="card set-card"><div class="card-head"><span>' + esc(g) + '</span></div>' + groups[g].map(setField).join('') + '</div>'
+  ).join('') +
+    '<div class="set-bar"><span>Saved values apply to everyone within 5 minutes (or on refresh). These are also in the <b>Settings</b> tab of the sheet.</span>' +
+    '<button id="setSave" class="btn btn-primary" onclick="setSave(this)">Save settings ✓</button></div>';
+}
+
+function setRead(x) {
+  const el = $('set_' + x.key);
+  if (!el) return null;
+  if (x.type === 'nav') {
+    const on = Array.from(el.querySelectorAll('input[type=checkbox]:checked')).map(i => i.value);
+    const first = el.querySelector('select').value, cur = setList(x.value);
+    // keep the saved order; newly ticked screens go to the end
+    const rest = cur.filter(k => k !== first && on.indexOf(k) !== -1).concat(on.filter(k => k !== first && cur.indexOf(k) === -1));
+    return [first].concat(rest).join(', ');
+  }
+  if (x.type === 'list' || x.type === 'stages') return setList(el.value).join(', ');
+  return x.type === 'tpl' ? el.value.replace(/\r/g, '') : el.value.trim();
+}
+
+async function setSave(btn) {
+  const vals = {};
+  SETTINGS.rows.forEach(x => {
+    const v = setRead(x);
+    if (v === null) return;
+    const old = (x.type === 'list' || x.type === 'stages' || x.type === 'nav') ? setList(x.value).join(', ') : String(x.value);
+    if (v !== old) vals[x.key] = v;
+  });
+  if (!Object.keys(vals).length) return toast('ℹ️ Nothing changed');
+  const r = await run({ action: 'saveSettings', values: JSON.stringify(vals) }, btn, true, '⏳ Saving...');
+  if (!r) return;
+  cacheDel('settings'); SETTINGS = null;
+  const S = await ensureSettings(true);
+  applySettings(S); setRender();
+  ['tickets', 'board_items', 'tracker'].forEach(cacheDel);
+  toast('✅ ' + r.saved + ' setting(s) saved');
 }
