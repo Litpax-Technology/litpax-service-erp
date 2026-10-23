@@ -60,6 +60,12 @@ window.addEventListener('load', () => {
   if (CONFIG.SUPPORT_PHONE) {
     $('fSupport').innerHTML = ' · Support: <a href="tel:' + esc(CONFIG.SUPPORT_PHONE) + '">' + esc(CONFIG.SUPPORT_PHONE) + '</a>';
   }
+  // company name + support phone from the Settings tab of the sheet
+  api({ action: 'getSite' }).then(r => {
+    if (!r || !r.ok) return;
+    if (r.company) $('fCompany').textContent = '© ' + r.company;
+    $('fSupport').innerHTML = r.supportPhone ? ' · Support: <a href="tel:' + esc(r.supportPhone) + '">' + esc(r.supportPhone) + '</a>' : '';
+  }).catch(() => {});
   if (CONFIG.TRACK_LOGO_URL) {
     const im = $('brandLogo');
     im.onload = () => { im.hidden = false; $('brandText').hidden = true; };
@@ -161,7 +167,7 @@ function buildSteps(t, items) {
   const closed = t.status === 'Closed';
   const shipKnown = !!t.pickupDate || t.batterySent === 'Yes';
   const shipLabel = t.pickupBy === 'Company' ? 'Pickup Arranged'
-    : (t.pickupBy === 'Customer' || t.batterySent === 'Yes' ? 'Battery Sent by You' : 'Pickup / Shipping');
+    : (t.pickupBy === 'Customer' || t.batterySent === 'Yes' ? 'Items Sent by You' : 'Pickup / Shipping');
 
   return [
     { l: 'Complaint Registered', d: t.createdAt, s: 'done' },
