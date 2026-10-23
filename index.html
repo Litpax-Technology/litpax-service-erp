@@ -254,10 +254,14 @@
     <section id="scrNew" class="screen">
       <div id="newForm" class="card form-card">
         <div class="card-head"><span>📝 Basic Record</span><span class="chip-soft">Ticket ID is auto-generated</span></div>
+        <div class="form-sec">Customer</div>
         <div class="form-grid">
-          <div class="fg full"><label>Customer Company Name <b>*</b></label><input id="n_company" maxlength="150" placeholder="e.g. ABC Motors"></div>
+          <div class="fg"><label>Phone <b>*</b></label><input id="n_phone" inputmode="numeric" maxlength="10" placeholder="10 digit" oninput="phoneCheck()"></div>
           <div class="fg"><label>Contact Person <b>*</b></label><input id="n_person" maxlength="100"></div>
-          <div class="fg"><label>Phone <b>*</b></label><input id="n_phone" inputmode="numeric" maxlength="10" placeholder="10 digit"></div>
+          <div id="n_phoneInfo" class="fg full" style="display:none"></div>
+          <div class="fg full"><label>Customer Company Name <b>*</b></label><input id="n_company" maxlength="150" placeholder="e.g. ABC Motors"></div>
+          <div class="fg"><label>Customer Type</label><select id="n_ctype"></select></div>
+          <div class="fg"><label>How did they reach us?</label><select id="n_source"></select></div>
           <div class="fg full"><label>Dealer <span class="opt">(optional)</span></label>
             <div class="sel-add"><select id="n_brand"></select><button type="button" class="btn btn-ghost" onclick="dealerAddToggle(true)">＋ Add</button></div>
             <div id="dealerAddRow" class="sel-add" style="display:none;margin-top:8px">
@@ -268,8 +272,17 @@
           </div>
           <div class="fg"><label>City</label><input id="n_city" maxlength="80" placeholder="e.g. Rohtak"></div>
           <div class="fg"><label>State</label><select id="n_state"></select></div>
+        </div>
+        <div class="form-sec">Product &amp; problem</div>
+        <div class="form-grid">
           <div class="fg full"><label>Complaint <span class="opt">(what the customer says)</span></label><select id="n_complaint"></select></div>
-          <div class="fg full"><label>Has the battery been sent to the company? <b>*</b></label>
+          <div class="fg"><label>Vehicle Model</label><input id="n_vehicle" maxlength="80" placeholder="e.g. Zelio Eeva"></div>
+          <div class="fg"><label>Invoice No</label><input id="n_invoice" maxlength="60"></div>
+          <div class="fg"><label>Purchase Date</label><input id="n_pdate" type="date"></div>
+          <div class="fg"></div>
+          <div class="fg"><label>Batteries coming</label><input id="n_expB" type="number" min="0" max="50" placeholder="0"></div>
+          <div class="fg"><label>Chargers coming</label><input id="n_expC" type="number" min="0" max="50" placeholder="0"></div>
+          <div class="fg full"><label>Have the items been sent to the company? <b>*</b></label>
             <div class="seg" id="n_sentSeg">
               <button type="button" data-v="Yes" onclick="segPick(this)">🚚 Yes, already sent</button>
               <button type="button" data-v="No" onclick="segPick(this)">✋ No</button>
@@ -334,6 +347,11 @@
     <section id="scrMasters" class="screen">
       <div id="mstGrid" class="mst-grid"></div>
       <div class="mst-note">💡 These lists can also be edited directly in the <b>Masters</b> tab of the Google Sheet — one value per row under each column.</div>
+    </section>
+
+    <!-- ===== SETTINGS (admin) ===== -->
+    <section id="scrSettings" class="screen">
+      <div id="setForm" class="set-form"></div>
     </section>
 
     <!-- ===== PHASE 3: DISPATCH ===== -->
