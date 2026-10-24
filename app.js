@@ -1,5 +1,5 @@
 /* ============================================================
-   LITPAX SERVICE HUB v6 — app.js  (every record in its own object: Customer · Ticket · Call · Pickup · Receipt · Item · Dispatch · Feedback)
+   LITPAX SERVICE HUB v7 — app.js  (record pages: Customer › Ticket › Pickup / Repair Job › Item › Dispatch)
    One Ticket ID → Phase 1 (Basic) → Phase 2 (Service/CRM) → Phase 3 (Repair)
    ============================================================ */
 
@@ -222,8 +222,15 @@ const SCREENS = {
   dispatch:  { id: 'scrDispatch', icon: '🚚', label: 'Dispatch',     title: 'Dispatch',     sub: 'Send out items that passed Final QC & Pack', open: openDispatch },
   masters:   { id: 'scrMasters',  icon: '⚙️', label: 'Masters',      title: 'Masters',      sub: 'Dropdown lists — names and battery / charger types', open: openMasters },
   tracker:   { id: 'scrTracker',  icon: '🛰️', label: 'Ticket Tracker', title: 'Ticket Tracker', sub: 'Where every ticket and battery is right now — with SLA', open: openTracker },
-  settings:  { id: 'scrSettings', icon: '🛠️', label: 'Settings',     title: 'Settings',     sub: 'SLA targets, lists, WhatsApp messages and screens per role', open: openSettings }
+  settings:  { id: 'scrSettings', icon: '🛠️', label: 'Settings',     title: 'Settings',     sub: 'SLA targets, lists, WhatsApp messages and screens per role', open: openSettings },
+  records:   { id: 'scrRecords',  icon: '🗂️', label: 'Records',      title: 'Records',      sub: 'Every customer, call, pickup, repair job, item and dispatch — click any row to open it', open: () => openRecords() }
 };
+// every role can browse records (read-only lists — actions still follow the role)
+function navList(nav) {
+  const n = nav.filter(k => k !== 'records'), i = n.indexOf('settings');
+  if (i === -1) n.push('records'); else n.splice(i, 0, 'records');
+  return n;
+}
 let CURRENT = '';
 
 function role() { return localStorage.getItem('hub_role') || ''; }
@@ -285,6 +292,7 @@ function enterApp(r) {
   const R = CONFIG.ROLES[r];
   $('loginScreen').style.display = 'none'; $('appWrap').style.display = 'flex';
   $('sbRole').textContent = R.icon + ' ' + R.label + ' · ' + (localStorage.getItem('hub_user') || '');
+  R.nav = navList(R.nav);
   $('sbNav').innerHTML = R.nav.map(k =>
     '<button class="sb-item" data-nav="' + k + '" onclick="go(this.dataset.nav)"><span class="sb-ico">' + SCREENS[k].icon + '</span>' + SCREENS[k].label + '</button>'
   ).join('');
@@ -486,24 +494,7 @@ function tkRender() {
    ============================================================ */
 let CUR = null; // {ticket, calls, items}
 
-let DR_ID = '';
-async function drawerOpen(id) {
-  if (id !== DR_ID) DR_TAB = 'overview';
-  DR_ID = id;
-  CUR = null;
-  $('drTitle').textContent = id;
-  const pre = TK.find(x => x['Ticket ID'] === id);
-  $('drBody').innerHTML = (pre ? sec('📝 ' + esc(pre['Company Name']), kv([['Contact Person', pre['Contact Person']], ['Phone', pre['Phone']], ['Status', pre['Status']]])) : '') +
-    '<div class="skeleton sk-block"></div><div class="skeleton sk-block"></div>';
-  $('drawer').classList.add('open'); $('drawerOv').classList.add('show');
-  try {
-    const [r] = await Promise.all([api({ action: 'getTicket', ticketId: id }), ensureMasters()]);
-    if (!r || !r.ok) { $('drBody').innerHTML = '<div class="empty">' + esc((r && r.msg) || 'Could not load') + '</div>'; return; }
-    CUR = r; drawerRender();
-  } catch (e) { if (e !== 'auth') $('drBody').innerHTML = '<div class="empty">Network error ❌</div>'; }
-}
 function drawerClose() { $('drawer').classList.remove('open'); $('drawerOv').classList.remove('show'); }
-function drawerReload() { if (CUR) drawerOpen(CUR.ticket['Ticket ID']); }
 
 function kv(rows) {
   return rows.map(r => '<div class="kv"><span>' + esc(r[0]) + '</span><span>' + esc(r[1] || '—') + '</span></div>').join('');
@@ -525,137 +516,6 @@ function stepper(t) {
   }).join('') + '</div>';
 }
 
-// ---- v6: every record in its own object → tabs, each record with its ID ----
-let DR_TAB = 'overview';
-function idChip(id, old) {
-  return id ? '<span class="id-chip">' + esc(id) + '</span>' : (old ? '<span class="id-chip id-old" title="Old record — moves into its object when the migration is run">old</span>' : '');
-}
-function recCard(id, title, right, body, old) {
-  return '<div class="rec"><div class="rec-head">' + idChip(id, old) + '<b>' + title + '</b><span class="rec-right">' + (right || '') + '</span></div>' + body + '</div>';
-}
-function drTab(k) { DR_TAB = k; drawerRender(); }
-
-function drawerRender() {
-  const t = CUR.ticket, s = t['Status'], sent = t['Battery Sent'] === 'Yes', open = !isEnded(s), cancelled = s === 'Cancelled';
-  const early = s === 'New' || s === 'In Follow-up';
-  $('drTitle').innerHTML = esc(t['Ticket ID']) + ' ' + pill(s);
-
-  let h = cancelled ? '' : stepper(t);
-  if (cancelled) h += '<div class="dsec actions"><div class="note note-gray">🚫 <b>Cancelled</b> on ' + esc(t['Closed At']) + '<br>Reason: ' + esc(t['Cancel Reason'] || '—') + '</div>' +
-    (can('admin') ? '<button class="btn btn-ghost" onclick="ticketReopen(this)">↩️ Reopen ticket</button>' : '<div class="muted-sm">Only admin can reopen a cancelled ticket.</div>') + '</div>';
-
-  // ---- actions (service team) ----
-  const lowFb = t['Feedback Flag'] === 'Low';
-  if (can('service') && (open || lowFb)) {
-    const b = [];
-    b.push('<button class="btn btn-primary" onclick="callFormToggle()">📞 Add Call Log</button>');
-    if (!sent && early) b.push('<button class="btn btn-green" onclick="ticketSolve(this)">✅ Solved on Call</button>');
-    if (early || s === 'In Transit') b.push('<button class="btn btn-violet" onclick="pickupOpen()">🚚 ' + (s === 'In Transit' ? 'Edit Pickup' : 'Arrange Pickup') + '</button>');
-    if (s === 'In Transit' || (sent && early)) b.push('<button class="btn btn-teal" onclick="receiveOpen()">📥 Mark Received</button>');
-    if (open) b.push('<button class="btn btn-ghost" onclick="editOpen()">✏️ Edit details</button>');
-    if (early || s === 'In Transit') b.push('<button class="btn btn-ghost btn-danger" onclick="cancelOpen()">🚫 Cancel ticket</button>');
-    h += '<div class="dsec actions">' +
-      (lowFb ? '<div class="note note-red">🔴 The customer gave low feedback. Call them and save a call log — that clears this flag.</div>' : '') +
-      (sent && early ? '<div class="note">🚚 The customer has already sent the items — no troubleshooting needed. Just note the problem and fill in the pickup details.</div>' : '') +
-      '<div class="btn-wrap">' + b.join('') + '</div>' + callFormHtml(t) + '</div>';
-  }
-  // ---- customer card (Customers object) ----
-  const cu = CUR.customer;
-  h += '<div class="dsec cust-card"><div class="cust-top">' + idChip(t['Customer ID'], !t['Customer ID']) +
-    '<b>' + esc(t['Company Name'] || '—') + '</b>' +
-    (cu && +cu['Total Tickets'] > 1 ? '<span class="tag">🔁 ' + esc(cu['Total Tickets']) + ' tickets</span>' : '') + '</div>' +
-    '<div class="cust-sub">' + esc([t['Contact Person'], t['Phone'], [t['City'], t['State']].filter(Boolean).join(', '), t['Customer Type'], dealerOf(t) && 'Dealer: ' + dealerOf(t)].filter(Boolean).join(' · ')) + '</div>' +
-    (t['Phone'] ? '<a class="call-link" href="tel:' + esc(t['Phone']) + '">📲 Call ' + esc(t['Phone']) + '</a>' : '') + '</div>';
-
-  // ---- tabs ----
-  const calls = CUR.calls || [], items = CUR.items || [], hist = CUR.history || [];
-  let pks = CUR.pickups || [], rcs = CUR.receipts || [];
-  const dsp = CUR.dispatches || [], fbs = CUR.feedback || [], was = waLog(t);
-  // old tickets not migrated yet → one record from the old Tickets columns
-  if (!pks.length && t['Pickup By']) pks = [{ 'Pickup ID': '', 'Pickup By': t['Pickup By'], 'No. of Boxes': t['No. of Boxes'], 'Pickup Place': t['Pickup Place'],
-    'Pickup Date': t['Pickup Date'], 'Transport Name': t['Transport Name'], 'LR No': t['LR No'], 'Builty URL': t['Builty URL'],
-    'Status': t['Received Date'] ? 'Received' : 'Arranged', 'Created At': t['Pickup Set At'], old: 1 }];
-  if (!rcs.length && t['Received Date']) rcs = [{ 'Receipt ID': '', 'Received Date': t['Received Date'], 'Received By': t['Received By'],
-    'Battery Qty': t['Battery Qty'], 'Charger Qty': t['Charger Qty'], 'Accessories': t['Accessories'], 'Qty Note': t['Qty Note'], 'Remarks': t['Receive Remarks'], old: 1 }];
-  const tabs = [['overview', 'Overview'], ['calls', 'Calls', calls.length], ['pickup', 'Pickup', pks.length], ['receipt', 'Receipt', rcs.length],
-    ['items', 'Items', items.length], ['dispatch', 'Dispatch', dsp.length], ['feedback', 'Feedback', fbs.length + (fbs.length ? 0 : (t['Rating'] ? 1 : 0))],
-    ['history', 'History', hist.length]];
-  if (!tabs.some(x => x[0] === DR_TAB)) DR_TAB = 'overview';
-  h += '<div class="dr-tabs">' + tabs.map(([k, l, n]) => '<button type="button" class="' + (DR_TAB === k ? 'on' : '') + '" onclick="drTab(\'' + k + '\')">' + l +
-    (n != null ? ' <span class="cnt">' + n + '</span>' : '') + '</button>').join('') + '</div>';
-
-  let body = '';
-  if (DR_TAB === 'overview') {
-    body += sec('🎫 Ticket ' + idChip(t['Ticket ID']), kv([
-      ['Complaint', t['Complaint']], ['Source', t['Source']], ['Vehicle', t['Vehicle Model']],
-      ['Invoice / Purchase', [t['Invoice No'], t['Purchase Date'] && niceDate(t['Purchase Date'])].filter(Boolean).join(' · ')],
-      ['Purchase Age', t['Purchase Age']],
-      ['Items expected', (+t['Exp Battery Qty'] || +t['Exp Charger Qty']) ? itemsText(+t['Exp Battery Qty'] || 0, +t['Exp Charger Qty'] || 0) : ''],
-      ['Earlier tickets', +t['Previous Tickets'] ? t['Previous Tickets'] + ' (repeat customer)' : ''],
-      ['Items Sent', t['Battery Sent']],
-      ['Created', t['Created At'] + (t['Created By'] ? ' · ' + t['Created By'] : '')]
-    ]));
-    body += sec('📊 Summary', kv([
-      ['Status', s], ['Outcome', t['Outcome']], ['Next Follow-up', open ? t['Next Follow-up'] : ''],
-      ['Calls', t['Total Calls']], ['Last attended by', t['Attended By']], ['Solved by', t['Call Fix']],
-      ['Items', t['Total Items']], ['Rating', t['Rating'] ? t['Rating'] + ' / 5' : ''],
-      ['Closed', t['Closed At'] && !cancelled ? t['Closed At'] : '']
-    ]));
-  }
-  if (DR_TAB === 'calls') body += calls.length ? calls.map(c => recCard(c['Call ID'], esc(c['Attended By'] || c['Logged By']),
-      esc(c['Time']),
-      '<div class="tl-body">' + esc(c['Notes']) + '</div>' +
-      (c['Checks'] ? '<div class="tl-checks">🧰 ' + esc(c['Checks']) + '</div>' : '') +
-      (c['Next Follow-up'] ? '<div class="tl-next">📅 Next follow-up: ' + esc(c['Next Follow-up']) + '</div>' : '') +
-      (c['Result'] ? '<div class="muted-sm">' + esc(c['Result']) + (c['Logged By'] ? ' · logged by ' + esc(c['Logged By']) : '') + '</div>' : ''), c['Old'])).join('')
-    : '<div class="empty sm">No calls yet</div>';
-  if (DR_TAB === 'pickup') body += pks.length ? pks.slice().reverse().map(p => recCard(p['Pickup ID'], p['Pickup By'] === 'Company' ? '🏢 By company' : '👤 By customer',
-      pill(p['Status']),
-      kv([['Pickup Date', p['Pickup Date']], ['No. of Boxes', p['No. of Boxes']], ['Place', p['Pickup Place']], ['Transport', p['Transport Name']], ['LR No', p['LR No']], ['Saved', p['Created At']]]) +
-      (safeUrl(p['Builty URL']) ? '<a class="call-link" href="' + esc(safeUrl(p['Builty URL'])) + '" target="_blank" rel="noopener">📎 View builty</a>' : '<div class="muted-sm">No builty uploaded</div>'),
-      p.old)).join('')
-    : '<div class="empty sm">No pickup yet</div>';
-  if (DR_TAB === 'receipt') body += rcs.length ? rcs.slice().reverse().map(r => recCard(r['Receipt ID'], '📥 ' + esc(niceDate(r['Received Date'])),
-      r['Pickup ID'] ? 'from ' + idChip(r['Pickup ID']) : '',
-      kv([['Received By', r['Received By']], ['Batteries', r['Battery Qty'] || 0], ['Chargers', r['Charger Qty'] || 0], ['Accessories', r['Accessories']], ['Remarks', r['Remarks']]]) +
-      (r['Qty Note'] ? '<div class="note note-red" style="margin-top:10px">⚠️ ' + esc(r['Qty Note']) + '</div>' : ''), r.old)).join('') +
-      '<button class="btn btn-ghost btn-sm" style="margin-top:4px" onclick="recvSlip()">🖨️ Receiving Slip</button>'
-    : '<div class="empty sm">Not received yet</div>';
-  if (DR_TAB === 'items') body += items.length ? '<div class="items-mini">' + items.map(it =>
-      '<div class="im-row"><span class="im-id">' + esc(it['Item ID']) + '</span><span class="im-main">' + (it['Item Type'] === 'Charger' ? '⚡' : '🔋') + ' ' +
-      esc([it['Category'], it['Model']].filter(Boolean).join(' · ')) +
-      '<small>' + esc([it['Model Source'] === 'Other' && 'Other company: ' + it['Brand'], it['Serial No'] && 'SN ' + it['Serial No'], it['Warranty'], it['Condition'] && 'Arrived: ' + it['Condition'], it['Voltage'] !== '' && it['Voltage'] != null && it['Voltage'] + ' V',
-        it['Mfg Month'] && 'Mfg ' + it['Mfg Month'], it['Batch No'] && 'Batch ' + it['Batch No'], it['Usage Months'] !== '' && it['Usage Months'] != null && 'Used ' + it['Usage Months'] + ' mo',
-        it['Fault Code'] && 'Fault: ' + it['Fault Code'], rupee(it['Repair Cost'])].filter(Boolean).join(' · ')) + '</small>' +
-      '<span class="im-links">' + idChip(it['Receipt ID']) + idChip(it['Dispatch ID']) + '</span>' +
-      repeatTag(it['Repeat Count']) +
-      (can('service') ? '<button type="button" class="link-btn" data-id="' + esc(it['Item ID']) + '" onclick="itemEditOpen(this.dataset.id)">✏️ Correct details</button>' : '') +
-      '</span>' + pill(it['Item Status']) + '</div>').join('') + '</div>'
-    : '<div class="empty sm">No items yet — they are added when the items are received</div>';
-  if (DR_TAB === 'dispatch') body += dsp.length ? dsp.slice().reverse().map(d => recCard(d['Dispatch ID'], '📦 ' + esc(niceDate(d['Dispatch Date'])),
-      esc(itemsText(+d['Batteries'] || 0, +d['Chargers'] || 0)),
-      kv([['Items', d['Item IDs']], ['Dispatched By', d['Dispatched By']], ['Transport', d['Transport']], ['Charges', rupee(d['Charges'])],
-          ['Address', d['Address']], ['Problem Found', d['Problem Found']], ['Remarks', d['Remarks']]]), d['Old'])).join('')
-    : '<div class="empty sm">Nothing dispatched yet</div>';
-  if (DR_TAB === 'feedback') {
-    body += fbs.length ? fbs.slice().reverse().map(f => recCard(f['Feedback ID'], '⭐ ' + esc(f['Rating']) + ' / 5', esc(f['Time']),
-        kv([['Problem Solved', f['Solved']], ['Comment', f['Comment']],
-            ['Flag', t['Feedback Flag'] === 'Low' ? '🔴 Low — call pending' : (t['Feedback Flag'] === 'Resolved' ? '✅ Called back' : '')]]), !f['Feedback ID'])).join('')
-      : (t['Feedback Asked At'] ? sec('⭐ Feedback', kv([['Asked On', t['Feedback Asked At']], ['Status', 'Waiting for customer']])) : '<div class="empty sm">No feedback yet</div>');
-    if (was.length) body += sec('📲 WhatsApp sent (' + was.length + ')', '<div class="timeline">' + was.slice().reverse().map(w =>
-      '<div class="tl-item"><div class="tl-head"><b>' + idChip(w.id, !w.id) + ' ' + esc(w.e) + '</b><span>' + esc(w.t) + (w.b ? ' · ' + esc(w.b) : '') + '</span></div></div>').join('') + '</div>');
-  }
-  if (DR_TAB === 'history') body += hist.length ? '<div class="timeline">' + hist.map(x =>
-      '<div class="tl-item"><div class="tl-head"><b>' + idChip(x['Audit ID'], !x['Audit ID']) + ' ' + esc(x['Action']) +
-      (x['Record ID'] && x['Record ID'] !== t['Ticket ID'] ? ' · ' + esc(x['Record ID']) : (x['Item ID'] ? ' · ' + esc(x['Item ID']) : '')) +
-      '</b><span>' + esc(x['Time']) + ' · ' + esc(x['User']) + '</span></div>' +
-      '<div class="tl-body muted-txt">' + esc(x['Details']) + '</div></div>').join('') + '</div>'
-    : '<div class="empty sm">No changes yet</div>';
-
-  h += '<div class="dr-tab-body">' + body + '</div>';
-  if (!cancelled) h += waSection();
-  $('drBody').innerHTML = h;
-}
 
 /* ---- Edit / Cancel / Reopen ---- */
 function editOpen() {
@@ -760,12 +620,18 @@ function fg(label, id, type, val, extra) {
 
 /* ---- Pickup ---- */
 function pickupOpen() {
-  const t = CUR.ticket, cur = safeUrl(t['Builty URL']);
-  modalOpen('🚚 Pickup / Transport Details',
+  const t0 = CUR.ticket, op = openPickup(), first = !(CUR.items || []).length && !(CUR.pickups || []).length;
+  // edit the open pickup, or a new one (first pickup pre-fills the quantities from the ticket)
+  const t = op || (first ? { 'Pickup By': t0['Pickup By'], 'No. of Boxes': t0['No. of Boxes'], 'Pickup Date': t0['Pickup Date'], 'Pickup Place': t0['Pickup Place'],
+    'Transport Name': t0['Transport Name'], 'LR No': t0['LR No'], 'Builty URL': t0['Builty URL'], 'Exp Battery Qty': t0['Exp Battery Qty'], 'Exp Charger Qty': t0['Exp Charger Qty'] } : {});
+  const cur = safeUrl(t['Builty URL']);
+  modalOpen(op ? '🚚 Edit Pickup — ' + op['Pickup ID'] : (first ? '🚚 Arrange Pickup' : '🚚 Another Pickup — next lot of items'),
     '<div class="fg"><label>Pickup arranged by <b>*</b></label><div class="seg" id="p_bySeg">' +
       ['Company', 'Customer'].map(v => '<button type="button" data-v="' + v + '" class="' + (t['Pickup By'] === v ? 'on' : '') + '" onclick="segPick(this)">' +
         (v === 'Company' ? '🏢 Company' : '👤 Customer (self)') + '</button>').join('') + '</div></div>' +
     '<div class="form-grid">' +
+      fg('🔋 Batteries coming', 'p_expB', 'number', t['Exp Battery Qty'], ' min="0" max="50" placeholder="0"') +
+      fg('⚡ Chargers coming', 'p_expC', 'number', t['Exp Charger Qty'], ' min="0" max="50" placeholder="0"') +
       fg('No. of Boxes', 'p_boxes', 'number', t['No. of Boxes'], ' min="0" max="999"') +
       fg('Pickup Date <b>*</b>', 'p_date', 'date', t['Pickup Date'] || todayStr()) +
       fg('Place', 'p_place', 'text', t['Pickup Place'], ' maxlength="150"') +
@@ -776,7 +642,7 @@ function pickupOpen() {
         '<input type="file" id="p_file" accept="image/jpeg,image/png,image/webp,application/pdf" onchange="pickupFilePick(this)"></label>' +
         (cur ? '<a class="call-link" href="' + esc(cur) + '" target="_blank" rel="noopener">View current builty ↗</a>' : '') +
       '</div>' +
-    '</div><button class="btn btn-primary btn-block" onclick="pickupSave(this)">Save — mark In Transit ✓</button>');
+    '</div><button class="btn btn-primary btn-block" onclick="pickupSave(this)">' + (op ? 'Save pickup ✓' : 'Save pickup — items on the way ✓') + '</button>');
 }
 function pickupFilePick(inp) {
   const f = inp.files && inp.files[0];
@@ -787,6 +653,7 @@ async function pickupSave(btn) {
   const d = {
     action: 'arrangePickup', ticketId: id, pickupBy: segVal('p_bySeg'),
     boxes: $('p_boxes').value, pickupDate: $('p_date').value, place: $('p_place').value.trim(),
+    expB: $('p_expB').value, expC: $('p_expC').value,
     transport: $('p_transport').value.trim(), lr: $('p_lr').value.trim()
   };
   if (!d.pickupBy) return toast('⚠️ Select Company or Customer');
@@ -805,17 +672,24 @@ async function pickupSave(btn) {
       if (!u) { toast('⚠️ Pickup saved, but builty upload failed — use Edit Pickup to retry'); afterChange(); drawerReload(); return; }
     }
   }
-  modalClose(); toast('✅ Pickup saved' + (r.pickupId ? ' — ' + r.pickupId : '') + (file ? ' with builty' : '') + ' — status is now In Transit'); DR_TAB = 'pickup'; afterChange(); drawerReload();
+  modalClose(); toast('✅ Pickup saved' + (r.pickupId ? ' — ' + r.pickupId : '') + (file ? ' with builty' : '')); DR_TAB = 'pickups'; afterChange(); drawerReload();
 }
 
 /* ---- Received (one row per unit: type + model) ---- */
-async function receiveOpen() {
+// which pickup these items came with + what it said was coming
+let RECV = { pid: '', eb: 0, ec: 0, from: '', start: 1 };
+async function receiveOpen(pickupId) {
   await Promise.all([ensureMasters(), ensureModels()]);
-  const t = CUR.ticket, eb = +t['Exp Battery Qty'] || 0, ec = +t['Exp Charger Qty'] || 0;
-  modalOpen('📥 Mark Received',
+  const t = CUR.ticket, items = CUR.items || [];
+  const pk = pickupId ? (CUR.pickups || []).find(p => p['Pickup ID'] === pickupId) : openPickup();
+  let eb = pk ? +pk['Exp Battery Qty'] || 0 : 0, ec = pk ? +pk['Exp Charger Qty'] || 0 : 0, from = pk && (eb || ec) ? 'pickup ' + pk['Pickup ID'] : '';
+  if (!eb && !ec && !items.length) { eb = +t['Exp Battery Qty'] || 0; ec = +t['Exp Charger Qty'] || 0; from = (eb || ec) ? 'ticket' : ''; }
+  const start = items.reduce((m, i) => Math.max(m, parseInt(String(i['Item ID']).split('-').pop(), 10) || 0), 0) + 1;
+  RECV = { pid: pk ? pk['Pickup ID'] : '', eb, ec, from, start };
+  modalOpen('📥 Mark Received' + (pk ? ' — ' + pk['Pickup ID'] : ''),
     '<div class="form-grid">' +
       fg('Received Date <b>*</b>', 'r_date', 'date', todayStr()) +
-      '<div class="fg"><label>Expected (from ticket)</label><div class="r-exp">' + ((eb || ec) ? esc(itemsText(eb, ec)) : 'Not given') + '</div></div>' +
+      '<div class="fg"><label>Expected' + (from ? ' (from ' + esc(from) + ')' : '') + '</label><div class="r-exp">' + ((eb || ec) ? esc(itemsText(eb, ec)) : 'Not given') + '</div></div>' +
       fg('Battery Qty', 'r_bq', 'number', eb, ' min="0" max="50" oninput="recvUnits()"') +
       fg('Charger Qty', 'r_cq', 'number', ec, ' min="0" max="50" oninput="recvUnits()"') +
     '</div>' +
@@ -866,13 +740,13 @@ function recvUnits() {
     block('B', 'Battery', bq, M().batteryType, kb, '🔋') +
     block('C', 'Charger', cq, M().chargerType, kc, '⚡');
 
-  const n = bq + cq, id = CUR.ticket['Ticket ID'], eb = +CUR.ticket['Exp Battery Qty'] || 0, ec = +CUR.ticket['Exp Charger Qty'] || 0;
+  const n = bq + cq, id = CUR.ticket['Ticket ID'], eb = RECV.eb, ec = RECV.ec;
   const miss = (eb || ec) && (eb !== bq || ec !== cq);
   $('r_prev').className = 'note' + (miss ? ' note-red' : '');
   $('r_prev').innerHTML = (n
-    ? '📦 <b>' + n + '</b> items will be created: ' + esc(id) + '-01 … ' + esc(id) + '-' + pad2(n)
+    ? '📦 New Repair Job with <b>' + n + '</b> items: ' + esc(id) + '-' + pad2(RECV.start) + (n > 1 ? ' … ' + esc(id) + '-' + pad2(RECV.start + n - 1) : '')
     : 'Enter quantities — a detail row opens for every unit') +
-    (miss ? '<br>⚠️ Expected ' + esc(itemsText(eb, ec)) + ' — this will be noted on the ticket.' : '');
+    (miss ? '<br>⚠️ Expected ' + esc(itemsText(eb, ec)) + ' (' + esc(RECV.from) + ') — the shortfall will be recorded.' : '');
 }
 
 function recvCopy(k) {
@@ -918,16 +792,16 @@ async function recvSave(btn) {
   if (!confirm(items.length + ' items will be received and sent to Repair. Continue?')) return;
 
   const accessories = Array.from(document.querySelectorAll('#r_acc input:checked')).map(i => i.value);
-  const r = await run({ action: 'markReceived', ticketId: id, receivedDate: $('r_date').value, items, accessories, remarks: $('r_rem').value.trim() }, btn, true);
+  const r = await run({ action: 'markReceived', ticketId: id, pickupId: RECV.pid, receivedDate: $('r_date').value, items, accessories, remarks: $('r_rem').value.trim() }, btn, true);
   if (!r) return;
   afterChange();
   const rep = r.repeats || [];
   toast(rep.length ? '🔁 ' + rep.length + ' repeat batter' + (rep.length > 1 ? 'ies' : 'y') + ' found: ' + rep.map(x => x.serial + ' (×' + x.count + ')').join(', ')
                    : r.qtyNote ? '⚠️ Received — ' + r.qtyNote : '✅ ' + (r.receiptId ? r.receiptId + ' · ' : '') + r.items + ' items moved to Repair');
-  DR_TAB = 'items';
+  DR_TAB = 'jobs';
   try {
     const t = await api({ action: 'getTicket', ticketId: id });
-    if (t && t.ok) { CUR = t; drawerRender(); recvSlip(); return; }
+    if (t && t.ok) { CUR = t; renderRecord(); recvSlip(r.receiptId); return; }
   } catch (e) {}
   modalClose(); drawerReload();
 }
@@ -984,9 +858,16 @@ function slipHead(title, date) {
     '<div class="slip-right"><b>' + esc(title) + '</b><br>' + esc(date || '') + '</div></div>';
 }
 
-function recvSlip() {
+function recvSlip(rid) {
   if (!CUR) return;
-  const t = CUR.ticket, items = CUR.items || [];
+  const t0 = CUR.ticket, rcs = receiptsOf();
+  const rc = (rid && rcs.find(x => x['Receipt ID'] === rid)) || rcs[rcs.length - 1] || {};
+  const pk = (CUR.pickups || []).find(p => p['Pickup ID'] === rc['Pickup ID']) || {};
+  const items = rc['Receipt ID'] ? itemsOfReceipt(rc) : (CUR.items || []);
+  // the slip reads the repair job + its pickup, falling back to the ticket view
+  const t = Object.assign({}, t0, rc['Receipt ID'] ? { 'Received Date': rc['Received Date'], 'Received By': rc['Received By'], 'Accessories': rc['Accessories'],
+    'Qty Note': rc['Qty Note'], 'Receive Remarks': rc['Remarks'] } : {}, pk['Pickup ID'] ? { 'Pickup By': pk['Pickup By'], 'Transport Name': pk['Transport Name'],
+    'LR No': pk['LR No'], 'No. of Boxes': pk['No. of Boxes'] } : {});
 const nb = items.filter(i => i['Item Type'] === 'Battery').length, nc = items.length - nb;
   const link = trackLink(t);
   const track = link ? '<div class="slip-track">' + qrImg(link, 110) +
@@ -996,7 +877,8 @@ const nb = items.filter(i => i['Item Type'] === 'Battery').length, nc = items.le
     { name: t['Contact Person'], id: t['Ticket ID'], items: itemsText(nb, nc), link })), 'Send "Items Received" on WhatsApp', '');
   const html =
     '<div class="slip" id="slip">' + slipHead('Receiving Slip', t['Received Date']) +
-      '<div class="slip-sec">Ticket: <b>' + esc(t['Ticket ID']) + '</b></div>' +
+      '<div class="slip-sec">Ticket: <b>' + esc(t['Ticket ID']) + '</b>' + (rc['Receipt ID'] ? ' · Repair Job: <b>' + esc(rc['Receipt ID']) + '</b>' : '') +
+        (pk['Pickup ID'] ? ' · Pickup: <b>' + esc(pk['Pickup ID']) + '</b>' : '') + '</div>' +
       kv([
         ['Company', t['Company Name']], ['Contact', [t['Contact Person'], t['Phone']].filter(Boolean).join(' · ')],
         ['Dealer', dealerOf(t)], ['Received By', t['Received By']],
@@ -1626,7 +1508,7 @@ function applySettings(S) {
   if (R && c.NAV && c.NAV[r] && c.NAV[r].length) {
     const nav = c.NAV[r].filter(k => SCREENS[k] && (!SCREEN_NEED[k] || can(SCREEN_NEED[k])));
     if (r === 'admin' && nav.indexOf('settings') === -1) nav.push('settings');
-    if (nav.length) R.nav = nav;
+    if (nav.length) R.nav = navList(nav);
   }
   if (R && $('appWrap').style.display !== 'none') {
     $('sbNav').innerHTML = R.nav.map(k =>
@@ -1778,4 +1660,493 @@ async function refreshModels(btn) {
   const list = await ensureModels(true);
   toast(list.length ? '✅ ' + list.length + ' models loaded' : '⚠️ No models loaded');
   mstRender();
+}
+
+/* ============================================================
+   v7 — RECORD PAGES (Salesforce-style)
+   Every ID is a link → its own page with lookups (parent records), details, related lists and history.
+   Customer › Ticket › Pickup / Repair Job › Item › Dispatch
+   ============================================================ */
+const REC_ICO = { customer: '👤', ticket: '🎫', call: '📞', pickup: '🚚', receipt: '🧰', item: '🔋', dispatch: '📦', feedback: '⭐', whatsapp: '📲' };
+const REC_LABEL = { customer: 'Customer', ticket: 'Ticket', call: 'Call', pickup: 'Pickup', receipt: 'Repair Job', item: 'Item', dispatch: 'Dispatch', feedback: 'Feedback', whatsapp: 'WhatsApp' };
+let REC = null, REC_HIST = [], CUST = null, _recSeq = 0;
+let DR_TAB = 'overview';
+
+const serialKey = s => String(s || '').replace(/^'/, '').replace(/\s+/g, '').toUpperCase();
+function idChip(id, old) {
+  return id ? '<span class="id-chip">' + esc(id) + '</span>' : (old ? '<span class="id-chip id-old" title="Old record — gets its own ID when the migration is run">old</span>' : '');
+}
+// lookup link → opens that record
+function lk(type, id, tid, text) {
+  if (!id) return '<span class="muted-txt">—</span>';
+  return '<button type="button" class="lk" data-t="' + type + '" data-i="' + esc(id) + '" data-k="' + esc(tid || '') + '" onclick="lkGo(this,event)">' +
+    '<span class="lk-ico">' + (REC_ICO[type] || '') + '</span>' + esc(text || id) + '</button>';
+}
+function lkGo(el, e) { if (e) { e.stopPropagation(); e.preventDefault(); } openRecord(el.dataset.t, el.dataset.i, el.dataset.k); }
+// key/value rows where the value is already HTML (lookups)
+function kvh(rows) {
+  return rows.filter(r => r[1] !== '' && r[1] != null).map(r => '<div class="kv"><span>' + esc(r[0]) + '</span><span>' + r[1] + '</span></div>').join('') || '<div class="empty sm">—</div>';
+}
+const tv = v => esc(v === '' || v == null ? '—' : v);
+function recCard(id, title, right, body, old, link) {
+  return '<div class="rec' + (link ? ' rec-click' : '') + '"' + (link ? ' data-t="' + link[0] + '" data-i="' + esc(link[1]) + '" data-k="' + esc(link[2] || '') + '" onclick="lkGo(this,event)"' : '') + '>' +
+    '<div class="rec-head">' + idChip(id, old) + '<b>' + title + '</b><span class="rec-right">' + (right || '') + '</span></div>' + body + '</div>';
+}
+// record header: type, big ID, status, highlight fields (lookups)
+function recHead(type, id, pillHtml, high, sub) {
+  return '<div class="rp-head"><div class="rp-type">' + (REC_ICO[type] || '') + ' ' + REC_LABEL[type] + '</div>' +
+    '<div class="rp-title"><span>' + esc(id || 'Old record') + '</span>' + (pillHtml || '') + '</div>' +
+    (sub ? '<div class="rp-sub">' + sub + '</div>' : '') +
+    '<div class="rp-high">' + high.filter(h => h[1] !== '' && h[1] != null).map(h => '<div><span>' + esc(h[0]) + '</span><b>' + h[1] + '</b></div>').join('') + '</div></div>';
+}
+function tabsHtml(tabs) {
+  if (!tabs.some(x => x[0] === DR_TAB)) DR_TAB = tabs[0][0];
+  return '<div class="dr-tabs">' + tabs.map(([k, l, n]) => '<button type="button" class="' + (DR_TAB === k ? 'on' : '') + '" onclick="drTab(\'' + k + '\')">' + l +
+    (n != null ? ' <span class="cnt">' + n + '</span>' : '') + '</button>').join('') + '</div>';
+}
+function drTab(k) { DR_TAB = k; renderRecord(); }
+function bar(done, total) {
+  const pc = total ? Math.round(done * 100 / total) : 0;
+  return '<div class="pbar"><div class="pbar-fill" style="width:' + pc + '%"></div></div><div class="pbar-txt">' + done + ' / ' + total + ' dispatched</div>';
+}
+function histList(list) {
+  return list.length ? '<div class="timeline">' + list.map(x =>
+    '<div class="tl-item"><div class="tl-head"><b>' + idChip(x['Audit ID'], !x['Audit ID']) + ' ' + esc(x['Action']) +
+    (x['Record ID'] && REC && x['Record ID'] !== REC.id ? ' · ' + esc(x['Record ID']) : (x['Item ID'] && (!REC || x['Item ID'] !== REC.id) ? ' · ' + esc(x['Item ID']) : '')) +
+    '</b><span>' + esc(x['Time']) + ' · ' + esc(x['User']) + '</span></div>' +
+    '<div class="tl-body muted-txt">' + esc(x['Details']) + '</div></div>').join('') + '</div>' : '<div class="empty sm">No changes recorded</div>';
+}
+function itemLine(it, tid) {
+  return '<div class="im-row rec-click" data-t="item" data-i="' + esc(it['Item ID']) + '" data-k="' + esc(tid || it['Ticket ID']) + '" onclick="lkGo(this,event)">' +
+    '<span class="im-id">' + esc(it['Item ID']) + '</span><span class="im-main">' + (it['Item Type'] === 'Charger' ? '⚡' : '🔋') + ' ' +
+    esc([it['Category'], it['Model']].filter(Boolean).join(' · ')) +
+    '<small>' + esc([it['Model Source'] === 'Other' && 'Other company: ' + it['Brand'], it['Serial No'] && 'SN ' + it['Serial No'], it['Warranty'],
+      it['Condition'] && 'Arrived: ' + it['Condition'], it['Fault Code'] && 'Fault: ' + it['Fault Code']].filter(Boolean).join(' · ')) + '</small>' +
+    '<span class="im-links">' + idChip(it['Receipt ID']) + idChip(it['Dispatch ID']) + '</span>' + repeatTag(it['Repeat Count']) +
+    '</span>' + pill(it['Item Status']) + '</div>';
+}
+const isDisp = it => String(it['Item Status']).toLowerCase() === 'dispatched';
+const openPickup = () => (CUR && CUR.pickups || []).filter(p => p['Status'] === 'Arranged').pop() || null;
+
+// old tickets (not migrated) → one pickup / repair job built from the old ticket columns
+function pickupsOf() {
+  const t = CUR.ticket; let pks = CUR.pickups || [];
+  if (!pks.length && t['Pickup By']) pks = [{ 'Pickup ID': '', 'Pickup By': t['Pickup By'], 'No. of Boxes': t['No. of Boxes'], 'Pickup Place': t['Pickup Place'],
+    'Pickup Date': t['Pickup Date'], 'Transport Name': t['Transport Name'], 'LR No': t['LR No'], 'Builty URL': t['Builty URL'],
+    'Status': t['Received Date'] ? 'Received' : 'Arranged', 'Created At': t['Pickup Set At'], old: 1 }];
+  return pks;
+}
+function receiptsOf() {
+  const t = CUR.ticket; let rcs = CUR.receipts || [];
+  if (!rcs.length && t['Received Date']) rcs = [{ 'Receipt ID': '', 'Received Date': t['Received Date'], 'Received By': t['Received By'],
+    'Battery Qty': t['Battery Qty'], 'Charger Qty': t['Charger Qty'], 'Accessories': t['Accessories'], 'Qty Note': t['Qty Note'], 'Remarks': t['Receive Remarks'], old: 1 }];
+  return rcs;
+}
+const itemsOfReceipt = r => (CUR.items || []).filter(i => (i['Receipt ID'] || '') === (r['Receipt ID'] || ''));
+
+/* ---------- open / navigate ---------- */
+async function openRecord(type, id, tid, opts) {
+  opts = opts || {};
+  if (!id) return;
+  if (opts.fresh) { REC_HIST = []; opts.reload = true; }
+  else if (REC && !opts.back && !opts.reload && !(REC.type === type && REC.id === id)) REC_HIST.push(REC);
+  if (!opts.reload && !opts.back && !(REC && REC.type === type && REC.id === id)) DR_TAB = type === 'ticket' ? 'overview' : 'details';
+  REC = { type, id, tid: type === 'ticket' ? id : (tid || ''), retried: !!opts.retried };
+  const seq = ++_recSeq;
+  $('drawer').classList.add('open'); $('drawerOv').classList.add('show');
+  const have = type === 'customer' ? CUST && CUST.customer['Customer ID'] === id : CUR && REC.tid && CUR.ticket['Ticket ID'] === REC.tid;
+  if (!have || opts.reload) $('drBody').innerHTML = '<div class="skeleton sk-block"></div><div class="skeleton sk-block"></div>';
+  try {
+    if (type === 'customer') {
+      if (!have || opts.reload) {
+        const r = await api({ action: 'getCustomer', customerId: id });
+        if (seq !== _recSeq) return;
+        if (!r || !r.ok) return recError((r && r.msg) || 'Could not load');
+        CUST = r;
+      }
+      return renderRecord();
+    }
+    if (!REC.tid) {
+      const f = await api({ action: 'findRecord', q: id });
+      if (seq !== _recSeq) return;
+      if (!f || !f.ok || !f.ticketId) return recError((f && f.msg) || 'Record not found');
+      REC.tid = f.ticketId;
+    }
+    if (!have || opts.reload) {
+      const [r] = await Promise.all([api({ action: 'getTicket', ticketId: REC.tid }), ensureMasters()]);
+      if (seq !== _recSeq) return;
+      if (!r || !r.ok) return recError((r && r.msg) || 'Could not load');
+      CUR = r;
+    }
+    renderRecord();
+  } catch (e) { if (e !== 'auth' && seq === _recSeq) recError('Network error ❌'); }
+}
+function recError(msg) { $('drBody').innerHTML = '<div class="empty">' + esc(msg) + '</div>'; }
+function recBack() { const p = REC_HIST.pop(); if (p) openRecord(p.type, p.id, p.tid, { back: true }); }
+
+// breadcrumb from the record's parents (not the click history)
+function crumbs() {
+  const c = [];
+  const t = CUR && CUR.ticket;
+  if (REC.type === 'customer') return [['customer', REC.id, '', REC.id]];
+  if (t && t['Customer ID']) c.push(['customer', t['Customer ID'], '', t['Company Name'] || t['Customer ID']]);
+  if (t) c.push(['ticket', t['Ticket ID'], t['Ticket ID'], t['Ticket ID']]);
+  if (REC.type === 'item') {
+    const it = (CUR.items || []).find(i => i['Item ID'] === REC.id);
+    if (it && it['Receipt ID']) c.push(['receipt', it['Receipt ID'], REC.tid, it['Receipt ID']]);
+  }
+  if (REC.type !== 'ticket') c.push([REC.type, REC.id, REC.tid, REC.id]);
+  return c;
+}
+
+function renderRecord() {
+  if (!REC) return;
+  const cr = crumbs();
+  $('drTitle').innerHTML = (REC_HIST.length ? '<button class="rp-back" onclick="recBack()" title="Back">←</button>' : '') +
+    '<div class="crumbs">' + cr.map((x, i) => i === cr.length - 1 ? '<b>' + esc(x[3]) + '</b>' : lk(x[0], x[1], x[2], x[3])).join('<span class="crumb-sep">›</span>') + '</div>';
+  const R = { ticket: renderTicket, customer: renderCustomer, call: renderCall, pickup: renderPickup, receipt: renderReceipt,
+              item: renderItem, dispatch: renderDispatch, feedback: renderFeedback, whatsapp: renderTicket };
+  (R[REC.type] || renderTicket)();
+}
+
+/* ---------- compat: old callers ---------- */
+function drawerOpen(id) { openRecord('ticket', id, id, { fresh: true, reload: true }); }
+function drawerReload() { if (REC) openRecord(REC.type, REC.id, REC.tid, { reload: true }); }
+function drawerRender() { renderRecord(); }
+
+/* ---------- TICKET ---------- */
+function qtyBox() {
+  const t = CUR.ticket, items = CUR.items || [], pks = pickupsOf();
+  let eb = 0, ec = 0;
+  pks.forEach(p => { eb += +p['Exp Battery Qty'] || 0; ec += +p['Exp Charger Qty'] || 0; });
+  if (!eb && !ec) { eb = +t['Exp Battery Qty'] || 0; ec = +t['Exp Charger Qty'] || 0; }
+  const row = (lbl, typ, exp) => {
+    const L = items.filter(i => i['Item Type'] === typ), got = L.length, out = L.filter(isDisp).length;
+    const short = exp && got < exp ? exp - got : 0;
+    return '<tr><td>' + lbl + '</td><td>' + (exp || '—') + '</td><td>' + got + '</td><td>' + (got - out) + '</td><td>' + out + '</td><td>' +
+      (short ? '<span class="tag tag-red">⚠️ ' + short + ' short</span>' : (got && out === got ? '<span class="tag tag-green">✓ all out</span>' : '')) + '</td></tr>';
+  };
+  const th = (l, sh) => '<th><span class="lg">' + l + '</span><span class="sm">' + sh + '</span></th>';
+  return '<table class="qty-box"><tr><th></th>' + th('Expected', 'Exp.') + th('Received', 'Rcvd') + th('In repair', 'Repair') + th('Dispatched', 'Out') + '<th></th></tr>' +
+    row('🔋 Battery', 'Battery', eb) + row('⚡ Charger', 'Charger', ec) + '</table>';
+}
+
+function renderTicket() {
+  const t = CUR.ticket, s = t['Status'], sent = t['Battery Sent'] === 'Yes', open = !isEnded(s), cancelled = s === 'Cancelled';
+  const early = s === 'New' || s === 'In Follow-up', opk = openPickup();
+  const inRepair = ['Received', 'In Repair', 'Partial Dispatch'].indexOf(s) !== -1;
+  const calls = CUR.calls || [], items = CUR.items || [], hist = CUR.history || [], dsp = CUR.dispatches || [], fbs = CUR.feedback || [];
+  const pks = pickupsOf(), rcs = receiptsOf(), bats = items.filter(i => i['Item Type'] !== 'Charger'), chgs = items.filter(i => i['Item Type'] === 'Charger');
+  const cu = CUR.customer;
+
+  let h = recHead('ticket', t['Ticket ID'], pill(s), [
+    ['Customer', t['Customer ID'] ? lk('customer', t['Customer ID'], '', t['Company Name']) : tv(t['Company Name'])],
+    ['Contact', tv([t['Contact Person'], t['Phone']].filter(Boolean).join(' · '))],
+    ['Complaint', tv(t['Complaint'])],
+    ['Items', items.length ? esc(items.filter(isDisp).length + ' / ' + items.length + ' dispatched') : '—']
+  ], cu && +cu['Total Tickets'] > 1 ? '🔁 Repeat customer — ' + esc(cu['Total Tickets']) + ' tickets' : '');
+  h += cancelled ? '' : stepper(t);
+  if (cancelled) h += '<div class="dsec actions"><div class="note note-gray">🚫 <b>Cancelled</b> on ' + esc(t['Closed At']) + '<br>Reason: ' + esc(t['Cancel Reason'] || '—') + '</div>' +
+    (can('admin') ? '<button class="btn btn-ghost" onclick="ticketReopen(this)">↩️ Reopen ticket</button>' : '<div class="muted-sm">Only admin can reopen a cancelled ticket.</div>') + '</div>';
+
+  // ---- actions (service team) ----
+  const lowFb = t['Feedback Flag'] === 'Low';
+  if (can('service') && (open || lowFb)) {
+    const b = [];
+    b.push('<button class="btn btn-primary" onclick="callFormToggle()">📞 Add Call Log</button>');
+    if (!sent && early) b.push('<button class="btn btn-green" onclick="ticketSolve(this)">✅ Solved on Call</button>');
+    if (opk) b.push('<button class="btn btn-violet" onclick="pickupOpen()">🚚 Edit Pickup ' + esc(opk['Pickup ID']) + '</button>');
+    else if (early || s === 'In Transit') b.push('<button class="btn btn-violet" onclick="pickupOpen()">🚚 ' + (s === 'In Transit' ? 'Edit Pickup' : 'Arrange Pickup') + '</button>');
+    else if (inRepair) b.push('<button class="btn btn-ghost" onclick="pickupOpen()">➕ Another Pickup</button>');
+    if (opk || s === 'In Transit' || (sent && early)) b.push('<button class="btn btn-teal" onclick="receiveOpen()">📥 Mark Received' + (opk ? ' — ' + esc(opk['Pickup ID']) : '') + '</button>');
+    if (open) b.push('<button class="btn btn-ghost" onclick="editOpen()">✏️ Edit details</button>');
+    if (early || (s === 'In Transit' && !items.length)) b.push('<button class="btn btn-ghost btn-danger" onclick="cancelOpen()">🚫 Cancel ticket</button>');
+    h += '<div class="dsec actions">' +
+      (lowFb ? '<div class="note note-red">🔴 The customer gave low feedback. Call them and save a call log — that clears this flag.</div>' : '') +
+      (sent && early ? '<div class="note">🚚 The customer has already sent the items — no troubleshooting needed. Just note the problem and fill in the pickup details.</div>' : '') +
+      (opk && inRepair ? '<div class="note">🚚 Another lot is on the way — ' + esc(opk['Pickup ID']) + (opk['Exp Battery Qty'] || opk['Exp Charger Qty'] ? ' (' + esc(itemsText(+opk['Exp Battery Qty'] || 0, +opk['Exp Charger Qty'] || 0)) + ')' : '') + '</div>' : '') +
+      '<div class="btn-wrap">' + b.join('') + '</div>' + callFormHtml(t) + '</div>';
+  }
+
+  h += tabsHtml([['overview', 'Overview'], ['calls', 'Calls', calls.length], ['pickups', 'Pickups', pks.length], ['jobs', 'Repair Jobs', rcs.length],
+    ['batteries', '🔋 Batteries', bats.length], ['chargers', '⚡ Chargers', chgs.length], ['dispatches', 'Dispatches', dsp.length],
+    ['feedback', 'Feedback', fbs.length || (t['Rating'] ? 1 : 0)], ['history', 'History', hist.length]]);
+
+  let body = '';
+  if (DR_TAB === 'overview') {
+    if (items.length || pks.length) body += sec('📦 Quantities', qtyBox());
+    body += sec('🎫 Ticket details', kv([
+      ['Source', t['Source']], ['Vehicle', t['Vehicle Model']],
+      ['Invoice / Purchase', [t['Invoice No'], t['Purchase Date'] && niceDate(t['Purchase Date'])].filter(Boolean).join(' · ')],
+      ['Purchase Age', t['Purchase Age']],
+      ['Items expected', (+t['Exp Battery Qty'] || +t['Exp Charger Qty']) ? itemsText(+t['Exp Battery Qty'] || 0, +t['Exp Charger Qty'] || 0) : ''],
+      ['Earlier tickets', +t['Previous Tickets'] ? t['Previous Tickets'] + ' (repeat customer)' : ''],
+      ['Items Sent', t['Battery Sent']], ['Created', t['Created At'] + (t['Created By'] ? ' · ' + t['Created By'] : '')]
+    ]));
+    body += sec('📊 Summary', kv([
+      ['Outcome', t['Outcome']], ['Next Follow-up', open ? t['Next Follow-up'] : ''],
+      ['Calls', t['Total Calls']], ['Last attended by', t['Attended By']], ['Solved by', t['Call Fix']],
+      ['Rating', t['Rating'] ? t['Rating'] + ' / 5' : ''], ['Closed', t['Closed At'] && !cancelled ? t['Closed At'] : '']
+    ]));
+  }
+  if (DR_TAB === 'calls') body += calls.length ? calls.map(c => recCard(c['Call ID'], esc(c['Attended By'] || c['Logged By']), esc(c['Time']),
+      '<div class="tl-body">' + esc(c['Notes']) + '</div>' +
+      (c['Checks'] ? '<div class="tl-checks">🧰 ' + esc(c['Checks']) + '</div>' : '') +
+      (c['Next Follow-up'] ? '<div class="tl-next">📅 Next follow-up: ' + esc(c['Next Follow-up']) + '</div>' : ''),
+      c['Old'], c['Call ID'] ? ['call', c['Call ID'], t['Ticket ID']] : null)).join('')
+    : '<div class="empty sm">No calls yet</div>';
+  if (DR_TAB === 'pickups') body += pks.length ? pks.slice().reverse().map(p => recCard(p['Pickup ID'],
+      (p['Pickup By'] === 'Company' ? '🏢 By company' : '👤 By customer') + ' · ' + esc(niceDate(p['Pickup Date'])), pill(p['Status']),
+      '<div class="rec-meta">' + esc([(+p['Exp Battery Qty'] || +p['Exp Charger Qty']) && 'Coming: ' + itemsText(+p['Exp Battery Qty'] || 0, +p['Exp Charger Qty'] || 0),
+        p['Transport Name'], p['LR No'] && 'LR ' + p['LR No'], p['No. of Boxes'] && p['No. of Boxes'] + ' boxes'].filter(Boolean).join(' · ') || '—') + '</div>' +
+      (p['Receipt ID'] ? '<div class="rec-meta">→ ' + lk('receipt', p['Receipt ID'], t['Ticket ID']) + '</div>' : ''),
+      p.old, p['Pickup ID'] ? ['pickup', p['Pickup ID'], t['Ticket ID']] : null)).join('')
+    : '<div class="empty sm">No pickup yet</div>';
+  if (DR_TAB === 'jobs') body += rcs.length ? rcs.slice().reverse().map(r => {
+      const L = itemsOfReceipt(r), out = L.filter(isDisp).length;
+      return recCard(r['Receipt ID'], '🧰 ' + esc(niceDate(r['Received Date'])), r['Pickup ID'] ? 'from ' + lk('pickup', r['Pickup ID'], t['Ticket ID']) : '',
+        '<div class="rec-meta">' + esc(itemsText(+r['Battery Qty'] || 0, +r['Charger Qty'] || 0)) + (r['Received By'] ? ' · by ' + esc(r['Received By']) : '') + '</div>' +
+        (r['Qty Note'] ? '<div class="note note-red">⚠️ ' + esc(r['Qty Note']) + '</div>' : '') + bar(out, L.length),
+        r.old, r['Receipt ID'] ? ['receipt', r['Receipt ID'], t['Ticket ID']] : null);
+    }).join('') : '<div class="empty sm">Not received yet</div>';
+  if (DR_TAB === 'batteries') body += bats.length ? '<div class="items-mini">' + bats.map(i => itemLine(i, t['Ticket ID'])).join('') + '</div>' : '<div class="empty sm">No batteries</div>';
+  if (DR_TAB === 'chargers') body += chgs.length ? '<div class="items-mini">' + chgs.map(i => itemLine(i, t['Ticket ID'])).join('') + '</div>' : '<div class="empty sm">No chargers</div>';
+  if (DR_TAB === 'dispatches') body += dsp.length ? dsp.slice().reverse().map(d => recCard(d['Dispatch ID'], '📦 ' + esc(niceDate(d['Dispatch Date'])),
+      esc(itemsText(+d['Batteries'] || 0, +d['Chargers'] || 0)),
+      '<div class="rec-meta">' + esc([d['Transport'], d['Dispatched By'] && 'by ' + d['Dispatched By'], rupee(d['Charges'])].filter(Boolean).join(' · ') || '—') + '</div>' +
+      '<div class="rec-meta muted-txt">' + esc(d['Item IDs']) + '</div>', d['Old'], d['Dispatch ID'] ? ['dispatch', d['Dispatch ID'], t['Ticket ID']] : null)).join('')
+    : '<div class="empty sm">Nothing dispatched yet</div>';
+  if (DR_TAB === 'feedback') {
+    const was = waLog(t);
+    body += fbs.length ? fbs.slice().reverse().map(f => recCard(f['Feedback ID'], '⭐ ' + esc(f['Rating']) + ' / 5', esc(f['Time']),
+        kv([['Problem Solved', f['Solved']], ['Comment', f['Comment']],
+            ['Flag', t['Feedback Flag'] === 'Low' ? '🔴 Low — call pending' : (t['Feedback Flag'] === 'Resolved' ? '✅ Called back' : '')]]), !f['Feedback ID'])).join('')
+      : (t['Feedback Asked At'] ? sec('⭐ Feedback', kv([['Asked On', t['Feedback Asked At']], ['Status', 'Waiting for customer']])) : '<div class="empty sm">No feedback yet</div>');
+    if (was.length) body += sec('📲 WhatsApp sent (' + was.length + ')', '<div class="timeline">' + was.slice().reverse().map(w =>
+      '<div class="tl-item"><div class="tl-head"><b>' + idChip(w.id, !w.id) + ' ' + esc(w.e) + '</b><span>' + esc(w.t) + (w.b ? ' · ' + esc(w.b) : '') + '</span></div></div>').join('') + '</div>');
+  }
+  if (DR_TAB === 'history') body += histList(hist);
+  h += '<div class="dr-tab-body">' + body + '</div>';
+  if (!cancelled) h += waSection();
+  $('drBody').innerHTML = h;
+}
+
+/* ---------- CHILD RECORDS (pages) ---------- */
+function recHistory(id) { return (CUR.history || []).filter(x => x['Record ID'] === id || x['Item ID'] === id); }
+function custLk() { const t = CUR.ticket; return t['Customer ID'] ? lk('customer', t['Customer ID'], '', t['Company Name']) : tv(t['Company Name']); }
+function tkLk() { return lk('ticket', CUR.ticket['Ticket ID'], CUR.ticket['Ticket ID']); }
+// the record may be newer than the loaded ticket → reload once before giving up
+function notFound() {
+  if (!REC.retried) { openRecord(REC.type, REC.id, REC.tid, { reload: true, retried: true }); return; }
+  $('drBody').innerHTML = '<div class="empty">' + esc(REC.id) + ' was not found on ' + esc(REC.tid) + '</div>';
+}
+
+function renderCall() {
+  const c = (CUR.calls || []).find(x => x['Call ID'] === REC.id); if (!c) return notFound();
+  const all = (CUR.calls || []).slice().reverse(), k = all.indexOf(c), prev = all[k - 1], next = all[k + 1];
+  let h = recHead('call', c['Call ID'], c['Result'] ? '<span class="pill pill-blue">' + esc(c['Result']) + '</span>' : '',
+    [['Ticket', tkLk()], ['Customer', custLk()], ['Time', tv(c['Time'])], ['Attended By', tv(c['Attended By'])]]);
+  h += tabsHtml([['details', 'Details'], ['history', 'History', recHistory(c['Call ID']).length]]);
+  let body = '';
+  if (DR_TAB === 'details') {
+    body += sec('🗒️ Call', kvh([['Notes', tv(c['Notes'])], ['Checks done', tv(c['Checks'])], ['Next follow-up', tv(c['Next Follow-up'])],
+      ['Purchase age', tv(c['Purchase Age'])], ['Logged by', tv(c['Logged By'])]]));
+    body += sec('↔️ Call sequence on this ticket', kvh([['Call', esc((k + 1) + ' of ' + all.length)],
+      ['Previous call', prev ? lk('call', prev['Call ID'], REC.tid, (prev['Call ID'] || 'old') + ' · ' + prev['Time']) : ''],
+      ['Follow-up call', next ? lk('call', next['Call ID'], REC.tid, (next['Call ID'] || 'old') + ' · ' + next['Time']) : '']]));
+  }
+  if (DR_TAB === 'history') body += histList(recHistory(c['Call ID']));
+  $('drBody').innerHTML = h + '<div class="dr-tab-body">' + body + '</div>';
+}
+
+function renderPickup() {
+  const p = (CUR.pickups || []).find(x => x['Pickup ID'] === REC.id); if (!p) return notFound();
+  const r = (CUR.receipts || []).find(x => x['Receipt ID'] === p['Receipt ID'] || x['Pickup ID'] === p['Pickup ID']);
+  const L = r ? itemsOfReceipt(r) : [];
+  let h = recHead('pickup', p['Pickup ID'], pill(p['Status']),
+    [['Ticket', tkLk()], ['Customer', custLk()], ['Pickup date', tv(niceDate(p['Pickup Date']))], ['Repair Job', r ? lk('receipt', r['Receipt ID'], REC.tid) : tv('')]]);
+  if (can('service') && p['Status'] === 'Arranged' && !isEnded(CUR.ticket['Status']))
+    h += '<div class="rp-actions"><button class="btn btn-violet btn-sm" onclick="pickupOpen()">✏️ Edit pickup</button>' +
+      '<button class="btn btn-teal btn-sm" data-p="' + esc(p['Pickup ID']) + '" onclick="receiveOpen(this.dataset.p)">📥 Mark Received</button></div>';
+  h += tabsHtml([['details', 'Details'], ['related', 'Items received', L.length], ['history', 'History', recHistory(p['Pickup ID']).length]]);
+  let body = '';
+  if (DR_TAB === 'details') {
+    body += sec('📦 Coming in this pickup', kvh([['Batteries', tv(p['Exp Battery Qty'] || 0)], ['Chargers', tv(p['Exp Charger Qty'] || 0)], ['Boxes', tv(p['No. of Boxes'])],
+      ['Received', r ? esc(itemsText(+r['Battery Qty'] || 0, +r['Charger Qty'] || 0)) + (r['Qty Note'] ? ' <span class="tag tag-red">⚠️ short</span>' : ' <span class="tag tag-green">✓ matches</span>') : '']]));
+    body += sec('🚚 Transport', kvh([['Arranged by', tv(p['Pickup By'])], ['Place', tv(p['Pickup Place'])], ['Transport', tv(p['Transport Name'])], ['LR No', tv(p['LR No'])],
+      ['Builty', safeUrl(p['Builty URL']) ? '<a class="call-link" href="' + esc(safeUrl(p['Builty URL'])) + '" target="_blank" rel="noopener">📎 View builty</a>' : tv('')],
+      ['Saved', tv(p['Created At'] + (p['Created By'] ? ' · ' + p['Created By'] : ''))]]));
+  }
+  if (DR_TAB === 'related') body += L.length ? '<div class="items-mini">' + L.map(i => itemLine(i, REC.tid)).join('') + '</div>' : '<div class="empty sm">Not received yet</div>';
+  if (DR_TAB === 'history') body += histList(recHistory(p['Pickup ID']));
+  $('drBody').innerHTML = h + '<div class="dr-tab-body">' + body + '</div>';
+}
+
+function renderReceipt() {
+  const r = (CUR.receipts || []).find(x => x['Receipt ID'] === REC.id); if (!r) return notFound();
+  const L = itemsOfReceipt(r), out = L.filter(isDisp), bats = L.filter(i => i['Item Type'] !== 'Charger'), chgs = L.filter(i => i['Item Type'] === 'Charger');
+  const dIds = Array.from(new Set(L.map(i => i['Dispatch ID']).filter(Boolean)));
+  const dsp = (CUR.dispatches || []).filter(d => dIds.indexOf(d['Dispatch ID']) !== -1);
+  let h = recHead('receipt', r['Receipt ID'], out.length === L.length && L.length ? '<span class="pill pill-green">All dispatched</span>' : '<span class="pill pill-blue">' + (L.length - out.length) + ' in repair</span>',
+    [['Ticket', tkLk()], ['Customer', custLk()], ['Pickup', r['Pickup ID'] ? lk('pickup', r['Pickup ID'], REC.tid) : tv('')], ['Received', tv(niceDate(r['Received Date']))]]);
+  h += '<div class="dsec">' + bar(out.length, L.length) + '</div>';
+  h += tabsHtml([['details', 'Details'], ['batteries', '🔋 Batteries', bats.length], ['chargers', '⚡ Chargers', chgs.length], ['dispatches', 'Dispatches', dsp.length],
+    ['history', 'History', recHistory(r['Receipt ID']).length]]);
+  let body = '';
+  if (DR_TAB === 'details') {
+    body += sec('🧰 Received', kvh([['Batteries', tv(r['Battery Qty'] || 0)], ['Battery models', tv(r['Battery Model'])], ['Chargers', tv(r['Charger Qty'] || 0)],
+      ['Charger models', tv(r['Charger Model'])], ['Expected', (+r['Exp Battery Qty'] || +r['Exp Charger Qty']) ? esc(itemsText(+r['Exp Battery Qty'] || 0, +r['Exp Charger Qty'] || 0)) : ''],
+      ['Received with items', tv(r['Accessories'])], ['Remarks', tv(r['Remarks'])], ['Received by', tv(r['Received By'])]]) +
+      (r['Qty Note'] ? '<div class="note note-red" style="margin-top:10px">⚠️ ' + esc(r['Qty Note']) + '</div>' : '') +
+      '<button class="btn btn-ghost btn-sm" style="margin-top:10px" data-r="' + esc(r['Receipt ID']) + '" onclick="recvSlip(this.dataset.r)">🖨️ Receiving Slip</button>');
+    const pend = L.filter(i => !isDisp(i)), by = {};
+    pend.forEach(i => { by[i['Item Status']] = (by[i['Item Status']] || 0) + 1; });
+    if (pend.length) body += sec('⏳ Still in repair (' + pend.length + ')', '<div class="rec-meta">' + Object.keys(by).map(k => esc(k) + ': <b>' + by[k] + '</b>').join(' · ') + '</div>');
+  }
+  if (DR_TAB === 'batteries') body += bats.length ? '<div class="items-mini">' + bats.map(i => itemLine(i, REC.tid)).join('') + '</div>' : '<div class="empty sm">No batteries</div>';
+  if (DR_TAB === 'chargers') body += chgs.length ? '<div class="items-mini">' + chgs.map(i => itemLine(i, REC.tid)).join('') + '</div>' : '<div class="empty sm">No chargers</div>';
+  if (DR_TAB === 'dispatches') body += dsp.length ? dsp.map(d => recCard(d['Dispatch ID'], '📦 ' + esc(niceDate(d['Dispatch Date'])), esc(itemsText(+d['Batteries'] || 0, +d['Chargers'] || 0)),
+      '<div class="rec-meta">' + esc(d['Item IDs']) + '</div>', 0, ['dispatch', d['Dispatch ID'], REC.tid])).join('') : '<div class="empty sm">Nothing dispatched yet</div>';
+  if (DR_TAB === 'history') body += histList(recHistory(r['Receipt ID']));
+  $('drBody').innerHTML = h + '<div class="dr-tab-body">' + body + '</div>';
+}
+
+function renderItem() {
+  const it = (CUR.items || []).find(x => x['Item ID'] === REC.id); if (!it) return notFound();
+  const log = (CUR.stageLog || []).filter(l => l['Item ID'] === it['Item ID']).reverse();
+  const earlier = ((CUR.serialHistory || {})[serialKey(it['Serial No'])] || []);
+  let h = recHead('item', it['Item ID'], pill(it['Item Status']),
+    [['Ticket', tkLk()], ['Customer', custLk()], ['Repair Job', it['Receipt ID'] ? lk('receipt', it['Receipt ID'], REC.tid) : tv('')],
+     ['Dispatch', it['Dispatch ID'] ? lk('dispatch', it['Dispatch ID'], REC.tid) : tv('')]],
+    (it['Item Type'] === 'Charger' ? '⚡ ' : '🔋 ') + esc([it['Category'], it['Model']].filter(Boolean).join(' · ')) + (+it['Repeat Count'] ? ' · ' + repeatTag(it['Repeat Count']) : ''));
+  if (can('service')) h += '<div class="rp-actions"><button class="btn btn-ghost btn-sm" data-id="' + esc(it['Item ID']) + '" onclick="itemEditOpen(this.dataset.id)">✏️ Correct details</button></div>';
+  h += tabsHtml([['details', 'Details'], ['stages', 'Stage history', log.length], ['visits', 'Earlier visits', earlier.length], ['history', 'History', recHistory(it['Item ID']).length]]);
+  let body = '';
+  if (DR_TAB === 'details') {
+    body += sec('🔋 Item', kvh([['Type', tv(it['Item Type'])], ['Category', tv(it['Category'])], ['Model', tv(it['Model'])],
+      ['Made by', it['Model Source'] === 'Other' ? esc('Other company: ' + it['Brand']) : tv(it['Model Source'] || '')],
+      ['Serial No', tv(it['Serial No'])], ['Warranty', tv(it['Warranty'])], ['Mfg month', tv(it['Mfg Month'])], ['Batch No', tv(it['Batch No'])]]));
+    body += sec('📥 On arrival', kvh([['Received', tv(niceDate(it['Received Date']))], ['Condition', tv(it['Condition'])],
+      ['Voltage', it['Voltage'] === '' || it['Voltage'] == null ? tv('') : esc(it['Voltage'] + ' V')], ['Used for', it['Usage Months'] !== '' && it['Usage Months'] != null ? esc(it['Usage Months'] + ' months') : tv('')]]));
+    body += sec('🔧 Repair', kvh([['Status', pill(it['Item Status'])], ['Plan date', tv(it['Plan Date'])], ['Fault found', tv(it['Fault Code'])],
+      ['Repair cost', tv(rupee(it['Repair Cost']))], ['Problem found', tv(it['Actual Problem Found'])]]));
+    if (it['Dispatch ID'] || it['Dispatch Date']) body += sec('📦 Dispatch', kvh([['Dispatch', it['Dispatch ID'] ? lk('dispatch', it['Dispatch ID'], REC.tid) : tv('')],
+      ['Date', tv(niceDate(it['Dispatch Date']))], ['Transport', tv(it['Transport (Outward)'])], ['By', tv(it['Dispatched By'])]]));
+  }
+  if (DR_TAB === 'stages') body += log.length ? '<div class="timeline">' + log.map(l =>
+      '<div class="tl-item"><div class="tl-head"><b>' + idChip(l['Log ID'], !l['Log ID']) + ' ' + esc(l['Event']) + '</b><span>' + esc(l['Time']) + ' · ' + esc(l['By']) + '</span></div>' +
+      (l['Plan Date'] ? '<div class="muted-sm">Plan date ' + esc(l['Plan Date']) + '</div>' : '') + '</div>').join('') + '</div>' : '<div class="empty sm">No stage changes yet</div>';
+  if (DR_TAB === 'visits') body += earlier.length ? '<div class="note">🔁 This serial number came to service ' + earlier.length + ' time(s) before</div>' + earlier.map(e =>
+      recCard(e.itemId, esc(niceDate(e.received)), pill(e.status), '<div class="rec-meta">Ticket ' + esc(e.ticketId) + (e.fault ? ' · Fault: ' + esc(e.fault) : '') + '</div>', 0, ['item', e.itemId, e.ticketId])).join('')
+    : '<div class="empty sm">' + (it['Serial No'] ? 'First visit of this serial number' : 'No serial number entered') + '</div>';
+  if (DR_TAB === 'history') body += histList(recHistory(it['Item ID']));
+  $('drBody').innerHTML = h + '<div class="dr-tab-body">' + body + '</div>';
+}
+
+function renderDispatch() {
+  const d = (CUR.dispatches || []).find(x => x['Dispatch ID'] === REC.id); if (!d) return notFound();
+  const L = (CUR.items || []).filter(i => i['Dispatch ID'] === d['Dispatch ID']);
+  const rIds = String(d['Receipt IDs'] || '').split(/\s*,\s*/).filter(Boolean);
+  let h = recHead('dispatch', d['Dispatch ID'], '<span class="pill pill-green">' + esc(itemsText(+d['Batteries'] || 0, +d['Chargers'] || 0)) + '</span>',
+    [['Ticket', tkLk()], ['Customer', custLk()], ['Repair Job', rIds.length ? rIds.map(x => lk('receipt', x, REC.tid)).join(' ') : tv('')], ['Date', tv(niceDate(d['Dispatch Date']))]]);
+  h += tabsHtml([['details', 'Details'], ['items', 'Items', L.length], ['history', 'History', recHistory(d['Dispatch ID']).length]]);
+  let body = '';
+  if (DR_TAB === 'details') body += sec('📦 Dispatch', kvh([['Dispatched by', tv(d['Dispatched By'])], ['Transport', tv(d['Transport'])], ['Charges', tv(rupee(d['Charges']))],
+      ['Address', tv(d['Address'])], ['Problem found', tv(d['Problem Found'])], ['Remarks', tv(d['Remarks'])], ['Saved', tv(d['Created At'])]]));
+  if (DR_TAB === 'items') body += L.length ? '<div class="items-mini">' + L.map(i => itemLine(i, REC.tid)).join('') + '</div>' : '<div class="rec-meta">' + esc(d['Item IDs']) + '</div>';
+  if (DR_TAB === 'history') body += histList(recHistory(d['Dispatch ID']));
+  $('drBody').innerHTML = h + '<div class="dr-tab-body">' + body + '</div>';
+}
+
+function renderFeedback() {
+  const f = (CUR.feedback || []).find(x => x['Feedback ID'] === REC.id); if (!f) return notFound();
+  const h = recHead('feedback', f['Feedback ID'], '<span class="pill pill-' + (+f['Rating'] <= 2 ? 'red' : 'green') + '">' + esc(f['Rating']) + ' / 5</span>',
+    [['Ticket', tkLk()], ['Customer', custLk()], ['Given', tv(f['Time'])], ['Solved', tv(f['Solved'])]]);
+  $('drBody').innerHTML = h + sec('⭐ Feedback', kvh([['Comment', tv(f['Comment'])]]));
+}
+
+/* ---------- CUSTOMER ---------- */
+function renderCustomer() {
+  const c = CUST.customer, T = CUST.tickets || [], I = CUST.items || [], F = CUST.feedback || [];
+  const bats = I.filter(i => i['Item Type'] !== 'Charger').length, open = T.filter(t => !isEnded(t['Status'])).length;
+  let h = recHead('customer', c['Customer ID'], open ? '<span class="pill pill-blue">' + open + ' open</span>' : '',
+    [['Phone', c['Phone'] ? '<a href="tel:' + esc(c['Phone']) + '">' + esc(c['Phone']) + '</a>' : tv('')], ['City', tv([c['City'], c['State']].filter(Boolean).join(', '))],
+     ['Tickets', esc(T.length)], ['Items serviced', esc(I.length + ' (' + bats + ' batteries)')]], esc(c['Company Name'] + (c['Contact Person'] ? ' · ' + c['Contact Person'] : '')));
+  h += tabsHtml([['details', 'Details'], ['tickets', 'Tickets', T.length], ['items', 'Items', I.length], ['feedback', 'Feedback', F.length]]);
+  let body = '';
+  if (DR_TAB === 'details') body += sec('👤 Customer', kvh([['Company', tv(c['Company Name'])], ['Contact person', tv(c['Contact Person'])], ['Phone', tv(c['Phone'])],
+      ['City / State', tv([c['City'], c['State']].filter(Boolean).join(', '))], ['Customer type', tv(c['Customer Type'])], ['Dealer', tv(c['Dealer'])],
+      ['Customer since', tv(c['Created At'])], ['Last ticket', tv(c['Last Ticket At'])]]));
+  if (DR_TAB === 'tickets') body += T.map(t => recCard(t['Ticket ID'], esc(t['Complaint'] || '—'), pill(t['Status']),
+      '<div class="rec-meta">' + esc([niceDate(t['Created At']), +t['Total Items'] ? t['Total Items'] + ' items' : '', t['Outcome']].filter(Boolean).join(' · ')) + '</div>',
+      0, ['ticket', t['Ticket ID'], t['Ticket ID']])).join('') || '<div class="empty sm">No tickets</div>';
+  if (DR_TAB === 'items') body += I.length ? '<div class="items-mini">' + I.slice().reverse().map(i => itemLine(i, i['Ticket ID'])).join('') + '</div>' : '<div class="empty sm">No items</div>';
+  if (DR_TAB === 'feedback') body += F.length ? F.map(f => recCard(f['Feedback ID'], '⭐ ' + esc(f['Rating']) + ' / 5', esc(f['Ticket ID']),
+      '<div class="rec-meta">' + esc(f['Comment'] || '—') + '</div>', !f['Feedback ID'])).join('') : '<div class="empty sm">No feedback</div>';
+  $('drBody').innerHTML = h + '<div class="dr-tab-body">' + body + '</div>';
+}
+
+/* ---------- GLOBAL SEARCH (topbar) ---------- */
+async function gSearch() {
+  const q = $('gSearch').value.trim();
+  if (!q) return;
+  let r;
+  try { r = await api({ action: 'findRecord', q }); } catch (e) { return; }
+  if (!r || !r.ok) return toast('🔎 ' + ((r && r.msg) || 'Nothing found'));
+  $('gSearch').blur(); $('gSearch').value = '';
+  if (r.type === 'serial') return modalOpen('🔎 Serial ' + q + ' — ' + r.matches.length + ' visits',
+    r.matches.map(m => recCard(m.itemId, esc(niceDate(m.received)) + ' · ' + esc(m.model || ''), pill(m.status), '<div class="rec-meta">Ticket ' + esc(m.ticketId) + '</div>', 0, ['item', m.itemId, m.ticketId])).join('') +
+    '<div class="muted-sm">Click a visit to open it.</div>');
+  modalClose();
+  openRecord(r.type, r.id, r.ticketId, { fresh: true });
+}
+
+/* ---------- RECORDS SCREEN ---------- */
+const REC_LISTS = {
+  customers: { label: '👤 Customers', type: 'customer', id: 'Customer ID',
+    cols: [['Customer', r => esc(r['Company Name'])], ['Contact', r => esc([r['Contact Person'], r['Phone']].filter(Boolean).join(' · '))],
+           ['City', r => esc(r['City'])], ['Tickets', r => esc(r['Total Tickets'])], ['Last ticket', r => esc(niceDate(r['Last Ticket At']))]] },
+  calls: { label: '📞 Calls', type: 'call', id: 'Call ID',
+    cols: [['Ticket', r => esc(r['Ticket ID'])], ['Customer', r => esc(r['Customer'])], ['By', r => esc(r['Attended By'] || r['Logged By'])],
+           ['Notes', r => esc(String(r['Notes'] || '').substring(0, 80))], ['Time', r => esc(r['Time'])]] },
+  pickups: { label: '🚚 Pickups', type: 'pickup', id: 'Pickup ID',
+    cols: [['Ticket', r => esc(r['Ticket ID'])], ['Customer', r => esc(r['Customer'])], ['Coming', r => esc((+r['Exp Battery Qty'] || +r['Exp Charger Qty']) ? itemsText(+r['Exp Battery Qty'] || 0, +r['Exp Charger Qty'] || 0) : '—')],
+           ['Transport', r => esc([r['Transport Name'], r['LR No']].filter(Boolean).join(' · '))], ['Status', r => pill(r['Status'])]] },
+  receipts: { label: '🧰 Repair Jobs', type: 'receipt', id: 'Receipt ID',
+    cols: [['Ticket', r => esc(r['Ticket ID'])], ['Customer', r => esc(r['Customer'])], ['Received', r => esc(niceDate(r['Received Date']))],
+           ['Items', r => esc(itemsText(+r['Battery Qty'] || 0, +r['Charger Qty'] || 0))], ['Pickup', r => esc(r['Pickup ID'])]] },
+  items: { label: '🔋 Items', type: 'item', id: 'Item ID',
+    cols: [['Item', r => esc((r['Item Type'] === 'Charger' ? '⚡ ' : '🔋 ') + [r['Category'], r['Model']].filter(Boolean).join(' · '))], ['Serial', r => esc(r['Serial No'])],
+           ['Customer', r => esc(r['Customer'])], ['Repair Job', r => esc(r['Receipt ID'])], ['Status', r => pill(r['Item Status'])]] },
+  dispatches: { label: '📦 Dispatches', type: 'dispatch', id: 'Dispatch ID',
+    cols: [['Ticket', r => esc(r['Ticket ID'])], ['Customer', r => esc(r['Customer'])], ['Date', r => esc(niceDate(r['Dispatch Date']))],
+           ['Items', r => esc(itemsText(+r['Batteries'] || 0, +r['Chargers'] || 0))], ['Transport', r => esc(r['Transport'])]] }
+};
+let REC_TYPE = 'customers', REC_ROWS = {}, REC_LIMIT = 100;
+function openRecords() {
+  $('recTabs').innerHTML = Object.keys(REC_LISTS).map(k => '<button class="chip' + (k === REC_TYPE ? ' active' : '') + '" data-k="' + k + '" onclick="recSetType(this.dataset.k)">' + REC_LISTS[k].label + '</button>').join('');
+  recLoad(false);
+}
+function recSetType(k) { REC_TYPE = k; REC_LIMIT = 100; $('recSearch').value = ''; openRecords(); }
+async function recLoad(force) {
+  const k = REC_TYPE, ck = 'rec_' + k, c = cacheGet(ck);
+  if (!force && c && c.fresh) { REC_ROWS[k] = c.val; return recRender(); }
+  if (c) { REC_ROWS[k] = c.val; recRender(); } else $('recList').innerHTML = '<div class="skeleton sk-block"></div><div class="skeleton sk-block"></div>';
+  try {
+    const r = await api({ action: 'listRecords', type: k });
+    if (r && r.ok) { REC_ROWS[k] = r.rows; cacheSet(ck, r.rows); if (k === REC_TYPE) recRender(); }
+    else if (!c) $('recList').innerHTML = '<div class="empty">' + esc((r && r.msg) || 'Could not load') + '</div>';
+  } catch (e) { if (!c && e !== 'auth') $('recList').innerHTML = '<div class="empty">Network error ❌</div>'; }
+}
+function recRender() {
+  const L = REC_LISTS[REC_TYPE], q = $('recSearch').value.trim().toLowerCase();
+  let rows = REC_ROWS[REC_TYPE] || [];
+  if (q) rows = rows.filter(r => Object.keys(r).some(k => String(r[k]).toLowerCase().indexOf(q) !== -1));
+  $('recCount').textContent = rows.length + ' record' + (rows.length === 1 ? '' : 's');
+  if (!rows.length) { $('recList').innerHTML = '<div class="empty">No records</div>'; return; }
+  const show = rows.slice(0, REC_LIMIT);
+  $('recList').innerHTML = '<div class="rl"><div class="rl-row rl-head"><span>ID</span>' + L.cols.map(c => '<span>' + c[0] + '</span>').join('') + '</div>' +
+    show.map(r => '<div class="rl-row rec-click" data-t="' + L.type + '" data-i="' + esc(r[L.id] || '') + '" data-k="' + esc(r['Ticket ID'] || '') + '" onclick="lkGo(this,event)">' +
+      '<span>' + idChip(r[L.id], !r[L.id]) + '</span>' + L.cols.map(c => '<span data-l="' + c[0] + '">' + (c[1](r) || '—') + '</span>').join('') + '</div>').join('') + '</div>' +
+    (rows.length > REC_LIMIT ? '<button class="btn btn-ghost btn-block" onclick="REC_LIMIT += 200; recRender()">Show more (' + (rows.length - REC_LIMIT) + ')</button>' : '');
 }
