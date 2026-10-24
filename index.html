@@ -247,6 +247,7 @@
     <header class="topbar">
       <button class="menu-btn" onclick="toggleSidebar()">☰</button>
       <div><div id="hdrTitle" class="hdr-title"></div><div id="hdrSub" class="hdr-sub"></div></div>
+      <div class="gsearch"><input id="gSearch" placeholder="🔎 Any ID, phone or serial no." autocomplete="off" onkeydown="if(event.key==='Enter')gSearch()"></div>
       <div id="hdrDate" class="hdr-date"></div>
     </header>
 
@@ -295,8 +296,8 @@
       <div id="newSuccess" class="card success-card" style="display:none">
         <div class="success-ico">✅</div>
         <div class="success-title">Ticket created</div>
-       <div id="newId" class="success-id"></div>
-        <div id="newCust" class="success-cust"></div
+        <div id="newId" class="success-id"></div>
+        <div id="newCust" class="success-cust"></div>
         <div class="success-sub">The Service Team will pick it up from the Tickets list and call the customer.</div>
         <div class="btn-row">
           <button class="btn btn-ghost" onclick="newReset()">➕ Create another</button>
@@ -348,6 +349,17 @@
     <section id="scrMasters" class="screen">
       <div id="mstGrid" class="mst-grid"></div>
       <div class="mst-note">💡 These lists can also be edited directly in the <b>Masters</b> tab of the Google Sheet — one value per row under each column.</div>
+    </section>
+
+    <!-- ===== RECORDS (every object) ===== -->
+    <section id="scrRecords" class="screen">
+      <div id="recTabs" class="chips"></div>
+      <div class="toolbar">
+        <input id="recSearch" class="search" placeholder="🔍 Filter — ID, customer, serial, transport..." oninput="REC_LIMIT = 100; recRender()">
+        <span id="recCount" class="rec-count"></span>
+        <button class="btn btn-ghost btn-icon" title="Refresh" onclick="recLoad(true)">↻</button>
+      </div>
+      <div id="recList"></div>
     </section>
 
     <!-- ===== SETTINGS (admin) ===== -->
