@@ -1106,3 +1106,23 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .u-cols > div { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr) 152px; gap: 8px; }
 .u-cols span { font-size: 10.5px; font-weight: 600; color: var(--muted); letter-spacing: .2px; }
 @media (max-width: 640px) { .u-cols { display: none; } }
+
+/* ---------- v6 — records with their own IDs ---------- */
+.id-chip { display: inline-block; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; font-weight: 600; line-height: 1;
+  color: var(--primary); background: rgba(99,91,255,.08); border: 1px solid rgba(99,91,255,.18); border-radius: 6px; padding: 3px 6px; vertical-align: middle; white-space: nowrap; }
+.id-chip.id-old { color: var(--muted); background: #f4f5f8; border-color: #e6e8ee; font-family: inherit; text-transform: uppercase; letter-spacing: .04em; }
+.success-cust { margin: -4px 0 10px; font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; }
+.cust-card .cust-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 15px; }
+.cust-card .cust-sub { color: var(--muted); font-size: 13px; margin-top: 6px; }
+.dr-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 12px; padding: 4px; background: #f4f5f8; border-radius: 12px; }
+.dr-tabs button { flex: 0 0 auto; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 13px; font-weight: 500;
+  padding: 7px 11px; border-radius: 9px; cursor: pointer; white-space: nowrap; }
+.dr-tabs button:hover { color: var(--text); }
+.dr-tabs button.on { background: #fff; color: var(--text); box-shadow: 0 1px 2px rgba(16,24,40,.08); }
+.dr-tabs .cnt { display: inline-block; min-width: 18px; padding: 1px 5px; margin-left: 2px; border-radius: 9px; background: rgba(0,0,0,.06); font-size: 11px; text-align: center; }
+.dr-tabs button.on .cnt { background: rgba(99,91,255,.12); color: var(--primary); }
+.rec { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+.rec-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13.5px; flex-wrap: wrap; }
+.rec-head .rec-right { margin-left: auto; color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.im-links { display: inline-flex; gap: 4px; margin: 4px 6px 0 0; }
+.dsec-title .id-chip { margin-left: 6px; }
