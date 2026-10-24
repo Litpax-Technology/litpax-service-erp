@@ -1632,5 +1632,75 @@ async function setSave(btn) {
   const S = await ensureSettings(true);
   applySettings(S); setRender();
   ['tickets', 'board_items', 'tracker'].forEach(cacheDel);
+
   toast('✅ ' + r.saved + ' setting(s) saved');
+}
+
+/* ============================================================
+   BATTERY MODELS — from the common Master Sheet (same list as PLT / IMS / ERP)
+   ============================================================ */
+let MODELS = null;
+const OTHER_MODEL = 'Other company battery';
+const modelKey = s => String(s || '').toUpperCase().replace(/[^A-Z0-9.]/g, '');
+const modelOf = v => { const k = modelKey(v); return k ? (MODELS || []).find(m => modelKey(m.code) === k) || null : null; };
+
+async function ensureModels(force) {
+  const c = cacheGet('models');
+  if (!force && MODELS) return MODELS;
+  if (!force && c && c.fresh) MODELS = c.val;
+  else {
+    try {
+      const r = await api(Object.assign({ action: 'getModels' }, force ? { refresh: 1 } : {}));
+      if (r && r.ok) { MODELS = r.models || []; cacheSet('models', MODELS); }
+      else if (force) toast('❌ ' + ((r && r.msg) || 'Could not read the Master Sheet'));
+    } catch (e) {}
+    if (!MODELS && c) MODELS = c.val;
+  }
+  let dl = $('dl_models');
+  if (!dl) { dl = document.createElement('datalist'); dl.id = 'dl_models'; document.body.appendChild(dl); }
+  dl.innerHTML = (MODELS || []).map(m => '<option value="' + esc(m.code) + '">' +
+    esc([m.v && m.ah ? m.v + 'V ' + m.ah + 'Ah' : '', m.cat, m.chem].filter(Boolean).join(' · ')) + '</option>').join('') +
+    '<option value="' + OTHER_MODEL + '">Not a Litpax battery — type brand + model</option>';
+  return MODELS || [];
+}
+
+// receive form: battery model picked → Litpax (fills the type) or "Other company battery" (asks for the brand)
+function unitModel(inp) {
+  const row = inp.closest('.u-card'), brand = row.querySelector('.u-brand'), v = inp.value.trim();
+  inp.classList.remove('bad');
+  if (v === OTHER_MODEL) {
+    row.dataset.src = 'Other'; inp.value = ''; inp.placeholder = 'Other company model *';
+    brand.hidden = false; brand.focus();
+    return;
+  }
+  const m = modelOf(v);
+  if (m) {
+    row.dataset.src = 'Litpax'; inp.value = m.code; inp.placeholder = 'Model * — search';
+    brand.hidden = true; brand.value = '';
+    const sel = row.querySelector('.u-type');
+    if (m.cat) {
+      if (!Array.from(sel.options).some(o => o.value === m.cat)) sel.add(new Option(m.cat, m.cat));
+      sel.value = m.cat;
+    }
+  } else if (v && row.dataset.src !== 'Other' && (MODELS || []).length) {
+    inp.classList.add('bad');
+    toast('⚠️ "' + v + '" is not a Litpax model — pick from the list, or choose "' + OTHER_MODEL + '"');
+  }
+}
+
+// Masters screen (admin): model count + refresh
+function modelsCard() {
+  const n = (MODELS || []).length;
+  return '<div class="card mst-card"><div class="card-head"><span>🔋 Battery Models <b class="count">' + n + '</b></span></div>' +
+    '<div class="mst-sub">Read from the common Master Sheet (same list as PLT / IMS / ERP). Add or change models there — not here.</div>' +
+    '<div class="mst-list">' + (n ? (MODELS || []).slice(0, 40).map(m => '<span class="mst-chip mdl-chip">' + esc(m.code) + '</span>').join('') +
+      (n > 40 ? '<span class="muted-sm">+' + (n - 40) + ' more</span>' : '') : '<div class="empty sm">Not loaded yet</div>') + '</div>' +
+    '<div class="mst-add"><button class="btn btn-ghost" id="mdlRefresh" onclick="refreshModels(this)">🔄 Refresh from Master Sheet</button></div></div>';
+}
+async function refreshModels(btn) {
+  btn.disabled = true; btn.textContent = '⏳ Reading Master Sheet...';
+  cacheDel('models'); MODELS = null;
+  const list = await ensureModels(true);
+  toast(list.length ? '✅ ' + list.length + ' models loaded' : '⚠️ No models loaded');
+  mstRender();
 }
