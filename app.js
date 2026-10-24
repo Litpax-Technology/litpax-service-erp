@@ -1,5 +1,5 @@
 /* ============================================================
-   LITPAX SERVICE HUB v2 — app.js
+   LITPAX SERVICE HUB v6 — app.js  (every record in its own object: Customer · Ticket · Call · Pickup · Receipt · Item · Dispatch · Feedback)
    One Ticket ID → Phase 1 (Basic) → Phase 2 (Service/CRM) → Phase 3 (Repair)
    ============================================================ */
 
@@ -371,6 +371,7 @@ async function ticketCreate() {
   afterChange();
   $('newForm').style.display = 'none'; $('newSuccess').style.display = 'block';
   $('newId').textContent = r.id; $('newOpenBtn').dataset.id = r.id;
+  $('newCust').innerHTML = r.customerId ? 'Customer ' + idChip(r.customerId) + (r.newCustomer ? ' <span class="tag">new customer</span>' : ' <span class="tag">existing customer</span>') : '';
   const wa = $('newWa'), url = waUrl(d.phone, waFill((CONFIG.WA_TEMPLATES || {}).created,
     { name: d.person, id: r.id, link: trackLink({ 'Ticket ID': r.id, 'Track Code': r.code }) }));
   wa.dataset.t = r.id; wa.dataset.e = 'created';
@@ -393,7 +394,7 @@ async function phoneCheck() {
   fill('n_company', L.company); fill('n_person', L.person); fill('n_city', L.city); fill('n_vehicle', L.vehicle);
   fill('n_state', L.state); fill('n_ctype', L.customerType);
   if (L.dealer && !$('n_brand').value && dealerSelect(L.dealer)) filled.push('n_brand');
-  box.innerHTML = '<div class="note">🔁 <b>Repeat customer</b> — ' + r.count + ' earlier ticket' + (r.count > 1 ? 's' : '') +
+  box.innerHTML = '<div class="note">🔁 <b>Repeat customer</b>' + (r.customerId ? ' ' + idChip(r.customerId) : '') + ' — ' + r.count + ' earlier ticket' + (r.count > 1 ? 's' : '') +
     '. Last: <b>' + esc(L.id) + '</b> (' + esc(L.status) + ', ' + esc(niceDate(L.created)) + ').' + (filled.length ? ' Empty fields filled from it — please check.' : '') + '</div>' +
     ((r.open || []).length ? '<div class="note note-red">⚠️ Open ticket already: ' + r.open.map(o => '<b>' + esc(o.id) + '</b> (' + esc(o.status) + (o.complaint ? ' · ' + esc(o.complaint) : '') + ')').join(', ') +
       ' — check it before creating a new one.</div>' : '');
@@ -485,7 +486,10 @@ function tkRender() {
    ============================================================ */
 let CUR = null; // {ticket, calls, items}
 
+let DR_ID = '';
 async function drawerOpen(id) {
+  if (id !== DR_ID) DR_TAB = 'overview';
+  DR_ID = id;
   CUR = null;
   $('drTitle').textContent = id;
   const pre = TK.find(x => x['Ticket ID'] === id);
@@ -521,6 +525,16 @@ function stepper(t) {
   }).join('') + '</div>';
 }
 
+// ---- v6: every record in its own object → tabs, each record with its ID ----
+let DR_TAB = 'overview';
+function idChip(id, old) {
+  return id ? '<span class="id-chip">' + esc(id) + '</span>' : (old ? '<span class="id-chip id-old" title="Old record — moves into its object when the migration is run">old</span>' : '');
+}
+function recCard(id, title, right, body, old) {
+  return '<div class="rec"><div class="rec-head">' + idChip(id, old) + '<b>' + title + '</b><span class="rec-right">' + (right || '') + '</span></div>' + body + '</div>';
+}
+function drTab(k) { DR_TAB = k; drawerRender(); }
+
 function drawerRender() {
   const t = CUR.ticket, s = t['Status'], sent = t['Battery Sent'] === 'Yes', open = !isEnded(s), cancelled = s === 'Cancelled';
   const early = s === 'New' || s === 'In Follow-up';
@@ -540,76 +554,106 @@ function drawerRender() {
     if (s === 'In Transit' || (sent && early)) b.push('<button class="btn btn-teal" onclick="receiveOpen()">📥 Mark Received</button>');
     if (open) b.push('<button class="btn btn-ghost" onclick="editOpen()">✏️ Edit details</button>');
     if (early || s === 'In Transit') b.push('<button class="btn btn-ghost btn-danger" onclick="cancelOpen()">🚫 Cancel ticket</button>');
-h += '<div class="dsec actions">' +
+    h += '<div class="dsec actions">' +
       (lowFb ? '<div class="note note-red">🔴 The customer gave low feedback. Call them and save a call log — that clears this flag.</div>' : '') +
       (sent && early ? '<div class="note">🚚 The customer has already sent the items — no troubleshooting needed. Just note the problem and fill in the pickup details.</div>' : '') +
       '<div class="btn-wrap">' + b.join('') + '</div>' + callFormHtml(t) + '</div>';
   }
-  if (!cancelled) h += waSection();
-  h += sec('📝 Phase 1 — Basic', kv([
-    ['Company', t['Company Name']], ['Contact Person', t['Contact Person']], ['Phone', t['Phone']],
-    ['Customer Type', t['Customer Type']], ['Source', t['Source']],
-    ['Dealer', dealerOf(t)], ['City / State', [t['City'], t['State']].filter(Boolean).join(', ')], ['Complaint', t['Complaint']],
-    ['Vehicle', t['Vehicle Model']], ['Invoice / Purchase', [t['Invoice No'], t['Purchase Date'] && niceDate(t['Purchase Date'])].filter(Boolean).join(' · ')],
-    ['Items expected', (+t['Exp Battery Qty'] || +t['Exp Charger Qty']) ? itemsText(+t['Exp Battery Qty'] || 0, +t['Exp Charger Qty'] || 0) : ''],
-    ['Earlier tickets', +t['Previous Tickets'] ? t['Previous Tickets'] + ' (repeat customer)' : ''],
-    ['Items Sent', t['Battery Sent']],
-    ['Created', t['Created At'] + (t['Created By'] ? ' · ' + t['Created By'] : '')]
-  ]) + (t['Phone'] ? '<a class="call-link" href="tel:' + esc(t['Phone']) + '">📲 Call ' + esc(t['Phone']) + '</a>' : ''));
+  // ---- customer card (Customers object) ----
+  const cu = CUR.customer;
+  h += '<div class="dsec cust-card"><div class="cust-top">' + idChip(t['Customer ID'], !t['Customer ID']) +
+    '<b>' + esc(t['Company Name'] || '—') + '</b>' +
+    (cu && +cu['Total Tickets'] > 1 ? '<span class="tag">🔁 ' + esc(cu['Total Tickets']) + ' tickets</span>' : '') + '</div>' +
+    '<div class="cust-sub">' + esc([t['Contact Person'], t['Phone'], [t['City'], t['State']].filter(Boolean).join(', '), t['Customer Type'], dealerOf(t) && 'Dealer: ' + dealerOf(t)].filter(Boolean).join(' · ')) + '</div>' +
+    (t['Phone'] ? '<a class="call-link" href="tel:' + esc(t['Phone']) + '">📲 Call ' + esc(t['Phone']) + '</a>' : '') + '</div>';
 
-  h += sec('🎧 Phase 2 — Service', kv([
-    ['Attended By', t['Attended By']], ['Purchase Age', t['Purchase Age']], ['Outcome', t['Outcome']],
-    ['Next Follow-up', open ? t['Next Follow-up'] : ''], ['Total Calls', t['Total Calls']], ['Solved by', t['Call Fix']]
-  ]));
+  // ---- tabs ----
+  const calls = CUR.calls || [], items = CUR.items || [], hist = CUR.history || [];
+  let pks = CUR.pickups || [], rcs = CUR.receipts || [];
+  const dsp = CUR.dispatches || [], fbs = CUR.feedback || [], was = waLog(t);
+  // old tickets not migrated yet → one record from the old Tickets columns
+  if (!pks.length && t['Pickup By']) pks = [{ 'Pickup ID': '', 'Pickup By': t['Pickup By'], 'No. of Boxes': t['No. of Boxes'], 'Pickup Place': t['Pickup Place'],
+    'Pickup Date': t['Pickup Date'], 'Transport Name': t['Transport Name'], 'LR No': t['LR No'], 'Builty URL': t['Builty URL'],
+    'Status': t['Received Date'] ? 'Received' : 'Arranged', 'Created At': t['Pickup Set At'], old: 1 }];
+  if (!rcs.length && t['Received Date']) rcs = [{ 'Receipt ID': '', 'Received Date': t['Received Date'], 'Received By': t['Received By'],
+    'Battery Qty': t['Battery Qty'], 'Charger Qty': t['Charger Qty'], 'Accessories': t['Accessories'], 'Qty Note': t['Qty Note'], 'Remarks': t['Receive Remarks'], old: 1 }];
+  const tabs = [['overview', 'Overview'], ['calls', 'Calls', calls.length], ['pickup', 'Pickup', pks.length], ['receipt', 'Receipt', rcs.length],
+    ['items', 'Items', items.length], ['dispatch', 'Dispatch', dsp.length], ['feedback', 'Feedback', fbs.length + (fbs.length ? 0 : (t['Rating'] ? 1 : 0))],
+    ['history', 'History', hist.length]];
+  if (!tabs.some(x => x[0] === DR_TAB)) DR_TAB = 'overview';
+  h += '<div class="dr-tabs">' + tabs.map(([k, l, n]) => '<button type="button" class="' + (DR_TAB === k ? 'on' : '') + '" onclick="drTab(\'' + k + '\')">' + l +
+    (n != null ? ' <span class="cnt">' + n + '</span>' : '') + '</button>').join('') + '</div>';
 
-  if (t['Pickup By']) h += sec('🚚 Pickup / Transport', kv([
-    ['Arranged By', t['Pickup By']], ['No. of Boxes', t['No. of Boxes']], ['Place', t['Pickup Place']],
-    ['Date', t['Pickup Date']], ['Transport', t['Transport Name']], ['LR No', t['LR No']]
-  ]) + (safeUrl(t['Builty URL'])
-    ? '<a class="call-link" href="' + esc(safeUrl(t['Builty URL'])) + '" target="_blank" rel="noopener">📎 View builty</a>'
-    : '<div class="muted-sm">No builty uploaded</div>'));
-
-  if (t['Received Date']) {
-    const items = CUR.items || [];
-    h += sec('📥 Received → Phase 3 Repair', kv([
-      ['Received Date', t['Received Date']], ['Received By', t['Received By']],
-      ['Batteries', t['Battery Qty'] || 0], ['Chargers', t['Charger Qty'] || 0],
-      ['Accessories', t['Accessories']], ['Remarks', t['Receive Remarks']]
-    ]) + (t['Qty Note'] ? '<div class="note note-red" style="margin-top:10px">⚠️ ' + esc(t['Qty Note']) + '</div>' : '') +
-    (items.length ? '<div class="items-mini">' + items.map(it =>
+  let body = '';
+  if (DR_TAB === 'overview') {
+    body += sec('🎫 Ticket ' + idChip(t['Ticket ID']), kv([
+      ['Complaint', t['Complaint']], ['Source', t['Source']], ['Vehicle', t['Vehicle Model']],
+      ['Invoice / Purchase', [t['Invoice No'], t['Purchase Date'] && niceDate(t['Purchase Date'])].filter(Boolean).join(' · ')],
+      ['Purchase Age', t['Purchase Age']],
+      ['Items expected', (+t['Exp Battery Qty'] || +t['Exp Charger Qty']) ? itemsText(+t['Exp Battery Qty'] || 0, +t['Exp Charger Qty'] || 0) : ''],
+      ['Earlier tickets', +t['Previous Tickets'] ? t['Previous Tickets'] + ' (repeat customer)' : ''],
+      ['Items Sent', t['Battery Sent']],
+      ['Created', t['Created At'] + (t['Created By'] ? ' · ' + t['Created By'] : '')]
+    ]));
+    body += sec('📊 Summary', kv([
+      ['Status', s], ['Outcome', t['Outcome']], ['Next Follow-up', open ? t['Next Follow-up'] : ''],
+      ['Calls', t['Total Calls']], ['Last attended by', t['Attended By']], ['Solved by', t['Call Fix']],
+      ['Items', t['Total Items']], ['Rating', t['Rating'] ? t['Rating'] + ' / 5' : ''],
+      ['Closed', t['Closed At'] && !cancelled ? t['Closed At'] : '']
+    ]));
+  }
+  if (DR_TAB === 'calls') body += calls.length ? calls.map(c => recCard(c['Call ID'], esc(c['Attended By'] || c['Logged By']),
+      esc(c['Time']),
+      '<div class="tl-body">' + esc(c['Notes']) + '</div>' +
+      (c['Checks'] ? '<div class="tl-checks">🧰 ' + esc(c['Checks']) + '</div>' : '') +
+      (c['Next Follow-up'] ? '<div class="tl-next">📅 Next follow-up: ' + esc(c['Next Follow-up']) + '</div>' : '') +
+      (c['Result'] ? '<div class="muted-sm">' + esc(c['Result']) + (c['Logged By'] ? ' · logged by ' + esc(c['Logged By']) : '') + '</div>' : ''), c['Old'])).join('')
+    : '<div class="empty sm">No calls yet</div>';
+  if (DR_TAB === 'pickup') body += pks.length ? pks.slice().reverse().map(p => recCard(p['Pickup ID'], p['Pickup By'] === 'Company' ? '🏢 By company' : '👤 By customer',
+      pill(p['Status']),
+      kv([['Pickup Date', p['Pickup Date']], ['No. of Boxes', p['No. of Boxes']], ['Place', p['Pickup Place']], ['Transport', p['Transport Name']], ['LR No', p['LR No']], ['Saved', p['Created At']]]) +
+      (safeUrl(p['Builty URL']) ? '<a class="call-link" href="' + esc(safeUrl(p['Builty URL'])) + '" target="_blank" rel="noopener">📎 View builty</a>' : '<div class="muted-sm">No builty uploaded</div>'),
+      p.old)).join('')
+    : '<div class="empty sm">No pickup yet</div>';
+  if (DR_TAB === 'receipt') body += rcs.length ? rcs.slice().reverse().map(r => recCard(r['Receipt ID'], '📥 ' + esc(niceDate(r['Received Date'])),
+      r['Pickup ID'] ? 'from ' + idChip(r['Pickup ID']) : '',
+      kv([['Received By', r['Received By']], ['Batteries', r['Battery Qty'] || 0], ['Chargers', r['Charger Qty'] || 0], ['Accessories', r['Accessories']], ['Remarks', r['Remarks']]]) +
+      (r['Qty Note'] ? '<div class="note note-red" style="margin-top:10px">⚠️ ' + esc(r['Qty Note']) + '</div>' : ''), r.old)).join('') +
+      '<button class="btn btn-ghost btn-sm" style="margin-top:4px" onclick="recvSlip()">🖨️ Receiving Slip</button>'
+    : '<div class="empty sm">Not received yet</div>';
+  if (DR_TAB === 'items') body += items.length ? '<div class="items-mini">' + items.map(it =>
       '<div class="im-row"><span class="im-id">' + esc(it['Item ID']) + '</span><span class="im-main">' + (it['Item Type'] === 'Charger' ? '⚡' : '🔋') + ' ' +
       esc([it['Category'], it['Model']].filter(Boolean).join(' · ')) +
-      '<small>' + esc([it['Serial No'] && 'SN ' + it['Serial No'], it['Warranty'], it['Condition'] && 'Arrived: ' + it['Condition'], it['Voltage'] !== '' && it['Voltage'] != null && it['Voltage'] + ' V',
+      '<small>' + esc([it['Model Source'] === 'Other' && 'Other company: ' + it['Brand'], it['Serial No'] && 'SN ' + it['Serial No'], it['Warranty'], it['Condition'] && 'Arrived: ' + it['Condition'], it['Voltage'] !== '' && it['Voltage'] != null && it['Voltage'] + ' V',
         it['Mfg Month'] && 'Mfg ' + it['Mfg Month'], it['Batch No'] && 'Batch ' + it['Batch No'], it['Usage Months'] !== '' && it['Usage Months'] != null && 'Used ' + it['Usage Months'] + ' mo',
         it['Fault Code'] && 'Fault: ' + it['Fault Code'], rupee(it['Repair Cost'])].filter(Boolean).join(' · ')) + '</small>' +
+      '<span class="im-links">' + idChip(it['Receipt ID']) + idChip(it['Dispatch ID']) + '</span>' +
       repeatTag(it['Repeat Count']) +
       (can('service') ? '<button type="button" class="link-btn" data-id="' + esc(it['Item ID']) + '" onclick="itemEditOpen(this.dataset.id)">✏️ Correct details</button>' : '') +
-      '</span>' + pill(it['Item Status']) + '</div>'
-    ).join('') + '</div>' : '') +
-    '<button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="recvSlip()">🖨️ Receiving Slip</button>');
+      '</span>' + pill(it['Item Status']) + '</div>').join('') + '</div>'
+    : '<div class="empty sm">No items yet — they are added when the items are received</div>';
+  if (DR_TAB === 'dispatch') body += dsp.length ? dsp.slice().reverse().map(d => recCard(d['Dispatch ID'], '📦 ' + esc(niceDate(d['Dispatch Date'])),
+      esc(itemsText(+d['Batteries'] || 0, +d['Chargers'] || 0)),
+      kv([['Items', d['Item IDs']], ['Dispatched By', d['Dispatched By']], ['Transport', d['Transport']], ['Charges', rupee(d['Charges'])],
+          ['Address', d['Address']], ['Problem Found', d['Problem Found']], ['Remarks', d['Remarks']]]), d['Old'])).join('')
+    : '<div class="empty sm">Nothing dispatched yet</div>';
+  if (DR_TAB === 'feedback') {
+    body += fbs.length ? fbs.slice().reverse().map(f => recCard(f['Feedback ID'], '⭐ ' + esc(f['Rating']) + ' / 5', esc(f['Time']),
+        kv([['Problem Solved', f['Solved']], ['Comment', f['Comment']],
+            ['Flag', t['Feedback Flag'] === 'Low' ? '🔴 Low — call pending' : (t['Feedback Flag'] === 'Resolved' ? '✅ Called back' : '')]]), !f['Feedback ID'])).join('')
+      : (t['Feedback Asked At'] ? sec('⭐ Feedback', kv([['Asked On', t['Feedback Asked At']], ['Status', 'Waiting for customer']])) : '<div class="empty sm">No feedback yet</div>');
+    if (was.length) body += sec('📲 WhatsApp sent (' + was.length + ')', '<div class="timeline">' + was.slice().reverse().map(w =>
+      '<div class="tl-item"><div class="tl-head"><b>' + idChip(w.id, !w.id) + ' ' + esc(w.e) + '</b><span>' + esc(w.t) + (w.b ? ' · ' + esc(w.b) : '') + '</span></div></div>').join('') + '</div>');
   }
+  if (DR_TAB === 'history') body += hist.length ? '<div class="timeline">' + hist.map(x =>
+      '<div class="tl-item"><div class="tl-head"><b>' + idChip(x['Audit ID'], !x['Audit ID']) + ' ' + esc(x['Action']) +
+      (x['Record ID'] && x['Record ID'] !== t['Ticket ID'] ? ' · ' + esc(x['Record ID']) : (x['Item ID'] ? ' · ' + esc(x['Item ID']) : '')) +
+      '</b><span>' + esc(x['Time']) + ' · ' + esc(x['User']) + '</span></div>' +
+      '<div class="tl-body muted-txt">' + esc(x['Details']) + '</div></div>').join('') + '</div>'
+    : '<div class="empty sm">No changes yet</div>';
 
-  if (t['Rating']) h += sec('⭐ Customer Feedback', kv([
-    ['Rating', t['Rating'] + ' / 5'], ['Problem Solved', t['Solved']], ['Comment', t['Feedback Comment']], ['Given On', t['Feedback At']],
-    ['Flag', t['Feedback Flag'] === 'Low' ? '🔴 Low — call pending' : (t['Feedback Flag'] === 'Resolved' ? '✅ Called back' : '')]
-  ]));
-  else if (t['Feedback Asked At']) h += sec('⭐ Customer Feedback', kv([['Asked On', t['Feedback Asked At']], ['Status', 'Waiting for customer']]));
-
-  const calls = CUR.calls || [];
-  h += sec('🗒️ Call Log (' + calls.length + ')', calls.length ? '<div class="timeline">' + calls.map(c =>
-    '<div class="tl-item"><div class="tl-head"><b>' + esc(c['Attended By'] || c['Logged By']) + '</b><span>' + esc(c['Time']) + '</span></div>' +
-    '<div class="tl-body">' + esc(c['Notes']) + '</div>' +
-    (c['Checks'] ? '<div class="tl-checks">🧰 ' + esc(c['Checks']) + '</div>' : '') +
-    (c['Next Follow-up'] ? '<div class="tl-next">📅 Next follow-up: ' + esc(c['Next Follow-up']) + '</div>' : '') + '</div>'
-  ).join('') + '</div>' : '<div class="empty sm">No call logs yet</div>');
-
-  if (t['Closed At'] && !cancelled) h += sec('✅ Closed', kv([['Closed At', t['Closed At']], ['Outcome', t['Outcome']]]));
-
-  const hist = CUR.history || [];
-  if (hist.length) h += sec('🕘 Change History (' + hist.length + ')', '<div class="timeline">' + hist.map(x =>
-    '<div class="tl-item"><div class="tl-head"><b>' + esc(x['Action']) + (x['Item ID'] ? ' · ' + esc(x['Item ID']) : '') + '</b><span>' + esc(x['Time']) + ' · ' + esc(x['User']) + '</span></div>' +
-    '<div class="tl-body muted-txt">' + esc(x['Details']) + '</div></div>').join('') + '</div>');
-
+  h += '<div class="dr-tab-body">' + body + '</div>';
+  if (!cancelled) h += waSection();
   $('drBody').innerHTML = h;
 }
 
@@ -632,7 +676,9 @@ function editOpen() {
       fg('Purchase Date', 'e_pdate', 'date', String(t['Purchase Date'] || '').substring(0, 10), ' max="' + todayStr() + '"') + '<div class="fg"></div>' +
       fg('Batteries expected', 'e_expB', 'number', t['Exp Battery Qty'], ' min="0" max="50"') +
       fg('Chargers expected', 'e_expC', 'number', t['Exp Charger Qty'], ' min="0" max="50"') +
-    '</div><div class="muted-sm" style="margin:-4px 0 14px">Every change is saved in the ticket history.</div>' +
+    '</div><div class="muted-sm" style="margin:-4px 0 14px">Company, contact, phone, dealer, city, state and customer type are saved on the customer' +
+      (t['Customer ID'] ? ' <b>' + esc(t['Customer ID']) + '</b>' : '') + ' — every ticket of this customer shows the change. ' +
+      'Typing the phone of another customer moves this ticket to that customer. Every change is saved in the ticket history.</div>' +
     '<button class="btn btn-primary btn-block" onclick="editSave(this)">Save changes ✓</button>');
 }
 async function editSave(btn) {
@@ -689,7 +735,7 @@ async function callSave(btn) {
   if (!d.attendedBy) return toast('⚠️ Select Attended By');
   if (!d.notes) return toast('⚠️ Please add call notes');
   const r = await run(d, btn); if (!r) return;
-  toast('✅ Call log saved'); afterChange(); drawerReload();
+  toast('✅ Call log saved' + (r.callId ? ' — ' + r.callId : '')); DR_TAB = 'calls'; afterChange(); drawerReload();
 }
 
 function ticketSolve() {
@@ -759,12 +805,12 @@ async function pickupSave(btn) {
       if (!u) { toast('⚠️ Pickup saved, but builty upload failed — use Edit Pickup to retry'); afterChange(); drawerReload(); return; }
     }
   }
-  modalClose(); toast('✅ Pickup saved' + (file ? ' with builty' : '') + ' — status is now In Transit'); afterChange(); drawerReload();
+  modalClose(); toast('✅ Pickup saved' + (r.pickupId ? ' — ' + r.pickupId : '') + (file ? ' with builty' : '') + ' — status is now In Transit'); DR_TAB = 'pickup'; afterChange(); drawerReload();
 }
 
 /* ---- Received (one row per unit: type + model) ---- */
 async function receiveOpen() {
-  await ensureMasters();
+  await Promise.all([ensureMasters(), ensureModels()]);
   const t = CUR.ticket, eb = +t['Exp Battery Qty'] || 0, ec = +t['Exp Charger Qty'] || 0;
   modalOpen('📥 Mark Received',
     '<div class="form-grid">' +
@@ -788,7 +834,8 @@ function recvUnits() {
   // keep what was already typed when quantities change
   const keep = k => Array.from(document.querySelectorAll('.u-row[data-u="' + k + '"]'))
     .map(r => ({ c: r.querySelector('.u-type').value, m: r.querySelector('.u-model').value, s: r.querySelector('.u-serial').value, w: r.querySelector('.u-war').value,
-      cond: r.querySelector('.u-cond').value, v: r.querySelector('.u-volt').value, mfg: r.querySelector('.u-mfg').value, b: r.querySelector('.u-batch').value }));
+      cond: r.querySelector('.u-cond').value, v: r.querySelector('.u-volt').value, mfg: r.querySelector('.u-mfg').value, b: r.querySelector('.u-batch').value,
+      src: r.dataset.src || '', br: (r.querySelector('.u-brand') || {}).value || '' }));
   const kb = keep('B'), kc = keep('C');
   const bq = qtyVal('r_bq'), cq = qtyVal('r_cq');
 
@@ -799,15 +846,19 @@ function recvUnits() {
       '<div class="u-cols"><span></span><div><span>Type / Condition *</span><span>Model * / Voltage (V)</span><span>Serial No / Mfg month</span><span>Warranty / Batch No</span></div></div>';
     for (let i = 0; i < n; i++) {
       const p = prev[i] || {};
-      s += '<div class="u-row u-card" data-u="' + k + '"><span class="u-no">#' + (i + 1) + '</span><div class="u-fields">' +
+      s += '<div class="u-row u-card" data-u="' + k + '" data-src="' + esc(p.src || '') + '"><span class="u-no">#' + (i + 1) + '</span><div class="u-fields">' +
         '<select class="u-type">' + optList(list, p.c || '', '-- ' + label + ' type --') + '</select>' +
-        '<input class="u-model" maxlength="100" placeholder="' + label + ' model *" value="' + esc(p.m || '') + '">' +
+        (k === 'B'
+          ? '<input class="u-model" maxlength="100" list="dl_models" placeholder="' + (p.src === 'Other' ? 'Other company model *' : 'Model * — search') + '" value="' + esc(p.m || '') + '" onchange="unitModel(this)">'
+          : '<input class="u-model" maxlength="100" placeholder="' + label + ' model *" value="' + esc(p.m || '') + '">') +
         '<input class="u-serial" maxlength="60" placeholder="Serial No" value="' + esc(p.s || '') + '">' +
         '<select class="u-war">' + optList(CONFIG.WARRANTY || [], p.w || '', 'Warranty?') + '</select>' +
         '<select class="u-cond">' + optList(M().condition, p.cond || '', 'Condition *') + '</select>' +
         '<input class="u-volt" type="number" min="0" step="0.1" inputmode="decimal" placeholder="Voltage (V)" value="' + esc(p.v || '') + '">' +
         '<input class="u-mfg" type="month" title="Manufacturing month" value="' + esc(p.mfg || '') + '">' +
-        '<input class="u-batch" maxlength="60" placeholder="Batch No" value="' + esc(p.b || '') + '"></div></div>';
+        '<input class="u-batch" maxlength="60" placeholder="Batch No" value="' + esc(p.b || '') + '">' +
+        (k === 'B' ? '<input class="u-brand" maxlength="60" placeholder="Brand of the other company *" value="' + esc(p.br || '') + '"' + (p.src === 'Other' ? '' : ' hidden') + '>' : '') +
+        '</div></div>';
     }
     return s + '</div>';
   };
@@ -831,6 +882,12 @@ function recvCopy(k) {
     const v = rows[0].querySelector(sel).value;
     rows.forEach(r => { r.querySelector(sel).value = v; });
   });
+  const b0 = rows[0].querySelector('.u-brand');
+  rows.forEach(r => {
+    r.dataset.src = rows[0].dataset.src || '';
+    const b = r.querySelector('.u-brand');
+    if (b0 && b) { b.value = b0.value; b.hidden = b0.hidden; }
+  });
 }
 
 async function recvSave(btn) {
@@ -845,8 +902,15 @@ async function recvSave(btn) {
       const mfg = rows[i].querySelector('.u-mfg').value, batch = rows[i].querySelector('.u-batch').value.trim();
       if (!c || !m) return toast('⚠️ ' + type + ' #' + (i + 1) + ': select type and enter model');
       if (!cond) return toast('⚠️ ' + type + ' #' + (i + 1) + ': select the condition it arrived in');
+      let src = '', brand = '';
+      if (k === 'B') {
+        src = rows[i].dataset.src === 'Other' ? 'Other' : 'Litpax';
+        brand = src === 'Other' ? rows[i].querySelector('.u-brand').value.trim() : '';
+        if (src === 'Litpax' && (MODELS || []).length && !modelOf(m)) return toast('⚠️ Battery #' + (i + 1) + ': pick the model from the list, or choose "' + OTHER_MODEL + '"');
+        if (src === 'Other' && !brand) return toast('⚠️ Battery #' + (i + 1) + ': enter the brand of the other company');
+      }
       if (volt !== '' && !(Number(volt) >= 0)) return toast('⚠️ ' + type + ' #' + (i + 1) + ': voltage must be a number');
-      items.push({ type, category: c, model: m, serial: sn, warranty: w, condition: cond, voltage: volt, mfg, batch });
+      items.push({ type, category: c, model: m, serial: sn, warranty: w, condition: cond, voltage: volt, mfg, batch, source: src, brand });
     }
   }
   if (!items.length) return toast('⚠️ Enter battery or charger quantity');
@@ -859,7 +923,8 @@ async function recvSave(btn) {
   afterChange();
   const rep = r.repeats || [];
   toast(rep.length ? '🔁 ' + rep.length + ' repeat batter' + (rep.length > 1 ? 'ies' : 'y') + ' found: ' + rep.map(x => x.serial + ' (×' + x.count + ')').join(', ')
-                   : r.qtyNote ? '⚠️ Received — ' + r.qtyNote : '✅ ' + r.items + ' items moved to Repair');
+                   : r.qtyNote ? '⚠️ Received — ' + r.qtyNote : '✅ ' + (r.receiptId ? r.receiptId + ' · ' : '') + r.items + ' items moved to Repair');
+  DR_TAB = 'items';
   try {
     const t = await api({ action: 'getTicket', ticketId: id });
     if (t && t.ok) { CUR = t; drawerRender(); recvSlip(); return; }
@@ -872,17 +937,19 @@ function itemEditOpen(itemId) {
   const it = (CUR.items || []).find(x => x['Item ID'] === itemId);
   if (!it) return;
   const isC = it['Item Type'] === 'Charger';
+  ensureModels();
   modalOpen('✏️ ' + itemId + ' — correct details',
     '<div class="form-grid">' +
       '<div class="fg"><label>Item <b>*</b></label><select id="ie_type" onchange="itemEditType()"><option' + (!isC ? ' selected' : '') + '>Battery</option><option' + (isC ? ' selected' : '') + '>Charger</option></select></div>' +
       '<div class="fg"><label>Type <b>*</b></label><select id="ie_cat">' + optList(isC ? M().chargerType : M().batteryType, it['Category'] || '', '-- Select --') + '</select></div>' +
-      fg('Model <b>*</b>', 'ie_model', 'text', it['Model'], ' maxlength="100"') +
+      fg('Model <b>*</b>', 'ie_model', 'text', it['Model'], ' maxlength="100" list="dl_models"') +
       fg('Serial No', 'ie_serial', 'text', it['Serial No'], ' maxlength="60"') +
       '<div class="fg"><label>Warranty</label><select id="ie_war">' + optList(CONFIG.WARRANTY || [], it['Warranty'] || '', '-- Select --') + '</select></div>' +
       '<div class="fg"><label>Condition at receipt</label><select id="ie_cond">' + optList(M().condition, it['Condition'] || '', '-- Select --') + '</select></div>' +
       fg('Voltage (V)', 'ie_volt', 'number', it['Voltage'], ' min="0" step="0.1"') +
       fg('Mfg month', 'ie_mfg', 'month', it['Mfg Month'], '') +
       fg('Batch No', 'ie_batch', 'text', it['Batch No'], ' maxlength="60"') +
+      fg('Brand <span class="opt">(other company only)</span>', 'ie_brand', 'text', it['Brand'], ' maxlength="60"') +
     '</div><div class="muted-sm" style="margin:-4px 0 14px">Every change is saved in the ticket history.</div>' +
     '<button class="btn btn-primary btn-block" data-id="' + esc(itemId) + '" onclick="itemEditSave(this)">Save ✓</button>');
 }
@@ -895,6 +962,14 @@ async function itemEditSave(btn) {
   const d = { action: 'editItem', itemId: btn.dataset.id, type: v('ie_type'), category: v('ie_cat'), model: v('ie_model'), serial: v('ie_serial'),
     warranty: v('ie_war'), condition: v('ie_cond'), voltage: v('ie_volt'), mfg: v('ie_mfg'), batch: v('ie_batch') };
   if (!d.category || !d.model) return toast('⚠️ Select the type and enter the model');
+  if (d.model === OTHER_MODEL) return toast('⚠️ Type the model of the other company battery');
+  if (d.type === 'Battery') {
+    const lit = modelOf(d.model);
+    d.source = lit || !(MODELS || []).length ? 'Litpax' : 'Other';
+    if (lit) d.model = lit.code;
+    d.brand = d.source === 'Other' ? v('ie_brand') : '';
+    if (d.source === 'Other' && !d.brand) return toast('⚠️ "' + d.model + '" is not a Litpax model — enter the brand of the other company');
+  } else { d.source = ''; d.brand = ''; }
   const r = await run(d, btn); if (!r) return;
   modalClose(); toast(r.changed ? '✅ ' + r.changed + ' change(s) saved' : 'ℹ️ Nothing changed');
   ['board_items', 'tracker'].forEach(cacheDel); drawerReload();
@@ -1202,6 +1277,7 @@ const MST_LISTS = [
 function openMasters() {
   mstRender();
   ensureMasters(true).then(mstRender);
+  ensureModels().then(mstRender);
 }
 
 function mstRender() {
@@ -1219,7 +1295,7 @@ function mstRender() {
         'onkeydown="if(event.key===\'Enter\')mstAdd(\'' + k + '\')">' +
         '<button class="btn btn-primary" id="mstBtn_' + k + '" onclick="mstAdd(\'' + k + '\')">Add</button></div>' +
     '</div>';
-  }).join('');
+  }).join('') + modelsCard();
 }
 
 async function mstAdd(k) {
@@ -1632,7 +1708,6 @@ async function setSave(btn) {
   const S = await ensureSettings(true);
   applySettings(S); setRender();
   ['tickets', 'board_items', 'tracker'].forEach(cacheDel);
-
   toast('✅ ' + r.saved + ' setting(s) saved');
 }
 
