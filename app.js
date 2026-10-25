@@ -88,14 +88,79 @@ const pad2 = n => ('0' + n).slice(-2);
 const todayStr = () => { const d = new Date(); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); };
 const idNum = id => parseInt(String(id || '').replace(/\D/g, ''), 10) || 0;
 
+/* ---------- v11 — icons (Lucide) + emoji-free UI chrome ---------- */
+const ICO = {
+  plus: '<circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8"/>',
+  ticket: '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2M13 17v2M13 11v2"/>',
+  wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  truck: '<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>',
+  list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+  activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  sliders: '<path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
+  open: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  check: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/>',
+  alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+  star: '<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>'
+};
+const ico = (k, cls) => '<svg class="ic' + (cls ? ' ' + cls : '') + '" viewBox="0 0 24 24" aria-hidden="true">' + (ICO[k] || '') + '</svg>';
+
+// emoji used as decoration in labels are removed from the UI (✕ close and arrows stay)
+const EMO_RE = /(?:[\u{1F000}-\u{1FAFF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{2712}]|[\u{2717}-\u{27BF}]|[\u{2B50}\u{2B55}\u{23E9}-\u{23FA}\u{21A9}\u{21AA}\u{2139}])[\u{FE0F}\u{200D}]*(?:[\u{1F000}-\u{1FAFF}]\u{FE0F}?)*[  ]?/gu;
+const stripEmo = v => String(v == null ? '' : v).replace(EMO_RE, '').replace(/️/g, '').replace(/^\s+/, '');
+function deEmoji(root) {
+  if (!root || (root.nodeType !== 1 && root.nodeType !== 11)) return;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), todo = [];
+  for (let n = w.nextNode(); n; n = w.nextNode()) {
+    EMO_RE.lastIndex = 0;
+    if (!EMO_RE.test(n.nodeValue)) continue;
+    const p = n.parentElement;
+    if (!p || p.closest('textarea, script, style, option, .as-panel, .keep-emo')) continue;
+    todo.push(n);
+  }
+  todo.forEach(n => {
+    const v = n.nodeValue.replace(EMO_RE, '').replace(/️/g, '');
+    if (!v.trim()) {   // emoji was the whole label of this element → keep it (e.g. an icon-only button)
+      const rest = Array.from(n.parentElement.childNodes).some(c => c !== n && (c.nodeType === 1 || c.nodeValue.trim()));
+      if (!rest) return;
+    }
+    n.nodeValue = v;
+  });
+}
+(function () {
+  const ob = new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => {
+    if (n.nodeType === 3) { if (n.parentElement) deEmoji(n.parentElement); } else deEmoji(n);
+  })));
+  const start = () => ['appWrap', 'drawer', 'modalOv'].forEach(id => { const el = $(id); if (el) { deEmoji(el); ob.observe(el, { childList: true, subtree: true }); } });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();
+
+// "/" jumps to the global search · Esc closes the ticket preview
+document.addEventListener('keydown', e => {
+  const tag = ((document.activeElement || {}).tagName || '');
+  if (e.key === '/' && !e.ctrlKey && !e.metaKey && !/^(INPUT|TEXTAREA|SELECT)$/.test(tag) && $('appWrap') && $('appWrap').style.display !== 'none') {
+    e.preventDefault(); $('gSearch').focus();
+  }
+  if (e.key === 'Escape' && $('tkPrev') && !$('tkPrev').hidden && !$('drawer').classList.contains('open') && !$('modalOv').classList.contains('show')) tkPrevClose();
+});
+
 function esc(v) {
   return String(v == null ? '' : v).replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 function toast(msg) {
-  const t = $('toast'); t.textContent = msg; t.classList.add('show');
-  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 3200);
+  msg = String(msg == null ? '' : msg);
+  const tone = /^\s*(❌|🔒|⛔|🚫)/.test(msg) ? 'err' : /^\s*(⚠️|⚠)/.test(msg) ? 'warn' : /^\s*(✅|✓|✔)/.test(msg) ? 'ok' : 'info';
+  const t = $('toast');
+  t.className = 'toast t-' + tone;
+  t.innerHTML = ico(tone === 'ok' ? 'check' : tone === 'info' ? 'info' : 'alert') + '<span>' + esc(stripEmo(msg)) + '</span>';
+  void t.offsetWidth; t.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 3400);
 }
+
 function segPick(btn) {
   btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('on'));
   btn.classList.add('on');
@@ -248,6 +313,13 @@ const SCREENS = {
   settings:  { id: 'scrSettings', icon: '🛠️', label: 'Settings',     title: 'Settings',     sub: 'SLA targets, lists, WhatsApp messages and screens per role', open: openSettings },
   records:   { id: 'scrRecords',  icon: '🗂️', label: 'Records',      title: 'Records',      sub: 'Every customer, call, pickup, repair job, item and dispatch — click any row to open it', open: () => openRecords() }
 };
+const NAV_ICO = { newTicket: 'plus', tickets: 'ticket', board: 'wrench', dispatch: 'truck', masters: 'list', tracker: 'activity', settings: 'sliders', records: 'folder' };
+const NAV_ADMIN = { masters: 1, settings: 1 };
+function navRender(nav) {
+  const item = k => '<button class="sb-item' + (k === CURRENT ? ' active' : '') + '" data-nav="' + k + '" onclick="go(this.dataset.nav)">' + ico(NAV_ICO[k] || 'list') + '<span>' + SCREENS[k].label + '</span></button>';
+  const work = nav.filter(k => !NAV_ADMIN[k]), adm = nav.filter(k => NAV_ADMIN[k]);
+  $('sbNav').innerHTML = '<div class="sb-grp">Workspace</div>' + work.map(item).join('') + (adm.length ? '<div class="sb-grp">Admin</div>' + adm.map(item).join('') : '');
+}
 // every role can browse records (read-only lists — actions still follow the role)
 function navList(nav) {
   const n = nav.filter(k => k !== 'records'), i = n.indexOf('settings');
@@ -266,6 +338,8 @@ function go(key) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   $(S.id).classList.add('active');
   $('hdrTitle').textContent = S.title; $('hdrSub').textContent = S.sub;
+  if ($('hdrGroup')) $('hdrGroup').textContent = NAV_ADMIN[key] ? 'Admin' : 'Service';
+  if (key !== 'tickets') tkPrevClose();
   toggleSidebar(false); window.scrollTo(0, 0);
   if ($('asFab')) $('asFab').hidden = key === 'settings';   // keeps the Save bar free
   S.open();
@@ -315,11 +389,9 @@ async function authLogin() {
 function enterApp(r) {
   const R = CONFIG.ROLES[r];
   $('loginScreen').style.display = 'none'; $('appWrap').style.display = 'flex';
-  $('sbRole').textContent = R.icon + ' ' + R.label + ' · ' + (localStorage.getItem('hub_user') || '');
+  $('sbRole').innerHTML = '<b>' + esc(R.label) + '</b><span>' + esc(localStorage.getItem('hub_user') || '') + '</span>';
   R.nav = navList(R.nav);
-  $('sbNav').innerHTML = R.nav.map(k =>
-    '<button class="sb-item" data-nav="' + k + '" onclick="go(this.dataset.nav)"><span class="sb-ico">' + SCREENS[k].icon + '</span>' + SCREENS[k].label + '</button>'
-  ).join('');
+  navRender(R.nav);
   if ($('hdrDate')) $('hdrDate').textContent = new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
   ensureMasters();           // preload dropdown lists in the background
   ensureSettings().then(applySettings);   // SLA, lists, WhatsApp text, screens — from the Settings tab
@@ -478,43 +550,162 @@ async function tkLoad(force) {
   } catch (e) { if (e !== 'auth' && !TK.length) $('tkList').innerHTML = '<div class="empty">Could not load data ❌</div>'; }
 }
 
-function tkSetFilter(f) { tkFilter = f; tkRender(); }
+function tkSetFilter(f) { tkFilter = f; TK_LIMIT = 50; tkRender(); }
+
+/* ---------- v11 — table / board + preview pane ---------- */
+let TK_LIMIT = 50, TK_SEL = '', _pvSeq = 0;
+let TK_VIEW = (() => { try { return localStorage.getItem('hub_tk_view') || 'list'; } catch (e) { return 'list'; } })();
+function tkSetView(v) { TK_VIEW = v === 'board' ? 'board' : 'list'; try { localStorage.setItem('hub_tk_view', TK_VIEW); } catch (e) {} tkRender(); }
+
+const shortDate = s => { const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? (+m[3]) + ' ' + MON[+m[2] - 1] + (+m[1] !== new Date().getFullYear() ? ' ' + m[1] : '') : String(s || ''); };
+function dueInfo(t) {
+  const f = String(t['Next Follow-up'] || ''), d = f.substring(0, 10);
+  if (!d || isEnded(t['Status'])) return { txt: '', cls: '' };
+  const tm = f.length > 11 ? ' ' + f.substring(11, 16) : '';
+  if (d < todayStr()) return { txt: 'Overdue · ' + shortDate(d), cls: 'due-late' };
+  if (d === todayStr()) return { txt: 'Today' + tm, cls: 'due-late' };
+  return { txt: shortDate(d) + tm, cls: '' };
+}
+function tkFlags(t) {
+  const f = [];
+  if (t['Open Callback']) f.push('<span class="tag tag-red" title="Customer asked for a call back on the tracking page">Call back · ' + esc(t['Open Callback']) + '</span>');
+  if (t['Feedback Flag'] === 'Low') f.push('<span class="tag tag-red">Low feedback</span>');
+  else if (t['Rating']) f.push('<span class="tag tag-green">' + ico('star', 'ic-xs') + esc(t['Rating']) + '/5</span>');
+  if (isFbDue(t)) f.push('<span class="tag tag-amber">Feedback due</span>');
+  if (+t['Previous Tickets']) f.push('<span class="tag tag-amber" title="Earlier tickets from this phone">Repeat customer</span>');
+  if (t['Battery Sent'] === 'Yes' && REPAIR_SET.indexOf(t['Status']) === -1 && !isEnded(t['Status'])) f.push('<span class="tag tag-violet">Items sent</span>');
+  return f.join('');
+}
+function tkKpis() {
+  const n = f => TK.filter(t => tkMatch(t, f)).length;
+  const K = [['open', 'Open tickets', n('open'), 'not closed or cancelled'], ['due', 'Follow-up due', n('due'), 'today or overdue', 'late'],
+    ['cb', 'Call-backs', n('cb'), 'asked on the tracking page', 'late'], ['repair', 'In repair', n('repair'), 'received · in repair · partial'],
+    ['fb', 'Feedback due', n('fb'), 'closed ' + (CONFIG.FEEDBACK_AFTER_DAYS || 3) + '+ days ago', 'risk']];
+  $('tkKpis').innerHTML = K.map(k => '<button type="button" class="kpi' + (k[4] && k[2] ? ' ' + k[4] : '') + (tkFilter === k[0] ? ' on' : '') + '" data-f="' + k[0] + '" onclick="tkSetFilter(this.dataset.f)">' +
+    '<span>' + k[1] + '</span><b>' + k[2] + '</b><small>' + k[3] + '</small></button>').join('');
+}
 
 function tkRender() {
+  tkKpis();
   $('tkChips').innerHTML = TK_CHIPS.map(([k, l]) => {
     const n = TK.filter(t => tkMatch(t, k)).length;
-   return '<button class="chip' + (k === tkFilter ? ' active' : '') + (['due', 'fb', 'lowfb'].indexOf(k) !== -1 && n ? ' chip-red' : '') +
+    return '<button class="chip' + (k === tkFilter ? ' active' : '') + (['due', 'fb', 'lowfb', 'cb'].indexOf(k) !== -1 && n ? ' chip-red' : '') +
       '" data-f="' + k + '" onclick="tkSetFilter(this.dataset.f)">' + l + ' <b>' + n + '</b></button>';
   }).join('');
+  document.querySelectorAll('.vt-toggle button').forEach(b => b.classList.toggle('on', b.dataset.v === TK_VIEW));
 
   const q = $('tkSearch').value.toLowerCase().trim();
   const rows = TK.filter(t => tkMatch(t, tkFilter)).filter(t => !q ||
     [t['Ticket ID'], t['Company Name'], t['Contact Person'], t['Phone'], dealerOf(t), t['City'], t['Complaint'], t['Vehicle Model']].join(' ').toLowerCase().indexOf(q) !== -1
   ).sort((a, b) => idNum(b['Ticket ID']) - idNum(a['Ticket ID']));
 
-  if (!rows.length) { $('tkList').innerHTML = '<div class="empty">' + (TK.length ? 'No matches 🔍' : 'No tickets yet ✅') + '</div>'; return; }
+  $('tkList').className = 'tk-list ' + (TK_VIEW === 'board' ? 'is-board' : 'is-table');
+  if (!rows.length) { $('tkList').innerHTML = '<div class="empty">' + (TK.length ? 'No tickets match this view' : 'No tickets yet') + '</div>'; return; }
+  if (TK_VIEW === 'board') return tkBoard(rows);
 
-  $('tkList').innerHTML = rows.map(t => {
-    const due = isDue(t), calls = parseInt(t['Total Calls'], 10) || 0, items = parseInt(t['Total Items'], 10) || 0;
-    const tags = [];
-    if (t['Battery Sent'] === 'Yes' && REPAIR_SET.indexOf(t['Status']) === -1 && !isEnded(t['Status'])) tags.push('<span class="tag tag-violet">🚚 Battery sent</span>');
-    if (t['Complaint'] && !isEnded(t['Status'])) tags.push('<span class="tag">⚠️ ' + esc(t['Complaint']) + '</span>');
-    if (+t['Previous Tickets']) tags.push('<span class="tag tag-amber" title="Earlier tickets from this phone">🔁 Repeat customer</span>');
-    if (calls) tags.push('<span class="tag">📞 ' + calls + ' call' + (calls > 1 ? 's' : '') + '</span>');
-    if (t['Next Follow-up'] && !isEnded(t['Status'])) tags.push('<span class="tag ' + (due ? 'tag-red' : '') + '">📅 ' + esc(t['Next Follow-up']) + '</span>');
-    if (items) tags.push('<span class="tag tag-teal">📦 ' + items + ' items</span>');
-  if (t['Outcome'] && t['Status'] === 'Closed') tags.push('<span class="tag tag-green">' + esc(t['Outcome']) + '</span>');
-    if (isFbDue(t)) tags.push('<span class="tag tag-amber">⭐ Feedback due</span>');
-    if (t['Rating']) tags.push('<span class="tag ' + (t['Feedback Flag'] === 'Low' ? 'tag-red' : 'tag-green') + '">⭐ ' + esc(t['Rating']) + '/5</span>');
-    if (t['Feedback Flag'] === 'Low') tags.push('<span class="tag tag-red">🔴 Low feedback</span>');
-    if (t['Open Callback']) tags.push('<span class="tag tag-red" title="Customer asked for a call back on the tracking page">📞 Call back · ' + esc(t['Open Callback']) + '</span>');
-    return '<div class="tk-card' + (due || t['Feedback Flag'] === 'Low' || t['Open Callback'] ? ' due' : '') + '" data-id="' + esc(t['Ticket ID']) + '" onclick="drawerOpen(this.dataset.id)">' +
-      '<div class="tk-top"><span class="tk-id">' + esc(t['Ticket ID']) + '</span>' + pill(t['Status']) + '</div>' +
-      '<div class="tk-company">' + esc(t['Company Name']) + '</div>' +
-      '<div class="tk-meta">' + esc(t['Contact Person']) + ' · ' + esc(t['Phone']) + (dealerOf(t) ? ' · 🏪 ' + esc(dealerOf(t)) : '') + (t['City'] ? ' · 📍 ' + esc(t['City']) : '') + '</div>' +
-      '<div class="tk-foot"><div class="tags">' + tags.join('') + '</div><span class="tk-date">' + esc(String(t['Created At'] || '').substring(0, 10)) + '</span></div>' +
-    '</div>';
-  }).join('');
+  const shown = rows.slice(0, TK_LIMIT);
+  $('tkList').innerHTML = '<div class="dt-scroll"><table class="dt"><thead><tr>' +
+    '<th>Ticket</th><th>Customer</th><th class="hide-md">Complaint</th><th class="hide-md">Dealer · City</th><th>Status</th>' +
+    '<th class="hide-sm">Activity</th><th class="hide-sm">Follow-up</th><th class="hide-lg">Flags</th><th class="hide-md">Created</th></tr></thead><tbody>' +
+    shown.map(t => {
+      const d = dueInfo(t), calls = parseInt(t['Total Calls'], 10) || 0, items = parseInt(t['Total Items'], 10) || 0;
+      const late = d.cls || t['Feedback Flag'] === 'Low' || t['Open Callback'];
+      return '<tr class="tk-card' + (late ? ' due' : '') + (t['Ticket ID'] === TK_SEL ? ' sel' : '') + '" data-id="' + esc(t['Ticket ID']) + '" tabindex="0" ' +
+        'onclick="tkPick(this.dataset.id)" ondblclick="drawerOpen(this.dataset.id)" onkeydown="if(event.key===\'Enter\')drawerOpen(this.dataset.id)">' +
+        '<td class="mono tk-id">' + esc(t['Ticket ID']) + '</td>' +
+        '<td class="tk-cust"><b>' + esc(t['Company Name']) + '</b><small>' + esc([t['Contact Person'], t['Phone']].filter(Boolean).join(' · ')) + '</small>' +
+          '<span class="show-lg-no">' + tkFlags(t) + '</span></td>' +
+        '<td class="hide-md">' + tv(t['Complaint']) + '</td>' +
+        '<td class="hide-md">' + tv([dealerOf(t), t['City']].filter(Boolean).join(' · ')) + '</td>' +
+        '<td>' + pill(t['Status']) + (t['Outcome'] && t['Status'] === 'Closed' ? '<small class="sub">' + esc(t['Outcome']) + '</small>' : '') + '</td>' +
+        '<td class="hide-sm muted-c">' + ([items && items + ' item' + (items > 1 ? 's' : ''), calls && calls + ' call' + (calls > 1 ? 's' : '')].filter(Boolean).join(' · ') || '—') + '</td>' +
+        '<td class="hide-sm ' + d.cls + '">' + (d.txt ? esc(d.txt) : '<span class="muted-c">—</span>') + '</td>' +
+        '<td class="hide-lg"><div class="tags">' + tkFlags(t) + '</div></td>' +
+        '<td class="hide-md muted-c">' + esc(shortDate(t['Created At'])) + '</td></tr>';
+    }).join('') + '</tbody></table></div>' +
+    '<div class="dt-foot"><span>Showing ' + shown.length + ' of ' + rows.length + '</span>' +
+    (rows.length > shown.length ? '<button class="btn btn-ghost btn-sm" onclick="TK_LIMIT += 50; tkRender()">Show 50 more</button>' : '') + '</div>';
+  if (TK_SEL) tkPrevRender();
+}
+
+const TK_BOARD = [['New', 'New'], ['In Follow-up', 'Follow-up'], ['In Transit', 'In transit'], ['Received', 'Received'], ['In Repair', 'In repair'],
+  ['Partial Dispatch', 'Partial dispatch'], ['Closed', 'Closed'], ['Cancelled', 'Cancelled']];
+function tkBoard(rows) {
+  const cols = TK_BOARD.filter(([s]) => !isEnded(s) || rows.some(t => t['Status'] === s));
+  $('tkList').innerHTML = '<div class="kb">' + cols.map(([s, l]) => {
+    const L = rows.filter(t => t['Status'] === s);
+    return '<section class="kb-col"><div class="kb-head"><span class="kb-dot t-' + (STATUS_TONE[s] || 'blue') + '"></span>' + l + '<span class="kb-n">' + L.length + '</span></div>' +
+      (L.length ? L.slice(0, 60).map(t => {
+        const d = dueInfo(t), items = parseInt(t['Total Items'], 10) || 0;
+        return '<div class="kb-card tk-card' + (d.cls || t['Open Callback'] ? ' due' : '') + (t['Ticket ID'] === TK_SEL ? ' sel' : '') + '" data-id="' + esc(t['Ticket ID']) + '" tabindex="0" ' +
+          'onclick="tkPick(this.dataset.id)" ondblclick="drawerOpen(this.dataset.id)" onkeydown="if(event.key===\'Enter\')drawerOpen(this.dataset.id)">' +
+          '<div class="kb-top"><span class="mono">' + esc(t['Ticket ID']) + '</span>' + (d.txt ? '<span class="' + d.cls + '">' + esc(d.txt) + '</span>' : '') + '</div>' +
+          '<b>' + esc(t['Company Name']) + '</b>' +
+          '<small>' + esc([t['Complaint'], t['City']].filter(Boolean).join(' · ') || t['Contact Person'] || '') + '</small>' +
+          '<div class="tags">' + (items ? '<span class="tag">' + items + ' item' + (items > 1 ? 's' : '') + '</span>' : '') + tkFlags(t) + '</div></div>';
+      }).join('') + (L.length > 60 ? '<div class="muted-sm">+' + (L.length - 60) + ' more — use search</div>' : '') : '<div class="kb-empty">Nothing here</div>') +
+      '</section>';
+  }).join('') + '</div>';
+  if (TK_SEL) tkPrevRender();
+}
+
+// click = quick preview on the right (wide screens) · double-click / Enter / small screens = full record
+function tkPick(id) {
+  if (window.innerWidth < 1180) return drawerOpen(id);
+  TK_SEL = id;
+  document.querySelectorAll('#tkList .tk-card').forEach(r => r.classList.toggle('sel', r.dataset.id === id));
+  tkPrevRender(true);
+}
+function tkPrevClose() {
+  TK_SEL = '';
+  const p = $('tkPrev'); if (!p) return;
+  p.hidden = true; p.innerHTML = '';
+  document.querySelector('.tk-wrap') && document.querySelector('.tk-wrap').classList.remove('has-prev');
+  document.querySelectorAll('#tkList .tk-card.sel').forEach(r => r.classList.remove('sel'));
+}
+function tkPrevRender(fetch) {
+  const t = TK.find(x => x['Ticket ID'] === TK_SEL);
+  if (!t) return tkPrevClose();
+  const d = dueInfo(t), ph = String(t['Phone'] || '').replace(/\D/g, ''), seq = ++_pvSeq;
+  const F = (l, v, cls) => '<div><span>' + l + '</span><b' + (cls ? ' class="' + cls + '"' : '') + '>' + (v || '—') + '</b></div>';
+  $('tkPrev').innerHTML =
+    '<div class="pv-top"><span class="mono">' + esc(t['Ticket ID']) + '</span>' + pill(t['Status']) +
+      '<button class="x-btn" onclick="tkPrevClose()" aria-label="Close preview">' + ico('x') + '</button></div>' +
+    '<h3 class="pv-co">' + esc(t['Company Name']) + '</h3>' +
+    '<div class="pv-sub">' + esc(t['Contact Person'] || '') + (ph ? ' · <a href="tel:' + esc(ph) + '">' + esc(t['Phone']) + '</a>' : '') + '</div>' +
+    '<div class="pv-act">' +
+      (can('service') ? '<button class="btn btn-primary btn-sm" data-id="' + esc(t['Ticket ID']) + '" onclick="pvLogCall(this.dataset.id)">' + ico('phone') + 'Log call</button>' : '') +
+      '<button class="btn btn-ghost btn-sm" data-id="' + esc(t['Ticket ID']) + '" onclick="drawerOpen(this.dataset.id)">' + ico('open') + 'Open record</button>' +
+      (ph ? '<a class="btn btn-ghost btn-sm" href="tel:' + esc(ph) + '">Call</a>' : '') +
+    '</div>' +
+    (t['Open Callback'] ? '<div class="note note-red">Customer asked for a call back — ' + esc(t['Open Callback']) + '</div>' : '') +
+    (t['Feedback Flag'] === 'Low' ? '<div class="note note-red">Low feedback — call the customer and save a call log.</div>' : '') +
+    '<div class="pv-grid">' +
+      F('Complaint', esc(t['Complaint'])) + F('Dealer', esc(dealerOf(t))) +
+      F('City', esc([t['City'], t['State']].filter(Boolean).join(', '))) + F('Vehicle', esc(t['Vehicle Model'])) +
+      F('Next follow-up', esc(d.txt), d.cls) + F('Last call', esc(t['Last Call At'] ? shortDate(t['Last Call At']) + String(t['Last Call At']).substring(10, 16) : '')) +
+      F('Calls · Items', esc((+t['Total Calls'] || 0) + ' · ' + (+t['Total Items'] || 0))) + F('Created', esc(shortDate(t['Created At']) + (t['Created By'] ? ' · ' + t['Created By'] : ''))) +
+    '</div>' +
+    '<div class="pv-h">Recent calls</div><div id="pvCalls"><div class="skeleton" style="height:56px"></div></div>';
+  $('tkPrev').hidden = false;
+  document.querySelector('.tk-wrap').classList.add('has-prev');
+  const show = r => {
+    if (seq !== _pvSeq || !$('pvCalls')) return;
+    const calls = (r.calls || []).slice(-3).reverse();
+    $('pvCalls').innerHTML = calls.length ? calls.map(c => '<div class="pv-call"><div><b>' + esc(c['Attended By'] || c['Logged By'] || 'Call') + '</b><span>' + esc(c['Time'] || '') + '</span></div>' +
+      '<p>' + esc(c['Notes'] || '') + '</p>' + (c['Next Follow-up'] ? '<small>Next follow-up: ' + esc(c['Next Follow-up']) + '</small>' : '') + '</div>').join('')
+      : '<div class="muted-sm">No calls logged yet.</div>';
+  };
+  const m = memGet('tk_' + t['Ticket ID']);
+  if (m) show(m);
+  if (!fetch && m) return;
+  api({ action: 'getTicket', ticketId: t['Ticket ID'] }).then(r => { if (r && r.ok) { memPut('tk_' + t['Ticket ID'], r); show(r); } else if (!m && seq === _pvSeq && $('pvCalls')) $('pvCalls').innerHTML = '<div class="muted-sm">Could not load calls.</div>'; })
+    .catch(() => { if (!m && seq === _pvSeq && $('pvCalls')) $('pvCalls').innerHTML = '<div class="muted-sm">Could not load calls.</div>'; });
+}
+async function pvLogCall(id) {
+  await drawerOpen(id);
+  const f = $('callForm');
+  if (f && f.style.display === 'none') callFormToggle();
 }
 
 /* ============================================================
@@ -1549,9 +1740,7 @@ function applySettings(S) {
     if (nav.length) R.nav = navList(nav);
   }
   if (R && $('appWrap').style.display !== 'none') {
-    $('sbNav').innerHTML = R.nav.map(k =>
-      '<button class="sb-item' + (k === CURRENT ? ' active' : '') + '" data-nav="' + k + '" onclick="go(this.dataset.nav)"><span class="sb-ico">' + SCREENS[k].icon + '</span>' + SCREENS[k].label + '</button>'
-    ).join('');
+    navRender(R.nav);
     if (CURRENT && R.nav.indexOf(CURRENT) === -1) go(R.nav[0]);
   }
 }
@@ -1722,7 +1911,7 @@ function idChip(id, old) {
 function lk(type, id, tid, text) {
   if (!id) return '<span class="muted-txt">—</span>';
   return '<button type="button" class="lk" data-t="' + type + '" data-i="' + esc(id) + '" data-k="' + esc(tid || '') + '" onclick="lkGo(this,event)">' +
-    '<span class="lk-ico">' + (REC_ICO[type] || '') + '</span>' + esc(text || id) + '</button>';
+    esc(text || id) + '</button>';
 }
 function lkGo(el, e) { if (e) { e.stopPropagation(); e.preventDefault(); } openRecord(el.dataset.t, el.dataset.i, el.dataset.k); }
 // key/value rows where the value is already HTML (lookups)
@@ -1861,7 +2050,7 @@ function renderRecord() {
 }
 
 /* ---------- compat: old callers ---------- */
-function drawerOpen(id) { openRecord('ticket', id, id, { fresh: true, reload: true }); }
+function drawerOpen(id) { return openRecord('ticket', id, id, { fresh: true, reload: true }); }
 function drawerReload() { if (REC) openRecord(REC.type, REC.id, REC.tid, { reload: true }); }
 function drawerRender() { renderRecord(); }
 
