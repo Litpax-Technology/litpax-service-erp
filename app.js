@@ -1,5 +1,5 @@
 /* ============================================================
-   LITPAX SERVICE HUB v9 — app.js  (record pages: Customer › Ticket › Pickup / Repair Job › Item › Dispatch)
+   LITPAX SERVICE HUB v10 — app.js  (record pages: Customer › Ticket › Pickup / Repair Job › Item › Dispatch)
    One Ticket ID → Phase 1 (Basic) → Phase 2 (Service/CRM) → Phase 3 (Repair)
    ============================================================ */
 
@@ -940,7 +940,8 @@ function mapItem(it) {
     status: it['Item Status'], planDate: String(it['Plan Date'] || '').substring(0, 10), planned: it['Planned'] === 'Yes',
     stageAt: it['Stage Updated At'], customer: it['Customer'] || '', category: it['Category'] || '',
     serial: it['Serial No'] || '', warranty: it['Warranty'] || '', repeat: parseInt(it['Repeat Count'], 10) || 0,
-    fault: it['Fault Code'] || '', cost: it['Repair Cost'] === '' || it['Repair Cost'] == null ? '' : it['Repair Cost']
+    fault: it['Fault Code'] || '', cost: it['Repair Cost'] === '' || it['Repair Cost'] == null ? '' : it['Repair Cost'],
+    result: it['Repair Result'] || '', replacementId: it['Replacement ID'] || ''
   };
 }
 // "🔋 Battery · 2 Wheeler · LFP-48V"
@@ -961,7 +962,7 @@ async function boardLoad(force) {
 }
 
 function boardRender() {
-  const live = it => String(it.status).toLowerCase() !== 'dispatched';
+  const live = it => !itemDone(it.status);
   const pending = boardItems.filter(it => live(it) && !it.planned);
   const df = $('boardDateFilter').value;
   const active = boardItems.filter(it => live(it) && it.planned && (!df || it.planDate === df));
@@ -994,6 +995,9 @@ function boardRender() {
         (it.warranty ? '<span>' + esc(it.warranty) + '</span>' : '') + '</div>' +
       '<button type="button" class="bc-fault' + (it.fault ? '' : ' empty') + '" data-id="' + esc(it.itemId) + '" onclick="itemInfoOpen(this.dataset.id)">' +
         (it.fault ? '🔎 ' + esc(it.fault) + (it.cost !== '' ? ' · ' + rupee(it.cost) : '') : '＋ Add fault code &amp; cost') + '</button>' +
+      '<button type="button" class="bc-fault bc-report' + (it.result ? '' : ' empty') + '" data-id="' + esc(it.itemId) + '" data-t="' + esc(it.ticketId) + '" onclick="reportOpen(this.dataset.id, this.dataset.t)">' +
+        (it.result ? '🧾 ' + esc(it.result) + (it.cost !== '' && it.cost != null ? ' · ' + rupee(it.cost) : '') : '🧾 Repair report — needed before ' + esc(STAGES[last])) + '</button>' +
+      (it.replacementId ? '<div class="bc-info"><span class="tag tag-violet">🔁 Exchange · ' + esc(it.replacementId) + '</span></div>' : '') +
       '<div class="bc-prog"><div style="width:' + pct + '%"></div></div>' +
       '<div class="bc-lbl">' + (inPlan ? 'In Planning — pick a stage' : 'Stage ' + (idx + 1) + '/' + STAGES.length + (idx === last ? ' · Ready ✅' : '')) + '</div>' +
       '<select data-id="' + esc(it.itemId) + '" onchange="boardSetStage(this.dataset.id, this.value)">' +
@@ -1054,6 +1058,9 @@ async function boardRemovePlan(itemId) {
 async function boardSetStage(itemId, stage) {
   if (!stage) return;
   const it = boardItems.find(x => x.itemId === itemId);
+  if (stage === STAGES[STAGES.length - 1] && it && !it.result) {   // report first
+    boardRender(); toast('🧾 Fill the Repair Report first'); return reportOpen(itemId, it.ticketId);
+  }
   const prev = it ? it.status : '';
   if (it) { it.status = stage; it.stageAt = 'just now'; boardRender(); }
   const r = await run({ action: 'updateStage', itemId, stage });
@@ -1073,6 +1080,7 @@ function openDispatch() {
   $('d_by').innerHTML = optList(M().dispatchedBy, $('d_by').value, '-- Select name --');
   ensureMasters().then(() => { $('d_by').innerHTML = optList(M().dispatchedBy, $('d_by').value, '-- Select name --'); });
   dispLoad(true);
+  replLoadDispatch();
 }
 
 async function dispLoad() {
@@ -1081,7 +1089,7 @@ async function dispLoad() {
     const r = await api({ action: 'getItems' });
     if (!r || !r.ok) { toast('❌ ' + ((r && r.msg) || 'Could not load')); return; }
     const last = STAGES[STAGES.length - 1];
-    dispItems = (r.items || []).map(mapItem).filter(it => it.status === last);
+    dispItems = (r.items || []).map(mapItem).filter(it => it.status === last && !it.replacementId);   // exchanged batteries go to stock, not to the customer
     dispSel = {}; dispRender();
   } catch (e) { if (e !== 'auth') $('dList').innerHTML = '<div class="empty">Could not load data ❌</div>'; }
 }
@@ -1115,7 +1123,7 @@ async function dispSubmit() {
   if (!ids.length) return toast('⚠️ Select at least one item');
   const d = {
     action: 'dispatch', itemIds: JSON.stringify(ids), dispatchDate: $('d_date').value, dispatchedBy: $('d_by').value.trim(),
-    transport: $('d_transport').value.trim(), charges: $('d_cost').value.trim(), actualProblem: $('d_problem').value.trim(),
+    transport: $('d_transport').value.trim(), lr: $('d_lr').value.trim(), charges: $('d_cost').value.trim(), actualProblem: $('d_problem').value.trim(),
     address: $('d_address').value.trim(), remarks: $('d_remarks').value.trim()
   };
   if (!d.dispatchDate) return toast('⚠️ Enter dispatch date');
@@ -1129,7 +1137,7 @@ const sel = dispItems.filter(it => dispSel[it.itemId]);
   let tk = null;
   try { const g = await api({ action: 'getTicket', ticketId: (r.tickets || [])[0] }); if (g && g.ok) tk = g.ticket; } catch (e) {}
   dispSlip(sel, d, r, tk);
-  ['d_transport', 'd_cost', 'd_problem', 'd_address', 'd_remarks'].forEach(id => { $(id).value = ''; });
+  ['d_transport', 'd_lr', 'd_cost', 'd_problem', 'd_address', 'd_remarks'].forEach(id => { $(id).value = ''; });
   cacheDel('board_items'); cacheDel('tickets'); cacheDel('tracker');
   dispLoad();
 }
@@ -1181,7 +1189,9 @@ const MST_LISTS = [
   ['checks',       'Troubleshooting', 'Checklist in the call log',             '🧰'],
   ['callFix',      'Call Fix',      'What solved it on call',                  '✅'],
   ['condition',    'Condition',     'Item condition when received',            '📦'],
-  ['accessory',    'Accessory',     'Things received along with the items',    '🔌']
+  ['accessory',    'Accessory',     'Things received along with the items',    '🔌'],
+  ['rootCause',    'Root Cause',    'What was faulty — Repair Report',         '🧩'],
+  ['sparePart',    'Spare Part',    'Parts in the Repair Report — add the rate like "BMS 13S 30A | 650"', '🔩']
 ];
 
 function openMasters() {
@@ -1304,7 +1314,7 @@ function trkModel(t) {
 
   const items = (t.items || []).map(it => {
     const ev = it.events || [], times = n => ev.filter(e => e.e === n).map(e => tsOf(e.t)).filter(Boolean);
-    const isDisp = String(it.status || '').toLowerCase() === 'dispatched';
+    const isDisp = itemDone(it.status);
     const planned = times('Planned').sort((a, b) => a - b)[0] || 0;
     const qc = times(last).sort((a, b) => b - a)[0] || 0;
     const disp = times('Dispatched').sort((a, b) => b - a)[0] || 0;
@@ -1695,8 +1705,8 @@ async function refreshModels(btn) {
    Every ID is a link → its own page with lookups (parent records), details, related lists and history.
    Customer › Ticket › Pickup / Repair Job › Item › Dispatch
    ============================================================ */
-const REC_ICO = { customer: '👤', ticket: '🎫', call: '📞', pickup: '🚚', receipt: '🧰', item: '🔋', dispatch: '📦', feedback: '⭐', whatsapp: '📲' };
-const REC_LABEL = { customer: 'Customer', ticket: 'Ticket', call: 'Call', pickup: 'Pickup', receipt: 'Repair Job', item: 'Item', dispatch: 'Dispatch', feedback: 'Feedback', whatsapp: 'WhatsApp' };
+const REC_ICO = { customer: '👤', ticket: '🎫', call: '📞', pickup: '🚚', receipt: '🧰', item: '🔋', dispatch: '📦', feedback: '⭐', whatsapp: '📲', replacement: '🔁' };
+const REC_LABEL = { customer: 'Customer', ticket: 'Ticket', call: 'Call', pickup: 'Pickup', receipt: 'Repair Job', item: 'Item', dispatch: 'Dispatch', feedback: 'Feedback', whatsapp: 'WhatsApp', replacement: 'Replacement' };
 let REC = null, REC_HIST = [], CUST = null, _recSeq = 0;
 // tickets / customers opened in this session — shown instantly next time, then refreshed in the background
 const REC_MEM = {};
@@ -1754,10 +1764,11 @@ function itemLine(it, tid) {
     esc([it['Category'], it['Model']].filter(Boolean).join(' · ')) +
     '<small>' + esc([it['Model Source'] === 'Other' && 'Other company: ' + it['Brand'], it['Serial No'] && 'SN ' + it['Serial No'], it['Warranty'],
       it['Condition'] && 'Arrived: ' + it['Condition'], it['Fault Code'] && 'Fault: ' + it['Fault Code']].filter(Boolean).join(' · ')) + '</small>' +
-    '<span class="im-links">' + idChip(it['Receipt ID']) + idChip(it['Dispatch ID']) + '</span>' + repeatTag(it['Repeat Count']) +
+    '<span class="im-links">' + idChip(it['Receipt ID']) + idChip(it['Dispatch ID']) + idChip(it['Replacement ID']) + '</span>' + repeatTag(it['Repeat Count']) +
+    (it['Repair Result'] ? '<span class="tag' + (it['Repair Result'] === 'Replace' ? ' tag-violet' : it['Repair Result'] === 'Repaired' ? ' tag-green' : '') + '">' + esc(it['Repair Result']) + (it['Repair Cost'] !== '' && it['Repair Cost'] != null ? ' · ' + esc(rupee(it['Repair Cost'])) : '') + '</span>' : '') +
     '</span>' + pill(it['Item Status']) + '</div>';
 }
-const isDisp = it => String(it['Item Status']).toLowerCase() === 'dispatched';
+const isDisp = it => itemDone(it['Item Status']);   // dispatched, or (exchanged) moved to stock / production / scrap
 const openPickup = () => (CUR && CUR.pickups || []).filter(p => p['Status'] === 'Arranged').pop() || null;
 
 // old tickets (not migrated) → one pickup / repair job built from the old ticket columns
@@ -1845,7 +1856,7 @@ function renderRecord() {
   $('drTitle').innerHTML = (REC_HIST.length ? '<button class="rp-back" onclick="recBack()" title="Back">←</button>' : '') +
     '<div class="crumbs">' + cr.map((x, i) => i === cr.length - 1 ? '<b>' + esc(x[3]) + '</b>' : lk(x[0], x[1], x[2], x[3])).join('<span class="crumb-sep">›</span>') + '</div>';
   const R = { ticket: renderTicket, customer: renderCustomer, call: renderCall, pickup: renderPickup, receipt: renderReceipt,
-              item: renderItem, dispatch: renderDispatch, feedback: renderFeedback, whatsapp: renderTicket };
+              item: renderItem, dispatch: renderDispatch, feedback: renderFeedback, whatsapp: renderTicket, replacement: renderReplacement };
   (R[REC.type] || renderTicket)();
 }
 
@@ -1867,7 +1878,7 @@ function qtyBox() {
       (short ? '<span class="tag tag-red">⚠️ ' + short + ' short</span>' : (got && out === got ? '<span class="tag tag-green">✓ all out</span>' : '')) + '</td></tr>';
   };
   const th = (l, sh) => '<th><span class="lg">' + l + '</span><span class="sm">' + sh + '</span></th>';
-  return '<table class="qty-box"><tr><th></th>' + th('Expected', 'Exp.') + th('Received', 'Rcvd') + th('In repair', 'Repair') + th('Dispatched', 'Out') + '<th></th></tr>' +
+  return '<table class="qty-box"><tr><th></th>' + th('Expected', 'Exp.') + th('Received', 'Rcvd') + th('In repair', 'Repair') + th('Done', 'Done') + '<th></th></tr>' +
     row('🔋 Battery', 'Battery', eb) + row('⚡ Charger', 'Charger', ec) + '</table>';
 }
 
@@ -1877,7 +1888,7 @@ function renderTicket() {
   const inRepair = ['Received', 'In Repair', 'Partial Dispatch'].indexOf(s) !== -1;
   const calls = CUR.calls || [], items = CUR.items || [], hist = CUR.history || [], dsp = CUR.dispatches || [], fbs = CUR.feedback || [];
   const pks = pickupsOf(), rcs = receiptsOf(), bats = items.filter(i => i['Item Type'] !== 'Charger'), chgs = items.filter(i => i['Item Type'] === 'Charger');
-  const cu = CUR.customer;
+  const cu = CUR.customer, rpl = CUR.replacements || [];
 
   let h = recHead('ticket', t['Ticket ID'], pill(s), [
     ['Customer', t['Customer ID'] ? lk('customer', t['Customer ID'], '', t['Company Name']) : tv(t['Company Name'])],
@@ -1899,6 +1910,7 @@ function renderTicket() {
     else if (early || s === 'In Transit') b.push('<button class="btn btn-violet" onclick="pickupOpen()">🚚 ' + (s === 'In Transit' ? 'Edit Pickup' : 'Arrange Pickup') + '</button>');
     else if (inRepair) b.push('<button class="btn btn-ghost" onclick="pickupOpen()">➕ Another Pickup</button>');
     if (opk || s === 'In Transit' || (sent && early)) b.push('<button class="btn btn-teal" onclick="receiveOpen()">📥 Mark Received' + (opk ? ' — ' + esc(opk['Pickup ID']) : '') + '</button>');
+    if (open) b.push('<button class="btn btn-ghost" onclick="replOpen()">🔁 Advance Replacement</button>');
     if (open) b.push('<button class="btn btn-ghost" onclick="editOpen()">✏️ Edit details</button>');
     if (early || (s === 'In Transit' && !items.length)) b.push('<button class="btn btn-ghost btn-danger" onclick="cancelOpen()">🚫 Cancel ticket</button>');
     h += '<div class="dsec actions">' +
@@ -1913,7 +1925,7 @@ function renderTicket() {
 
   h += tabsHtml([['overview', 'Overview'], ['calls', 'Calls', calls.length], ['pickups', 'Pickups', pks.length], ['jobs', 'Repair Jobs', rcs.length],
     ['batteries', '🔋 Batteries', bats.length], ['chargers', '⚡ Chargers', chgs.length], ['dispatches', 'Dispatches', dsp.length],
-    ['feedback', 'Feedback', fbs.length || (t['Rating'] ? 1 : 0)], ['history', 'History', hist.length]]);
+    ['replacements', '🔁 Replacements', rpl.length], ['feedback', 'Feedback', fbs.length || (t['Rating'] ? 1 : 0)], ['history', 'History', hist.length]]);
 
   let body = '';
   if (DR_TAB === 'overview') {
@@ -1968,6 +1980,12 @@ function renderTicket() {
     if (was.length) body += sec('📲 WhatsApp sent (' + was.length + ')', '<div class="timeline">' + was.slice().reverse().map(w =>
       '<div class="tl-item"><div class="tl-head"><b>' + idChip(w.id, !w.id) + ' ' + esc(w.e) + '</b><span>' + esc(w.t) + (w.b ? ' · ' + esc(w.b) : '') + '</span></div></div>').join('') + '</div>');
   }
+  if (DR_TAB === 'replacements') body += rpl.length ? rpl.slice().reverse().map(x => recCard(x['Replacement ID'], '🔁 ' + esc(x['Type']),
+      '<span class="pill pill-' + ({ 'Pending Approval': 'amber', 'Requested': 'blue', 'Dispatched': 'violet', 'Closed': 'green' }[x['Status']] || 'gray') + '">' + esc(x['Status']) + '</span>',
+      '<div class="rec-meta">' + esc([x['Old Model'], x['Warranty'], x['New Serial'] && 'new SN ' + x['New Serial'], x['Dispatch Date'] && 'sent ' + niceDate(x['Dispatch Date'])].filter(Boolean).join(' · ')) + '</div>' +
+      '<div class="rec-meta">Old battery: ' + (x['Against Item ID'] ? esc(x['Against Item ID']) + (x['Old Outcome'] ? ' → ' + esc(x['Old Outcome']) : ' · with us') : '<b>not received yet</b>') + '</div>',
+      0, ['replacement', x['Replacement ID'], t['Ticket ID']])).join('')
+    : '<div class="empty sm">No replacements. Use <b>🔁 Advance Replacement</b> to send a new battery before the old one arrives, or choose "Replace" in an item\'s Repair Report.</div>';
   if (DR_TAB === 'history') body += histList(hist);
   h += '<div class="dr-tab-body">' + body + '</div>';
   if (!cancelled) h += waSection();
@@ -2062,8 +2080,14 @@ function renderItem() {
     [['Ticket', tkLk()], ['Customer', custLk()], ['Repair Job', it['Receipt ID'] ? lk('receipt', it['Receipt ID'], REC.tid) : tv('')],
      ['Dispatch', it['Dispatch ID'] ? lk('dispatch', it['Dispatch ID'], REC.tid) : tv('')]],
     (it['Item Type'] === 'Charger' ? '⚡ ' : '🔋 ') + esc([it['Category'], it['Model']].filter(Boolean).join(' · ')) + (+it['Repeat Count'] ? ' · ' + repeatTag(it['Repeat Count']) : ''));
-  if (can('service')) h += '<div class="rp-actions"><button class="btn btn-ghost btn-sm" data-id="' + esc(it['Item ID']) + '" onclick="itemEditOpen(this.dataset.id)">✏️ Correct details</button></div>';
-  h += tabsHtml([['details', 'Details'], ['stages', 'Stage history', log.length], ['visits', 'Earlier visits', earlier.length], ['history', 'History', recHistory(it['Item ID']).length]]);
+  const ab = [], done = itemDone(it['Item Status']);
+  if (can('repair') && !done) ab.push('<button class="btn btn-primary btn-sm" data-id="' + esc(it['Item ID']) + '" onclick="reportOpen(this.dataset.id)">🧾 ' + (it['Repair Result'] ? 'Edit' : 'Fill') + ' Repair Report</button>');
+  if (can('repair') && !done && it['Replacement ID']) ab.push('<button class="btn btn-ghost btn-sm" data-id="' + esc(it['Item ID']) + '" onclick="stockOpen(this.dataset.id)">📦 Move to stock</button>');
+  if (can('service')) ab.push('<button class="btn btn-ghost btn-sm" data-id="' + esc(it['Item ID']) + '" onclick="itemEditOpen(this.dataset.id)">✏️ Correct details</button>');
+  if (it['Replacement ID']) h += '<div class="note">🔁 Exchanged battery — the customer gets a new one through ' + lk('replacement', it['Replacement ID'], REC.tid) + '. This battery is not sent back: after repair it goes to <b>Refurbished stock</b>, <b>Production</b> or <b>Scrap</b>.</div>';
+  if (ab.length) h += '<div class="rp-actions">' + ab.join('') + '</div>';
+  const myParts = (CUR.parts || []).filter(p => p['Item ID'] === it['Item ID']);
+  h += tabsHtml([['details', 'Details'], ['report', 'Repair Report', it['Repair Result'] ? 1 : 0], ['stages', 'Stage history', log.length], ['visits', 'Earlier visits', earlier.length], ['history', 'History', recHistory(it['Item ID']).length]]);
   let body = '';
   if (DR_TAB === 'details') {
     body += sec('🔋 Item', kvh([['Type', tv(it['Item Type'])], ['Category', tv(it['Category'])], ['Model', tv(it['Model'])],
@@ -2076,6 +2100,11 @@ function renderItem() {
     if (it['Dispatch ID'] || it['Dispatch Date']) body += sec('📦 Dispatch', kvh([['Dispatch', it['Dispatch ID'] ? lk('dispatch', it['Dispatch ID'], REC.tid) : tv('')],
       ['Date', tv(niceDate(it['Dispatch Date']))], ['Transport', tv(it['Transport (Outward)'])], ['By', tv(it['Dispatched By'])]]));
   }
+  if (DR_TAB === 'report') body += it['Repair Result'] ? sec('🧾 Repair Report', kvh([['Result', esc(it['Repair Result'])], ['Root cause', tv(it['Root Cause'])], ['Details', tv(it['Repair Notes'])],
+      ['Parts cost', tv(rupee(it['Parts Cost']))], ['Labour', tv(rupee(it['Labour']))], ['Repair cost', '<b>' + tv(rupee(it['Repair Cost'])) + '</b>'], ['By', tv((it['Report By'] || '') + ' · ' + (it['Report At'] || ''))]]) +
+      (myParts.length ? '<table class="as-table"><tr><th>ID</th><th>Part</th><th>Qty</th><th>Rate</th><th>Amount</th></tr>' + myParts.map(p => '<tr><td>' + idChip(p['Part Use ID']) + '</td><td>' + esc(p['Part']) + '</td><td>' + esc(p['Qty']) +
+        '</td><td>' + esc(rupee(p['Rate'])) + '</td><td>' + esc(rupee(p['Amount'])) + '</td></tr>').join('') + '</table>' : '<div class="muted-sm">No parts used</div>'))
+    : '<div class="empty sm">No repair report yet' + (can('repair') ? ' — fill it before ' + esc(STAGES[STAGES.length - 1]) : '') + '</div>';
   if (DR_TAB === 'stages') body += log.length ? '<div class="timeline">' + log.map(l =>
       '<div class="tl-item"><div class="tl-head"><b>' + idChip(l['Log ID'], !l['Log ID']) + ' ' + esc(l['Event']) + '</b><span>' + esc(l['Time']) + ' · ' + esc(l['By']) + '</span></div>' +
       (l['Plan Date'] ? '<div class="muted-sm">Plan date ' + esc(l['Plan Date']) + '</div>' : '') + '</div>').join('') + '</div>' : '<div class="empty sm">No stage changes yet</div>';
@@ -2164,6 +2193,14 @@ const REC_LISTS = {
   callbacks: { label: '📞 Call-backs', type: 'ticket', id: 'Callback ID', open: 'Ticket ID',
     cols: [['Ticket', r => esc(r['Ticket ID'])], ['Customer', r => esc([r['Customer'], r['Phone']].filter(Boolean).join(' · '))], ['When', r => esc(r['Preferred Time'])],
            ['Asked', r => esc(String(r['Requested At']).substring(0, 16))], ['Status', r => pill(r['Status'] === 'Open' ? 'Open' : 'Done')]] },
+  replacements: { label: '🔁 Replacements', type: 'replacement', id: 'Replacement ID',
+    cols: [['Ticket', r => esc(r['Ticket ID'])], ['Customer', r => esc(r['Customer'])], ['Battery', r => esc([r['Old Model'], r['New Serial'] && '→ ' + r['New Serial']].filter(Boolean).join(' '))],
+           ['Old battery', r => esc(r['Against Item ID'] ? (r['Old Outcome'] || 'with us') : 'not received')], ['Status', r => pill(r['Status'])]] },
+  stock: { label: '♻️ Refurb stock', type: 'item', id: 'Stock ID', open: 'Item ID',
+    cols: [['Battery', r => esc([r['Category'], r['Model']].filter(Boolean).join(' · '))], ['Serial', r => esc(r['Serial No'])], ['From', r => esc(r['Item ID'])],
+           ['Added', r => esc(niceDate(r['Added At']))], ['Status', r => pill(r['Status']) + (r['Issued RPL'] ? ' ' + esc(r['Issued RPL']) : '')]] },
+  parts: { label: '🔩 Parts used', type: 'item', id: 'Part Use ID', open: 'Item ID',
+    cols: [['Part', r => esc(r['Part'])], ['Qty', r => esc(r['Qty'])], ['Amount', r => esc(rupee(r['Amount']))], ['Item', r => esc(r['Item ID'])], ['Customer', r => esc(r['Customer'])]] },
   dispatches: { label: '📦 Dispatches', type: 'dispatch', id: 'Dispatch ID',
     cols: [['Ticket', r => esc(r['Ticket ID'])], ['Customer', r => esc(r['Customer'])], ['Date', r => esc(niceDate(r['Dispatch Date']))],
            ['Items', r => esc(itemsText(+r['Batteries'] || 0, +r['Chargers'] || 0))], ['Transport', r => esc(r['Transport'])]] }
@@ -2216,10 +2253,12 @@ const AS_CMDS = [
   ['repeat',   /\b(repeat|dobara|again|baar baar)\b/i,                                          '🔁 Repeat batteries'],
   ['model',    /\b(model|models)\b/i,                                                           '🔋 Model-wise'],
   ['open',     /\b(open|chalu|active)\s*tickets?\b/i,                                           '🎫 Open tickets'],
+  ['returns',  /\b(pending returns?|old battery|purani battery|not returned|return pending)\b/i,  '♻️ Pending returns'],
+  ['tosend',   /\b(replacements?( to send)?|replace|exchange)\b/i,                         '🔁 Replacements to send'],
   ['stuck',    /\b(stuck|old|aging|ageing|purane|pending repair|repair pending|days?|din)\b/i, '🔧 Stuck in repair'],
   ['summary',  /\b(summary|today|aaj|snapshot|dashboard|overview|report)\b/i,              '📊 Today']
 ];
-const AS_CHIPS = ['summary', 'callback', 'due', 'sla', 'stuck', 'recv', 'disp', 'lowfb'];
+const AS_CHIPS = ['summary', 'callback', 'due', 'sla', 'stuck', 'tosend', 'returns', 'recv', 'disp', 'lowfb'];
 
 function asBoot() {
   if ($('asFab')) return;
@@ -2322,7 +2361,7 @@ async function asAnswer(k, q) {
     '<li><b>today / summary</b> — today at a glance</li><li><b>call-backs</b> — customers who asked us to call</li>' +
     '<li><b>follow-ups due</b>, <b>sla late</b>, <b>in transit</b></li><li><b>stuck 5 days</b> — items in repair longer than N days</li>' +
     '<li><b>received today / yesterday</b>, <b>dispatched this week</b></li><li><b>low feedback</b>, <b>feedback due</b>, <b>repeat batteries</b></li>' +
-    '<li><b>model 48V</b> — items of a model and where they are</li><li>any <b>name, city, dealer, complaint</b> — matching tickets</li>' +
+    '<li><b>replacements</b> to send, <b>pending returns</b> (old battery not back)</li><li><b>model 48V</b> — items of a model and where they are</li><li>any <b>name, city, dealer, complaint</b> — matching tickets</li>' +
     '<li>any <b>ID, phone or serial no.</b> — opens it</li></ul><div class="muted-sm">Shortcut: Ctrl + K</div>';
 
   if (k === 'summary') {
@@ -2344,6 +2383,14 @@ async function asAnswer(k, q) {
     const C = (await asGet('callbacks')).filter(c => c['Status'] === 'Open');
     return asRows('Open call-back requests', C.map(c => ({ t: 'ticket', id: c['Ticket ID'], tid: c['Ticket ID'], main: c['Customer'] + ' · ' + c['Phone'],
       sub: c['Preferred Time'] + ' · asked ' + String(c['Requested At']).substring(0, 16) + (c['Message'] ? ' · “' + c['Message'] + '”' : ''), right: idChip(c['Callback ID']) })));
+  }
+  if (k === 'tosend' || k === 'returns') {
+    const P = await asGet('replacements');
+    if (k === 'tosend') return asRows('Replacements to send', P.filter(x => x['Status'] === 'Requested' || x['Status'] === 'Pending Approval').map(x => ({ t: 'replacement', id: x['Replacement ID'], tid: x['Ticket ID'],
+      main: x['Customer'], sub: [x['Old Model'], x['Type'], x['Warranty']].filter(Boolean).join(' · '), right: pill(x['Status']) })));
+    const L = P.filter(x => x['Status'] === 'Dispatched' && !x['Against Item ID']).sort((a, b) => String(a['Dispatch Date']).localeCompare(String(b['Dispatch Date'])));
+    return asRows('New battery sent — old one not back yet', L.map(x => ({ t: 'replacement', id: x['Replacement ID'], tid: x['Ticket ID'], main: x['Customer'] + (x['Phone'] ? ' · ' + x['Phone'] : ''),
+      sub: 'sent ' + niceDate(x['Dispatch Date']) + ' · ' + ageDays(x['Dispatch Date']) + ' days ago', right: '<span class="pill pill-' + (ageDays(x['Dispatch Date']) > 7 ? 'red' : 'amber') + '">' + ageDays(x['Dispatch Date']) + 'd</span>' })));
   }
   if (k === 'due') return asRows('Follow-ups due', (await asGet('tickets')).filter(isDue).map(t => tkRow(t, '📅 ' + t['Next Follow-up'] + ' · ' + (t['Complaint'] || ''))));
   if (k === 'transit') return asRows('In transit', (await asGet('tickets')).filter(t => t['Status'] === 'In Transit').map(t => tkRow(t, 'since ' + niceDate(t['Updated At'] || t['Created At']))));
@@ -2392,3 +2439,259 @@ async function asAnswer(k, q) {
   return 'Type <b>help</b> to see what I can do.';
 }
 window.addEventListener('load', asBoot);
+
+/* ============================================================
+   v10 — REPAIR REPORT · REPLACEMENTS · REFURBISHED STOCK
+   ============================================================ */
+const RESULTS = [['Repaired', '✅'], ['Replace', '🔁'], ['No fault found', '⚪'], ['Not repairable', '⛔']];
+const ITEM_DONE = { 'dispatched': 1, 'in refurb stock': 1, 'returned to production': 1, 'scrapped': 1 };
+const itemDone = st => !!ITEM_DONE[String(st || '').toLowerCase()];
+const partOf = v => { const s = String(v || ''), i = s.lastIndexOf('|'); return i < 0 ? { name: s.trim(), rate: '' } : { name: s.slice(0, i).trim(), rate: s.slice(i + 1).replace(/[₹,\s]/g, '') }; };
+let RPT = null;   // repair report being edited: {itemId, ticketId, item, parts}
+
+// ---------- REPAIR REPORT (repair team) ----------
+async function reportOpen(itemId, ticketId) {
+  ticketId = ticketId || String(itemId).replace(/-\d+$/, '');
+  await ensureMasters();
+  let data = CUR && CUR.ticket && CUR.ticket['Ticket ID'] === ticketId ? CUR : null;
+  if (!data) {
+    modalOpen('🧾 Repair Report — ' + itemId, '<div class="skeleton sk-block"></div>');
+    try { const r = await api({ action: 'getTicket', ticketId }); if (r && r.ok) data = r; } catch (e) {}
+    if (!data) return modalClose(), toast('❌ Could not load the item');
+  }
+  const it = (data.items || []).find(x => x['Item ID'] === itemId);
+  if (!it) return toast('❌ Item not found');
+  const parts = (data.parts || []).filter(p => p['Item ID'] === itemId);
+  RPT = { itemId, ticketId, item: it };
+  const res = it['Repair Result'] || '', causes = String(it['Root Cause'] || '').split(/\s*,\s*/).filter(Boolean);
+  const rc = (M().rootCause || []).concat(causes.filter(c => (M().rootCause || []).indexOf(c) === -1));
+  modalOpen('🧾 Repair Report — ' + itemId,
+    '<div class="rpt-item">' + (it['Item Type'] === 'Charger' ? '⚡ ' : '🔋 ') + esc([it['Category'], it['Model']].filter(Boolean).join(' · ')) +
+      (it['Serial No'] ? ' · SN ' + esc(it['Serial No']) : '') + (it['Warranty'] ? ' · <b>' + esc(it['Warranty']) + '</b>' : '') + '</div>' +
+    '<div class="fg full"><label>Result <b>*</b></label><div class="rpt-res" id="rp_res">' + RESULTS.map(([v, ico]) =>
+      '<button type="button" data-v="' + esc(v) + '" class="' + (res === v ? 'on' : '') + '" onclick="rptResult(this)">' + ico + ' ' + esc(v) + '</button>').join('') + '</div></div>' +
+    '<div id="rp_replNote" class="note" hidden></div>' +
+    '<div class="fg full"><label>Root cause — what was faulty <b id="rp_rcReq">*</b></label><div class="chk-list" id="rp_rc">' +
+      rc.map(c => '<label class="set-chk"><input type="checkbox" value="' + esc(c) + '"' + (causes.indexOf(c) !== -1 ? ' checked' : '') + '> ' + esc(c) + '</label>').join('') + '</div></div>' +
+    '<div class="fg full"><label>Details <span class="opt" id="rp_notesHint">(what you found / did)</span></label><textarea id="rp_notes" maxlength="500" placeholder="e.g. 2 cells dead in group 4, BMS MOSFET burnt">' + esc(it['Repair Notes'] || '') + '</textarea></div>' +
+    '<div class="fg full" id="rp_partsBox"><label>Parts used</label>' +
+      '<div class="rpt-parts"><div class="rpt-ph"><span>Part</span><span>Qty</span><span>Rate ₹</span><span>Amount</span><span></span></div><div id="rp_parts"></div></div>' +
+      '<button type="button" class="link-btn" onclick="rptAddPart()">＋ Add part</button>' +
+      '<datalist id="dl_parts">' + (M().sparePart || []).map(v => '<option value="' + esc(partOf(v).name) + '">').join('') + '</datalist></div>' +
+    '<div class="form-grid"><div class="fg"><label>Labour (₹)</label><input id="rp_labour" type="number" min="0" step="1" value="' + esc(it['Labour'] || '') + '" oninput="rptTotal()"></div>' +
+      '<div class="fg"><label>Repair cost</label><div class="rpt-total" id="rp_total">₹0</div></div></div>' +
+    '<button class="btn btn-primary btn-block" onclick="rptSave(this)">Save report ✓</button>');
+  (parts.length ? parts : []).forEach(p => rptAddPart(p['Part'], p['Qty'], p['Rate']));
+  rptResult(null); rptTotal();
+}
+function rptResult(btn) {
+  if (btn) document.querySelectorAll('#rp_res button').forEach(b => b.classList.toggle('on', b === btn));
+  const v = (document.querySelector('#rp_res button.on') || {}).dataset ? document.querySelector('#rp_res button.on').dataset.v : '';
+  const n = $('rp_replNote'), w = RPT && RPT.item['Warranty'];
+  $('rp_partsBox').hidden = v === 'No fault found';
+  $('rp_rcReq').hidden = v === 'No fault found';
+  $('rp_notesHint').textContent = v === 'Replace' || v === 'Not repairable' ? '* — reason' : '(what you found / did)';
+  if (v === 'Replace') {
+    n.hidden = false;
+    n.className = 'note' + (w === 'Out of Warranty' ? ' note-red' : '');
+    n.innerHTML = RPT.item['Replacement ID'] ? '🔁 Replacement <b>' + esc(RPT.item['Replacement ID']) + '</b> already exists for this battery.'
+      : '🔁 A <b>replacement request</b> will be created. The new battery is sent from the Dispatch screen; this battery then goes to stock / production / scrap.' +
+        (w === 'Out of Warranty' ? '<br><b>Out of warranty</b> — admin must approve first.' : '');
+  } else n.hidden = true;
+}
+function rptAddPart(name, qty, rate) {
+  const d = document.createElement('div');
+  d.className = 'rpt-row';
+  d.innerHTML = '<input class="rp-part" list="dl_parts" maxlength="100" placeholder="Part" value="' + esc(name || '') + '" onchange="rptPart(this)">' +
+    '<input class="rp-qty" type="number" min="0" step="1" value="' + esc(qty || 1) + '" oninput="rptTotal()">' +
+    '<input class="rp-rate" type="number" min="0" step="1" value="' + esc(rate === undefined ? '' : rate) + '" oninput="rptTotal()">' +
+    '<span class="rp-amt">₹0</span><button type="button" class="rp-del" onclick="this.parentNode.remove();rptTotal()">✕</button>';
+  $('rp_parts').appendChild(d);
+  if (!name) d.querySelector('.rp-part').focus();
+  rptTotal();
+}
+function rptPart(inp) {   // rate from the Masters list ("Part | rate")
+  const m = (M().sparePart || []).map(partOf).find(p => p.name.toLowerCase() === inp.value.trim().toLowerCase());
+  const r = inp.parentNode.querySelector('.rp-rate');
+  if (m && m.rate !== '' && !r.value) r.value = m.rate;
+  rptTotal();
+}
+function rptRows() {
+  return Array.from(document.querySelectorAll('#rp_parts .rpt-row')).map(r => ({
+    part: r.querySelector('.rp-part').value.trim(), qty: r.querySelector('.rp-qty').value, rate: r.querySelector('.rp-rate').value, el: r }));
+}
+function rptTotal() {
+  let t = 0;
+  rptRows().forEach(p => { const a = (Number(p.qty) || 0) * (Number(p.rate) || 0); t += a; p.el.querySelector('.rp-amt').textContent = rupee(Math.round(a)) || '₹0'; });
+  t += Number($('rp_labour').value) || 0;
+  $('rp_total').textContent = rupee(Math.round(t)) || '₹0';
+}
+async function rptSave(btn) {
+  const res = document.querySelector('#rp_res button.on');
+  if (!res) return toast('⚠️ Select the result');
+  const result = res.dataset.v;
+  const rootCause = Array.from(document.querySelectorAll('#rp_rc input:checked')).map(i => i.value);
+  const notes = $('rp_notes').value.trim();
+  if (result !== 'No fault found' && !rootCause.length) return toast('⚠️ Select the root cause');
+  if ((result === 'Replace' || result === 'Not repairable') && !notes) return toast('⚠️ Write the reason in Details');
+  const parts = result === 'No fault found' ? [] : rptRows().filter(p => p.part).map(p => ({ part: p.part, qty: p.qty, rate: p.rate }));
+  if (parts.some(p => !(Number(p.qty) > 0))) return toast('⚠️ Enter the quantity of every part');
+  const r = await run({ action: 'saveRepairReport', itemId: RPT.itemId, result, rootCause: rootCause.join(','), notes, labour: $('rp_labour').value, parts: JSON.stringify(parts) }, btn);
+  if (!r) return;
+  modalClose();
+  toast('✅ Report saved' + (r.repairCost !== '' && r.repairCost != null ? ' · repair cost ' + rupee(r.repairCost) : '') + (r.replacementId ? ' · replacement ' + r.replacementId + ' created' : ''));
+  afterChange(); cacheDel('board_items');
+  const bi = (typeof boardItems !== 'undefined' ? boardItems : []).find(x => x.itemId === RPT.itemId);
+  if (bi) { bi.result = result; bi.cost = r.repairCost; bi.replacementId = bi.replacementId || r.replacementId || ''; if (CURRENT === 'board') boardRender(); }
+  if ($('drawer').classList.contains('open')) drawerReload();
+}
+
+// ---------- MOVE TO STOCK (exchanged battery) ----------
+function stockOpen(itemId) {
+  modalOpen('📦 ' + itemId + ' — where does it go?',
+    '<div class="muted-sm" style="margin-bottom:12px">The customer already got a new battery for this one, so it is not sent back.</div>' +
+    '<div class="rpt-res" id="mv_out">' + [['Refurbished Stock', '♻️', 'Repaired & passed QC — keep for future replacements'], ['Returned to Production', '🏭', 'Send back to production'], ['Scrap', '🗑️', 'Cannot be used']]
+      .map(([v, i, s]) => '<button type="button" data-v="' + v + '" onclick="document.querySelectorAll(\'#mv_out button\').forEach(b=>b.classList.toggle(\'on\',b===this))">' + i + ' ' + v + '<small>' + s + '</small></button>').join('') + '</div>' +
+    '<div class="fg full" style="margin-top:12px"><label>Remarks</label><input id="mv_rem" maxlength="300"></div>' +
+    '<button class="btn btn-primary btn-block" data-id="' + esc(itemId) + '" onclick="stockSave(this)">Save ✓</button>');
+}
+async function stockSave(btn) {
+  const o = document.querySelector('#mv_out button.on');
+  if (!o) return toast('⚠️ Select where the battery goes');
+  const r = await run({ action: 'moveToStock', itemId: btn.dataset.id, outcome: o.dataset.v, remarks: $('mv_rem').value.trim() }, btn);
+  if (!r) return;
+  modalClose(); toast('✅ ' + btn.dataset.id + ' → ' + o.dataset.v + (r.stockId ? ' (' + r.stockId + ')' : ''));
+  afterChange(); cacheDel('board_items');
+  if (CURRENT === 'dispatch') openDispatch();
+  if ($('drawer').classList.contains('open')) drawerReload();
+}
+
+// ---------- REPLACEMENTS ----------
+function replOpen() {   // advance replacement from the ticket (before the old battery arrives)
+  const t = CUR.ticket;
+  ensureModels();
+  modalOpen('🔁 Advance Replacement — ' + t['Ticket ID'],
+    '<div class="note">The new battery is sent <b>now</b>; the old one comes later and goes to stock after repair.</div>' +
+    '<div class="form-grid">' +
+      '<div class="fg"><label>Warranty <b>*</b></label><select id="rq_war">' + optList(CONFIG.WARRANTY || [], 'In Warranty', '-- Select --') + '</select></div>' +
+      fg('How many batteries', 'rq_qty', 'number', 1, ' min="1" max="20"') +
+      '<div class="fg"><label>Battery type <b>*</b></label><select id="rq_cat">' + optList(M().batteryType, '', '-- Select --') + '</select></div>' +
+      fg('Model <b>*</b>', 'rq_model', 'text', '', ' maxlength="100" list="dl_models"') +
+      fg('Old serial no <span class="opt">(if known)</span>', 'rq_serial', 'text', '', ' maxlength="60"') +
+      '<div class="fg full"><label>Reason <b>*</b></label><textarea id="rq_reason" maxlength="500" placeholder="e.g. No backup, battery 8 months old, in warranty"></textarea></div>' +
+    '</div><div class="muted-sm" style="margin:-4px 0 12px">Out of warranty → admin approves first (charge can be set).</div>' +
+    '<button class="btn btn-primary btn-block" onclick="replSave(this)">Request replacement ✓</button>');
+}
+async function replSave(btn) {
+  const d = { action: 'requestReplacement', ticketId: CUR.ticket['Ticket ID'], warranty: $('rq_war').value, qty: $('rq_qty').value,
+    category: $('rq_cat').value, model: $('rq_model').value.trim(), serial: $('rq_serial').value.trim(), reason: $('rq_reason').value.trim() };
+  if (!d.warranty || !d.category || !d.model || !d.reason) return toast('⚠️ Fill warranty, type, model and reason');
+  const m = modelOf(d.model); if (m) d.model = m.code;
+  const r = await run(d, btn); if (!r) return;
+  modalClose(); toast('✅ ' + r.ids.join(', ') + (r.approval ? ' — waiting for admin approval' : ' — shows in Dispatch → Replacements to send'));
+  DR_TAB = 'replacements'; afterChange(); drawerReload();
+}
+async function replDecide(btn, decision) {
+  const id = btn.dataset.id;
+  let charge = '', remarks = '';
+  if (decision === 'approve') { charge = prompt('Charge to the customer (₹) — leave empty if free', ''); if (charge === null) return; }
+  else { remarks = prompt('Reason for rejecting', ''); if (remarks === null) return; }
+  const r = await run({ action: 'approveReplacement', replacementId: id, decision, charge, remarks }, btn); if (!r) return;
+  toast(decision === 'approve' ? '✅ ' + id + ' approved' : '🚫 ' + id + ' rejected'); afterChange(); drawerReload();
+}
+async function replCancel(btn) {
+  const reason = prompt('Why cancel ' + btn.dataset.id + '?', ''); if (!reason) return;
+  const r = await run({ action: 'cancelReplacement', replacementId: btn.dataset.id, reason }, btn); if (!r) return;
+  toast('🚫 ' + btn.dataset.id + ' cancelled'); afterChange(); drawerReload();
+}
+// send the new battery (repair / dispatch team)
+let REPL_STOCK = [];
+async function replSendOpen(id) {
+  await Promise.all([ensureMasters(), ensureModels()]);
+  modalOpen('🚚 Send replacement — ' + id, '<div class="skeleton sk-block"></div>');
+  let rp = null;
+  try {
+    const [a, b] = await Promise.all([api({ action: 'listRecords', type: 'replacements' }), api({ action: 'listRecords', type: 'stock' })]);
+    rp = a && a.ok ? a.rows.find(x => x['Replacement ID'] === id) : null;
+    REPL_STOCK = b && b.ok ? b.rows.filter(x => x['Status'] === 'Available') : [];
+  } catch (e) {}
+  if (!rp) return modalClose(), toast('❌ Could not load ' + id);
+  const same = REPL_STOCK.filter(s => modelKey(s['Model']) === modelKey(rp['Old Model']));
+  const stockOpts = REPL_STOCK.map(s => '<option value="' + esc(s['Stock ID']) + '">' + esc(s['Stock ID'] + ' · ' + s['Model'] + ' · SN ' + (s['Serial No'] || '—')) +
+    (modelKey(s['Model']) === modelKey(rp['Old Model']) ? ' ✓ same model' : '') + '</option>').join('');
+  $('mdBody').innerHTML =
+    '<div class="rpt-item">For <b>' + esc(rp['Customer'] || '') + '</b> · ' + esc(rp['Ticket ID']) + ' · old: ' + esc([rp['Old Model'], rp['Old Serial'] && 'SN ' + rp['Old Serial']].filter(Boolean).join(' · ')) + '</div>' +
+    '<div class="fg full"><label>New battery from <b>*</b></label><div class="seg" id="rs_src">' +
+      '<button type="button" data-v="New from Production" class="on" onclick="segPick(this);replSrc()">🏭 New from Production</button>' +
+      '<button type="button" data-v="Refurbished Stock" onclick="segPick(this);replSrc()">♻️ Refurbished stock (' + REPL_STOCK.length + ')</button></div></div>' +
+    '<div id="rs_new" class="form-grid">' +
+      '<div class="fg"><label>Type</label><select id="rs_cat">' + optList(M().batteryType, rp['Old Category'] || '', '-- Select --') + '</select></div>' +
+      fg('Model <b>*</b>', 'rs_model', 'text', rp['Old Model'] || '', ' maxlength="100" list="dl_models"') +
+      fg('New serial no <b>*</b>', 'rs_serial', 'text', '', ' maxlength="60"') + '</div>' +
+    '<div id="rs_stk" class="fg full" hidden><label>Pick from refurbished stock <b>*</b></label><select id="rs_stock"><option value="">-- Select --</option>' + stockOpts + '</select>' +
+      (REPL_STOCK.length && !same.length ? '<div class="muted-sm">No stock of the same model — pick carefully</div>' : '') + '</div>' +
+    '<div class="form-grid">' + fg('Dispatch date <b>*</b>', 'rs_date', 'date', todayStr()) +
+      '<div class="fg"><label>Dispatched by <b>*</b></label><select id="rs_by">' + optList(M().dispatchedBy, '', '-- Select --') + '</select></div>' +
+      fg('Transport', 'rs_tr', 'text', '', ' maxlength="150"') + fg('LR / docket no', 'rs_lr', 'text', '', ' maxlength="60"') +
+      fg('Charges (₹)', 'rs_ch', 'number', '', ' min="0"') + fg('Remarks', 'rs_rem', 'text', '', ' maxlength="500"') + '</div>' +
+    '<button class="btn btn-primary btn-block" data-id="' + esc(id) + '" onclick="replSend(this)">Dispatch new battery 🚚</button>';
+}
+function replSrc() { const s = segVal('rs_src'); $('rs_new').hidden = s !== 'New from Production'; $('rs_stk').hidden = s !== 'Refurbished Stock'; }
+async function replSend(btn) {
+  const d = { action: 'dispatchReplacement', replacementId: btn.dataset.id, source: segVal('rs_src'), stockId: $('rs_stock').value,
+    category: $('rs_cat').value, model: $('rs_model').value.trim(), serial: $('rs_serial').value.trim(), dispatchDate: $('rs_date').value,
+    dispatchedBy: $('rs_by').value, transport: $('rs_tr').value.trim(), lr: $('rs_lr').value.trim(), charges: $('rs_ch').value, remarks: $('rs_rem').value.trim() };
+  if (d.source === 'New from Production' && (!d.model || !d.serial)) return toast('⚠️ Enter model and new serial no');
+  if (d.source === 'Refurbished Stock' && !d.stockId) return toast('⚠️ Pick the stock battery');
+  if (!d.dispatchedBy) return toast('⚠️ Select Dispatched By');
+  const m = modelOf(d.model); if (m) d.model = m.code;
+  const r = await run(d, btn); if (!r) return;
+  modalClose(); toast('✅ Replacement dispatched — ' + r.dispatchId); afterChange();
+  if (CURRENT === 'dispatch') openDispatch();
+  if ($('drawer').classList.contains('open')) drawerReload();
+}
+
+// ---------- Dispatch screen: replacements to send + exchanged batteries ----------
+async function replLoadDispatch() {
+  const box = $('rsList'), ex = $('exList');
+  if (!box) return;
+  try {
+    const [a, it] = await Promise.all([api({ action: 'listRecords', type: 'replacements' }), api({ action: 'getItems' })]);
+    const L = a && a.ok ? a.rows.filter(x => x['Status'] === 'Requested' || x['Status'] === 'Pending Approval') : [];
+    $('rsCount').textContent = L.filter(x => x['Status'] === 'Requested').length;
+    box.innerHTML = L.length ? L.map(x => '<div class="rs-row">' + idChip(x['Replacement ID']) +
+      '<span class="as-main"><b>' + esc(x['Customer'] || x['Ticket ID']) + '</b><small>' + esc([x['Ticket ID'], x['Old Model'], x['Type'], x['Warranty']].filter(Boolean).join(' · ')) + '</small></span>' +
+      (x['Status'] === 'Pending Approval' ? '<span class="pill pill-amber">Needs approval</span>'
+        : '<button class="btn btn-primary btn-sm" data-id="' + esc(x['Replacement ID']) + '" onclick="replSendOpen(this.dataset.id)">Send 🚚</button>') + '</div>').join('')
+      : '<div class="empty sm">No replacements to send ✅</div>';
+    const E = it && it.ok ? (it.items || []).filter(i => i['Replacement ID'] && !itemDone(i['Item Status'])) : [];
+    $('exCount').textContent = E.length;
+    ex.innerHTML = E.length ? E.map(i => '<div class="rs-row">' + '<span class="im-id">' + esc(i['Item ID']) + '</span>' +
+      '<span class="as-main"><b>' + esc(i['Customer'] || '') + '</b><small>' + esc([i['Model'], i['Serial No'] && 'SN ' + i['Serial No'], i['Item Status'], i['Repair Result'] || 'no report yet'].filter(Boolean).join(' · ')) + '</small></span>' +
+      '<button class="btn btn-ghost btn-sm" data-id="' + esc(i['Item ID']) + '" onclick="stockOpen(this.dataset.id)">📦 Move to stock</button></div>').join('')
+      : '<div class="empty sm">No exchanged batteries waiting</div>';
+  } catch (e) { box.innerHTML = '<div class="empty sm">Could not load ❌</div>'; }
+}
+
+// ---------- record page: Replacement ----------
+function renderReplacement() {
+  const x = (CUR.replacements || []).find(r => r['Replacement ID'] === REC.id); if (!x) return notFound();
+  const st = x['Status'], tone = { 'Pending Approval': 'amber', 'Requested': 'blue', 'Dispatched': 'violet', 'Closed': 'green', 'Cancelled': 'gray' }[st] || 'blue';
+  let h = recHead('replacement', x['Replacement ID'], '<span class="pill pill-' + tone + '">' + esc(st) + '</span>',
+    [['Ticket', tkLk()], ['Customer', custLk()], ['Old battery', x['Against Item ID'] ? lk('item', x['Against Item ID'], REC.tid) : tv('not received yet')],
+     ['Dispatch', x['Dispatch ID'] ? lk('dispatch', x['Dispatch ID'], REC.tid) : tv('')]], esc(x['Type'] + ' · ' + (x['Warranty'] || '')));
+  const b = [];
+  if (st === 'Pending Approval' && can('admin')) b.push('<button class="btn btn-green btn-sm" data-id="' + esc(x['Replacement ID']) + '" onclick="replDecide(this,\'approve\')">✅ Approve</button>',
+    '<button class="btn btn-ghost btn-sm btn-danger" data-id="' + esc(x['Replacement ID']) + '" onclick="replDecide(this,\'reject\')">Reject</button>');
+  if (st === 'Requested' && can('repair')) b.push('<button class="btn btn-primary btn-sm" data-id="' + esc(x['Replacement ID']) + '" onclick="replSendOpen(this.dataset.id)">🚚 Send new battery</button>');
+  if ((st === 'Requested' || st === 'Pending Approval') && can('service')) b.push('<button class="btn btn-ghost btn-sm btn-danger" data-id="' + esc(x['Replacement ID']) + '" onclick="replCancel(this)">Cancel</button>');
+  if (b.length) h += '<div class="rp-actions">' + b.join('') + '</div>';
+  h += sec('🔁 Request', kvh([['Reason', tv(x['Reason'])], ['Old battery', tv([x['Old Category'], x['Old Model'], x['Old Serial'] && 'SN ' + x['Old Serial']].filter(Boolean).join(' · '))],
+    ['Chargeable', tv(x['Chargeable'] === 'Yes' ? 'Yes' + (x['Charge Amount'] !== '' ? ' · ' + rupee(x['Charge Amount']) : '') : 'No')],
+    ['Requested', tv(x['Requested At'] + ' · ' + x['Requested By'])], ['Approved', tv(x['Approved At'] ? x['Approved At'] + ' · ' + x['Approved By'] : '')]]));
+  h += sec('📦 New battery', kvh([['From', tv(x['Source'])], ['Stock', x['Stock ID'] ? esc(x['Stock ID']) : tv('')], ['Model', tv([x['New Category'], x['New Model']].filter(Boolean).join(' · '))],
+    ['Serial no', tv(x['New Serial'])], ['Dispatched', tv(x['Dispatch Date'] ? niceDate(x['Dispatch Date']) + ' · ' + x['Dispatched By'] : '')], ['Transport', tv([x['Transport'], x['LR No'] && 'LR ' + x['LR No']].filter(Boolean).join(' · '))]]));
+  h += sec('♻️ Old battery', kvh([['Received', tv(x['Old Received At'])], ['Went to', tv(x['Old Outcome'])], ['Closed', tv(x['Closed At'])], ['Remarks', tv(x['Remarks'])]]));
+  h += sec('🕘 History', histList(recHistory(x['Replacement ID'])));
+  $('drBody').innerHTML = h;
+}
