@@ -370,6 +370,16 @@
     <!-- ===== PHASE 3: DISPATCH ===== -->
     <section id="scrDispatch" class="screen">
       <div class="card">
+        <div class="card-head"><span>🔁 Replacements to send — <b id="rsCount">0</b></span>
+          <button class="btn btn-ghost btn-icon" title="Refresh" onclick="replLoadDispatch()">↻</button></div>
+        <div id="rsList" class="rs-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span>♻️ Exchanged batteries — move to stock · <b id="exCount">0</b></span></div>
+        <div class="muted-sm" style="margin:-4px 0 10px">The customer already got a new battery for these — after repair they go to Refurbished stock, Production or Scrap.</div>
+        <div id="exList" class="rs-list"></div>
+      </div>
+      <div class="card">
         <div class="card-head"><span>📦 Ready — Final QC &amp; Pack</span>
           <button class="btn btn-ghost btn-icon" title="Refresh" onclick="dispLoad(true)">↻</button></div>
         <input id="dSearch" class="search" placeholder="🔍 Item / Ticket / Customer / Serial" oninput="dispRender()">
@@ -380,7 +390,8 @@
         <div class="form-grid">
           <div class="fg"><label>Dispatch Date <b>*</b></label><input type="date" id="d_date"></div>
           <div class="fg"><label>Dispatched By <b>*</b></label><select id="d_by"></select></div>
-          <div class="fg"><label>Transport (Outward)</label><input id="d_transport" maxlength="150" placeholder="Transport / AWB / LR"></div>
+          <div class="fg"><label>Transport (Outward)</label><input id="d_transport" maxlength="150" placeholder="Transport / courier name"></div>
+          <div class="fg"><label>LR / Docket No</label><input id="d_lr" maxlength="60"></div>
           <div class="fg"><label>Dispatch Charges (₹) <span class="opt">(whole dispatch)</span></label><input id="d_cost" type="number" min="0" step="1" inputmode="decimal" placeholder="0"></div>
           <div class="fg full"><label>Actual Problem Found <span class="opt">(fault code per item is set on the Repair Board)</span></label><textarea id="d_problem" maxlength="500"></textarea></div>
           <div class="fg full"><label>Dispatch Address</label><textarea id="d_address" maxlength="300"></textarea></div>
