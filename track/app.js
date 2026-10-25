@@ -206,22 +206,31 @@ function renderTimeline(t, items) {
 }
 
 function renderItems(items) {
-  if (!items.length) { $('itemsCard').hidden = true; return; }
+  const repl = (STATE.replacements || []);
+  if (!items.length && !repl.length) { $('itemsCard').hidden = true; return; }
   const steps = STATE.steps || [], last = steps.length - 1, cnt = {};
   $('itemsCard').hidden = false;
-  $('items').innerHTML = items.map(it => {
+  // new batteries sent as replacement (may go out before the old one reaches us)
+  const rHtml = repl.map((r, i) => '<div class="item repl' + (r.sent ? ' done' : '') + '">' +
+    '<div class="it-top"><span class="it-name">🔁 Replacement battery' + (repl.length > 1 ? ' #' + (i + 1) : '') + '</span>' +
+      '<span class="it-stage">' + (r.sent ? 'Dispatched' : 'Being arranged') + '</span></div>' +
+    (r.model ? '<div class="it-desc">' + esc(r.model) + '</div>' : '') +
+    (r.sent ? '<div class="it-disp">Dispatched ' + esc(fmtDate(r.dispatchDate)) + (r.transport ? ' · ' + esc(r.transport) : '') + (r.lr ? ' · LR ' + esc(r.lr) : '') + '</div>' : '') +
+    (r.sent && !r.oldReceived ? '<div class="it-note">Please send your old battery back — our team will arrange the pickup.</div>' : '') +
+  '</div>').join('');
+  $('items').innerHTML = rHtml + items.map(it => {
     const isChg = /charg/i.test(it.type || ''), k = isChg ? 'Charger' : 'Battery';
     cnt[k] = (cnt[k] || 0) + 1;
     const done = it.step === last;
     const desc = [it.category, it.model].filter(Boolean).join(' · ');
     return '<div class="item' + (done ? ' done' : '') + '">' +
-      '<div class="it-top"><span class="it-name">' + (isChg ? '⚡ ' : '🔋 ') + k + ' #' + cnt[k] + '</span>' +
+      '<div class="it-top"><span class="it-name">' + (isChg ? '⚡ ' : '🔋 ') + k + ' #' + cnt[k] + (it.exchanged ? ' (old)' : '') + '</span>' +
         '<span class="it-stage">' + esc(it.label) + '</span></div>' +
       (desc ? '<div class="it-desc">' + esc(desc) + '</div>' : '') +
-      '<div class="it-steps">' + steps.map((s, i) =>
+      (it.exchanged ? '' : '<div class="it-steps">' + steps.map((s, i) =>
         '<span class="' + (i < it.step ? 'p' : (i === it.step ? 'c' : '')) + '" title="' + esc(s) + '"></span>').join('') + '</div>' +
-      '<div class="it-step-lbl">Step ' + (it.step + 1) + ' of ' + steps.length + '</div>' +
-      (done ? '<div class="it-disp">Dispatched ' + esc(fmtDate(it.dispatchDate)) + (it.transport ? ' · ' + esc(it.transport) : '') + '</div>' : '') +
+      '<div class="it-step-lbl">Step ' + (it.step + 1) + ' of ' + steps.length + '</div>') +
+      (done && !it.exchanged ? '<div class="it-disp">Dispatched ' + esc(fmtDate(it.dispatchDate)) + (it.transport ? ' · ' + esc(it.transport) : '') + '</div>' : '') +
     '</div>';
   }).join('');
 }
@@ -549,6 +558,12 @@ function botAct(k) {
       '<li>' + (i.type === 'Charger' ? '⚡' : '🔋') + ' ' + esc([i.category, i.model].filter(Boolean).join(' · ')) + ' — <b>' + esc(stepName(i.step)) + '</b></li>').join('') + '</ul>', botMenu);
   }
   if (k === 'dispatch') {
+    const rs = (STATE.replacements || []).filter(r => r.sent);
+    if (rs.length) {
+      const rl = '<ul class="bot-list">' + rs.map(r => '<li>🔁 ' + esc(r.model || (BOT.lang === 'hi' ? 'नई बैटरी' : 'New battery')) + ' · ' + esc(fmtDate(r.dispatchDate)) +
+        (r.transport ? ' · ' + esc(r.transport) : '') + (r.lr ? ' · LR ' + esc(r.lr) : '') + '</li>').join('') + '</ul>';
+      if (!items.filter(i => i.step === 5 && !i.exchanged).length) return botSay((BOT.lang === 'hi' ? 'आपकी <b>नई (रिप्लेसमेंट) बैटरी</b> भेज दी गई है:' : 'Your <b>replacement battery</b> has been dispatched:') + rl, botMenu);
+    }
     const out = items.filter(i => i.step === 5), left = items.length - out.length;
     if (!items.length) return botSay(c.noItems, botMenu);
     if (!out.length) return botSay(c.notDisp(left, esc(whereNow(items))), botMenu);
