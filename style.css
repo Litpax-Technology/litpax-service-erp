@@ -1251,3 +1251,34 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   .as-fab { right: 14px; bottom: 14px; padding: 12px 14px; } .as-fab b { display: none; }
   .as-panel { right: 0; bottom: 0; width: 100%; height: 100%; border-radius: 0; border: 0; }
 }
+
+/* ---------- v10 — Repair Report · Replacements ---------- */
+[hidden] { display: none !important; }
+.pill-gray { background: #f0f1f5; color: #6b7190; }
+.rpt-item { background: #f7f8fb; border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; font-size: 13px; margin-bottom: 12px; }
+.rpt-res { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.rpt-res button { border: 1px solid var(--border); background: #fff; border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 13.5px; font-weight: 500;
+  text-align: left; cursor: pointer; color: var(--text); display: flex; flex-direction: column; gap: 2px; transition: border-color .15s, box-shadow .15s; }
+.rpt-res button small { font-weight: 400; color: var(--muted); font-size: 11.5px; }
+.rpt-res button:hover { border-color: rgba(99,91,255,.45); }
+.rpt-res button.on { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(99,91,255,.12); background: #f7f6ff; }
+.rpt-parts { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 6px; }
+.rpt-ph, .rpt-row { display: grid; grid-template-columns: minmax(0, 1fr) 64px 84px 80px 28px; gap: 6px; align-items: center; padding: 6px 8px; }
+.rpt-ph { background: #fafbfd; font-size: 11.5px; color: var(--muted); font-weight: 600; }
+.rpt-row { border-top: 1px solid #f0f1f5; }
+.rpt-row input { height: 34px; padding: 6px 8px; font-size: 13px; }
+.rp-amt { font-size: 13px; font-weight: 600; text-align: right; }
+.rp-del { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 13px; }
+.rp-del:hover { color: var(--red); }
+#rp_parts:empty::before { content: 'No parts added'; display: block; padding: 10px; color: var(--muted); font-size: 12.5px; }
+.rpt-total { font-size: 20px; font-weight: 700; padding-top: 4px; }
+.rs-list { display: flex; flex-direction: column; gap: 6px; }
+.rs-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid #eef0f5; border-radius: 10px; }
+.bc-report { margin-top: 6px; }
+@media (max-width: 640px) {
+  .rpt-res { grid-template-columns: 1fr; }
+  .rpt-ph { display: none; }
+  .rpt-row { grid-template-columns: 1fr 1fr 1fr 28px; }
+  .rpt-row .rp-part { grid-column: 1 / -1; }
+  .rs-row { flex-wrap: wrap; }
+}
