@@ -1,5 +1,5 @@
 /* ============================================================
-   LITPAX SERVICE HUB v10 — app.js  (record pages: Customer › Ticket › Pickup / Repair Job › Item › Dispatch)
+   LITPAX SERVICE HUB v12 — app.js  (record pages: Customer › Ticket › Pickup / Repair Job › Item › Dispatch)
    One Ticket ID → Phase 1 (Basic) → Phase 2 (Service/CRM) → Phase 3 (Repair)
    ============================================================ */
 
@@ -21,6 +21,7 @@ function jsonp(params, onData, onErr) {
     onData && onData(d);
   };
   s.onerror = () => { if (!done) { cleanup(); onErr && onErr('network'); } };
+  if (params.token) IDLE.ping = Date.now();   // any signed-in call also keeps the session alive
   s.src = CONFIG.API_URL + '?' + qs + '&callback=' + cb + '&t=' + Date.now();
   document.body.appendChild(s);
 }
@@ -48,7 +49,7 @@ async function apiPost(params) {
 // Saves carry a request ID: a retry of the SAME save (timeout, slow network, double tap) reuses it,
 // so the server returns the first result instead of saving twice.
 const READ_ACTIONS = { login: 1, logout: 1, ping: 1, getSite: 1, getTickets: 1, getTicket: 1, getMasters: 1, getTracker: 1, getItems: 1, getReportData: 1,
-  getSettings: 1, lookupPhone: 1, getModels: 1, findRecord: 1, getCustomer: 1, listRecords: 1, getTechJobs: 1, getTracking: 1 };
+  getSettings: 1, lookupPhone: 1, getModels: 1, findRecord: 1, getCustomer: 1, listRecords: 1, getTechJobs: 1, getTracking: 1, touch: 1, getSecurity: 1 };
 const PENDING_REQ = {};
 const newReqId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -82,6 +83,140 @@ async function run(params, btn, post, busyText) {
   }
 }
 
+/* ---------- v12 — security: idle sign-out, keep-alive, device name, Security card ---------- */
+const IDLE = { last: Date.now(), ping: Date.now(), timer: 0, saved: 0 };
+function devName() {
+  const u = navigator.userAgent || '';
+  const b = /Edg\//.test(u) ? 'Edge' : /OPR\//.test(u) ? 'Opera' : /SamsungBrowser/.test(u) ? 'Samsung Internet' : /Chrome\//.test(u) ? 'Chrome' :
+    /Firefox\//.test(u) ? 'Firefox' : /Safari\//.test(u) ? 'Safari' : 'Browser';
+  const o = /Android/.test(u) ? 'Android' : /iPhone|iPad/.test(u) ? 'iOS' : /Windows/.test(u) ? 'Windows' : /Mac OS X/.test(u) ? 'macOS' : /Linux/.test(u) ? 'Linux' : '';
+  return b + (o ? ' · ' + o : '') + (/Mobi/.test(u) ? ' · mobile' : '');
+}
+function idleMin() { const n = parseFloat(localStorage.getItem('hub_idle')); return isFinite(n) && n >= 0 ? n : 30; }
+function idleMark() {
+  IDLE.last = Date.now();
+  if (IDLE.last - IDLE.saved > 15000) { IDLE.saved = IDLE.last; try { localStorage.setItem('hub_last_act', String(IDLE.last)); } catch (e) {} }   // shared by all open tabs
+}
+['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel'].forEach(ev => document.addEventListener(ev, idleMark, { passive: true, capture: true }));
+function idleStart() { clearInterval(IDLE.timer); IDLE.saved = 0; idleMark(); IDLE.ping = Date.now(); IDLE.timer = setInterval(idleTick, 20000); }
+function idleStop() { clearInterval(IDLE.timer); IDLE.timer = 0; }
+function idleTick() {
+  if (!localStorage.getItem('hub_token')) return idleStop();
+  const m = idleMin(), now = Date.now(), last = Math.max(IDLE.last, +localStorage.getItem('hub_last_act') || 0);
+  if (now - last > (m ? Math.max(5, m) : 360) * 60e3) {
+    logout(); toast('🔒 Signed out after ' + (m ? Math.max(5, m) : 360) + ' minutes without activity'); return;
+  }
+  // someone is working but nothing was saved / loaded for a while → keep the server session alive
+  if (now - IDLE.ping > 4 * 60e3 && now - last < 4 * 60e3) jsonp({ action: 'touch' }, () => {}, () => {});
+}
+// everything loaded for the last user is dropped from memory on sign-out
+function wipeMem() {
+  try {
+    TK = []; CUR = null; CUST = null; REC = null; REC_HIST = []; SETTINGS = null; SEC = null;
+    Object.keys(REC_MEM).forEach(k => delete REC_MEM[k]);
+    AS.data = {}; if (AS.open) asToggle(false);
+    tkPrevClose();
+    ['tkList', 'tkKpis', 'drBody', 'setForm', 'recList', 'trkList', 'boardPending', 'boardActive', 'dList', 'rsList', 'exList'].forEach(id => { if ($(id)) $(id).innerHTML = ''; });
+    if ($('secBanner')) $('secBanner').remove();
+  } catch (e) {}
+}
+function weakPinBanner() {
+  if ($('secBanner') || sessionStorage.getItem('hub_weak') !== '1') return;
+  const b = document.createElement('div');
+  b.id = 'secBanner'; b.className = 'sec-banner';
+  b.innerHTML = ico('alert') + '<span><b>This login uses a short PIN.</b> ' + (can('admin') ? 'Set a 6+ digit PIN for every role in <a href="#" onclick="go(\'settings\');return false">Settings → Security</a>.' :
+    'Ask the admin to set a 6+ digit PIN for this login.') + '</span><button class="x-btn" aria-label="Dismiss" onclick="sessionStorage.removeItem(\'hub_weak\');this.parentNode.remove()">' + ico('x') + '</button>';
+  document.querySelector('.topbar').insertAdjacentElement('afterend', b);
+}
+
+/* ---------- Security card (admin → Settings) ---------- */
+let SEC = null, SEC_ALL = false;
+async function secLoad() {
+  const box = $('secBox'); if (!box) return;
+  if (!SEC) box.innerHTML = '<div class="skeleton sk-block"></div>';
+  try {
+    const r = await api({ action: 'getSecurity' });
+    if (!r || !r.ok) { box.innerHTML = '<div class="empty">' + esc((r && r.msg) || 'Could not load security') + ' — update Code.gs to v12 and deploy a new version.</div>'; return; }
+    SEC = r; secRender();
+  } catch (e) { if (e !== 'auth') box.innerHTML = '<div class="empty">Could not load security</div>'; }
+}
+function secRender() {
+  const r = SEC, box = $('secBox'); if (!r || !box) return;
+  const L = { attendant: 'Call Attendant', service: 'Service Team', repair: 'Repair Team', admin: 'Admin' };
+  const secured = r.users.filter(u => u.hashed && !u.weak).length;
+  const pinPill = u => u.empty ? '<span class="pill pill-red">No PIN</span>' : !u.hashed ? '<span class="pill pill-amber" title="Stored as plain text — secured at the next sign-in">Not secured yet</span>' :
+    u.weak ? '<span class="pill pill-amber" title="Hashed, but shorter than ' + r.pinMin + ' characters">Weak</span>' : '<span class="pill pill-green">Secured</span>';
+  const resPill = x => '<span class="pill pill-' + (x === 'Success' ? 'green' : x === 'Locked' ? 'red' : 'amber') + '">' + esc(x) + '</span>';
+  const log = SEC_ALL ? r.log : r.log.slice(0, 15);
+  box.innerHTML = '<div class="card sec-card">' +
+    '<div class="card-head"><span>Security</span><div class="btn-wrap">' +
+      '<button class="btn btn-ghost btn-sm" onclick="secLoad()" aria-label="Refresh">' + ico('refresh') + 'Refresh</button>' +
+      '<button class="btn btn-ghost btn-sm btn-danger" onclick="secLogoutAllOpen()">' + ico('logout') + 'Sign out all devices</button></div></div>' +
+    '<div class="sec-stats">' +
+      '<div><span>Strong PINs (6+, hashed)</span><b class="' + (secured < r.users.length ? 't-warn' : 't-ok') + '">' + secured + ' / ' + r.users.length + '</b></div>' +
+      '<div><span>Failed sign-ins · 24 h</span><b class="' + (r.fails24 >= 10 ? 't-bad' : '') + '">' + r.fails24 + '</b></div>' +
+      '<div><span>Auto sign-out</span><b>' + (r.idleMin ? Math.max(5, r.idleMin) + ' min idle' : '6 h idle') + ' · ' + r.maxHours + ' h max</b></div>' +
+      '<div><span>Tech page</span><b class="' + (r.techKey ? 't-ok' : 't-warn') + '">' + (r.techKey ? 'Key required' : 'Open — no key') + '</b></div>' +
+    '</div>' +
+    '<div class="sec-h">Logins</div>' +
+    '<div class="dt-scroll"><table class="dt sec-users"><thead><tr><th>Username</th><th>Role</th><th>PIN</th><th>Status</th><th></th></tr></thead><tbody>' +
+    r.users.map(u => '<tr><td class="mono">' + esc(u.username) + '</td><td>' + esc(L[String(u.role).toLowerCase()] || u.role) + '</td><td>' + pinPill(u) + '</td>' +
+      '<td>' + (u.active ? '<span class="pill pill-green">Active</span>' : '<span class="pill pill-gray">Inactive</span>') + '</td>' +
+      '<td class="sec-act"><button class="btn btn-ghost btn-sm" data-u="' + esc(u.username) + '" onclick="secPinOpen(this.dataset.u)">Change PIN</button>' +
+      '<button class="btn btn-ghost btn-sm' + (u.active ? ' btn-danger' : '') + '" data-u="' + esc(u.username) + '" data-a="' + (u.active ? 'false' : 'true') + '" onclick="secActiveOpen(this.dataset.u, this.dataset.a)">' +
+        (u.active ? 'Deactivate' : 'Activate') + '</button></td></tr>').join('') +
+    '</tbody></table></div>' +
+    '<div class="sec-h">Recent sign-ins</div>' +
+    (log.length ? '<div class="dt-scroll"><table class="dt"><thead><tr><th>Time</th><th>Username</th><th>Result</th><th class="hide-sm">Device</th></tr></thead><tbody>' +
+      log.map(x => '<tr><td class="muted-c">' + esc(String(x.time).substring(0, 16)) + '</td><td class="mono">' + esc(x.user) + '</td><td>' + resPill(x.result) + '</td><td class="hide-sm muted-c">' + esc(x.device || '—') + '</td></tr>').join('') +
+      '</tbody></table></div>' + (r.log.length > 15 ? '<div class="dt-foot"><span>Showing ' + log.length + ' of ' + r.log.length + '</span><button class="btn btn-ghost btn-sm" onclick="SEC_ALL=!SEC_ALL;secRender()">' + (SEC_ALL ? 'Show less' : 'Show all') + '</button></div>' : '')
+      : '<div class="muted-sm">No sign-ins recorded yet.</div>') +
+    '<div class="sec-note">' + ico('info') + '<span>PINs are stored as salted hashes, so nobody can read them in the sheet. Changing a PIN or deactivating a login signs that login out on every device. ' +
+      'Turn on <b>Litpax Hub → Turn on daily backup</b> in the sheet menu if it is not on yet.</span></div>' +
+  '</div>';
+}
+function secPinOpen(u) {
+  modalOpen('Change PIN — ' + u,
+    '<div class="note note-gray">At least 6 characters. Avoid easy PINs like 123456 or 111111. Everyone using this login will need the new PIN.</div>' +
+    '<div class="form-grid">' +
+      '<div class="fg full"><label for="sp_pin">New PIN <b>*</b></label><input id="sp_pin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="32"></div>' +
+      '<div class="fg full"><label for="sp_pin2">Repeat new PIN <b>*</b></label><input id="sp_pin2" type="password" inputmode="numeric" autocomplete="new-password" maxlength="32" ' +
+        'onkeydown="if(event.key===\'Enter\')secPinSave($(\'sp_btn\'))"></div>' +
+    '</div><button id="sp_btn" class="btn btn-primary btn-block" data-u="' + esc(u) + '" onclick="secPinSave(this)">Save new PIN</button>');
+  setTimeout(() => $('sp_pin') && $('sp_pin').focus(), 50);
+}
+async function secPinSave(btn) {
+  const a = $('sp_pin').value.trim(), b = $('sp_pin2').value.trim();
+  if (a.length < 6) return toast('⚠️ PIN must be at least 6 characters');
+  if (a !== b) return toast('⚠️ The two PINs do not match');
+  const r = await run({ action: 'setPin', username: btn.dataset.u, pin: a }, btn);
+  if (!r) return;
+  modalClose();
+  if (r.self) { logout(); toast('✅ PIN changed — sign in again with the new PIN'); return; }
+  toast('✅ PIN changed for ' + btn.dataset.u + ' — it is signed out on every device'); secLoad();
+}
+function secActiveOpen(u, on) {
+  const yes = on === 'true';
+  modalOpen((yes ? 'Activate ' : 'Deactivate ') + u,
+    '<p class="modal-p">' + (yes ? 'This login will be able to sign in again.' : 'This login is signed out on every device right away and cannot sign in until you activate it again.') + '</p>' +
+    '<button class="btn ' + (yes ? 'btn-primary' : 'btn-danger-solid') + ' btn-block" data-u="' + esc(u) + '" data-a="' + on + '" onclick="secActiveSave(this)">' + (yes ? 'Activate' : 'Deactivate') + '</button>');
+}
+async function secActiveSave(btn) {
+  const r = await run({ action: 'setUserActive', username: btn.dataset.u, active: btn.dataset.a }, btn);
+  if (!r) return;
+  modalClose(); toast('✅ ' + btn.dataset.u + (btn.dataset.a === 'true' ? ' activated' : ' deactivated')); secLoad();
+}
+function secLogoutAllOpen() {
+  modalOpen('Sign out all devices',
+    '<p class="modal-p">Everyone — including you — is signed out on every phone and computer right now. Use it when a phone is lost or a PIN may have leaked, then change that PIN.</p>' +
+    '<button class="btn btn-danger-solid btn-block" onclick="secLogoutAll(this)">Sign out everyone</button>');
+}
+async function secLogoutAll(btn) {
+  const r = await run({ action: 'logoutAll' }, btn);
+  if (!r) return;
+  modalClose(); logout(); toast('✅ Everyone has been signed out — sign in again');
+}
+
 /* ---------- UTILS ---------- */
 const $ = id => document.getElementById(id);
 const pad2 = n => ('0' + n).slice(-2);
@@ -104,6 +239,8 @@ const ICO = {
   check: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/>',
   alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
   info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+  refresh: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
   star: '<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>'
 };
 const ico = (k, cls) => '<svg class="ic' + (cls ? ' ' + cls : '') + '" viewBox="0 0 24 24" aria-hidden="true">' + (ICO[k] || '') + '</svg>';
@@ -356,8 +493,9 @@ window.addEventListener('load', () => {
 });
 
 function clearSession() {
-  ['hub_role', 'hub_token', 'hub_user'].forEach(k => localStorage.removeItem(k));
+  ['hub_role', 'hub_token', 'hub_user', 'hub_last_act'].forEach(k => localStorage.removeItem(k));
   try { sessionStorage.clear(); } catch (e) {}
+  idleStop(); wipeMem();
   MASTERS = null;
 }
 function sessionExpired(msg) { clearSession(); toast('🔒 ' + (msg || 'Session expired — please sign in again')); showLogin(); }
@@ -378,10 +516,12 @@ function capsCheck(e) { if (e.getModifierState) $('capsWarn').style.display = e.
 async function authLogin() {
   const u = $('loginUser').value.trim().toLowerCase(), p = $('loginPass').value.trim();
   if (!u || !p) return toast('⚠️ Enter username and PIN');
-  const r = await run({ action: 'login', username: u, pin: p }, $('loginBtn'));
+  const r = await run({ action: 'login', username: u, pin: p, dev: devName() }, $('loginBtn'));
   if (!r) return;
   if (!CONFIG.ROLES[r.role]) return toast('❌ Role not found in config.js: ' + r.role);
   localStorage.setItem('hub_role', r.role); localStorage.setItem('hub_token', r.token); localStorage.setItem('hub_user', u);
+  if (r.idleMin != null) localStorage.setItem('hub_idle', String(r.idleMin));
+  try { if (r.weakPin) sessionStorage.setItem('hub_weak', '1'); else sessionStorage.removeItem('hub_weak'); } catch (e) {}
   if ($('rememberUser').checked) localStorage.setItem('hub_remember_user', u); else localStorage.removeItem('hub_remember_user');
   enterApp(r.role);
 }
@@ -396,6 +536,7 @@ function enterApp(r) {
   ensureMasters();           // preload dropdown lists in the background
   ensureSettings().then(applySettings);   // SLA, lists, WhatsApp text, screens — from the Settings tab
   go(R.nav[0]);
+  idleStart(); weakPinBanner();
 }
 
 function logout() {
@@ -1781,11 +1922,12 @@ function setRender() {
   if (!rows.length) { $('setForm').innerHTML = '<div class="empty">Settings not found — run <b>🔧 Litpax Hub → Setup Sheets</b> once, then refresh.</div>'; return; }
   const groups = {};
   rows.forEach(x => (groups[x.group] = groups[x.group] || []).push(x));
-  $('setForm').innerHTML = Object.keys(groups).map(g =>
+  $('setForm').innerHTML = (can('admin') ? '<div id="secBox"></div>' : '') + Object.keys(groups).map(g =>
     '<div class="card set-card"><div class="card-head"><span>' + esc(g) + '</span></div>' + groups[g].map(setField).join('') + '</div>'
   ).join('') +
     '<div class="set-bar"><span>Saved values apply to everyone within 5 minutes (or on refresh). These are also in the <b>Settings</b> tab of the sheet.</span>' +
     '<button id="setSave" class="btn btn-primary" onclick="setSave(this)">Save settings ✓</button></div>';
+  if (can('admin')) { if (SEC) secRender(); secLoad(); }
 }
 
 function setRead(x) {
