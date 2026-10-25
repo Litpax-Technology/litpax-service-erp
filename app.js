@@ -217,6 +217,370 @@ async function secLogoutAll(btn) {
   modalClose(); logout(); toast('✅ Everyone has been signed out — sign in again');
 }
 
+/* ============================================================
+   REPORTS (admin) — pick a report, filter by anything, download exactly what is on screen as CSV
+   Data: getReportData (admin only, cached on the server until the next save)
+   ============================================================ */
+const RP = { data: null, at: '', key: 'tickets', f: {}, dt: {}, g: {}, q: '', sort: {}, limit: 100, busy: false };
+(function () { try { const s = JSON.parse(localStorage.getItem('hub_rp') || '{}'); ['key', 'f', 'dt', 'g'].forEach(k => { if (s[k]) RP[k] = s[k]; }); } catch (e) {} })();
+function rpSave() { try { localStorage.setItem('hub_rp', JSON.stringify({ key: RP.key, f: RP.f, dt: RP.dt, g: RP.g })); } catch (e) {} }
+
+const d10 = s => String(s == null ? '' : s).substring(0, 10);
+const rpDays = (a, b) => { a = d10(a); b = d10(b); if (!/^\d{4}-\d\d-\d\d$/.test(a) || !/^\d{4}-\d\d-\d\d$/.test(b)) return ''; return Math.max(0, Math.round((new Date(b) - new Date(a)) / 864e5)); };
+const rpNum = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[₹,\s]/g, '')); return isFinite(n) ? n : ''; };
+const yn = b => b ? 'Yes' : 'No';
+const rpSum = (rows, k) => rows.reduce((s, r) => s + (+r[k] || 0), 0);
+const rpAvg = (rows, k) => { const v = rows.map(r => r[k]).filter(x => x !== '' && x != null && isFinite(+x)); return v.length ? Math.round(v.reduce((s, x) => s + +x, 0) / v.length * 10) / 10 : ''; };
+const rpUniq = (rows, k) => new Set(rows.map(r => r[k]).filter(Boolean)).size;
+const inr = n => '₹' + Math.round(+n || 0).toLocaleString('en-IN');
+
+function rpMaps() {
+  const D = RP.data, TM = {}, IM = {};
+  (D.tickets || []).forEach(t => { TM[t['Ticket ID']] = t; });
+  (D.items || []).forEach(i => { IM[i['Item ID']] = i; });
+  return { TM, IM };
+}
+const tkOf = (M, id) => M.TM[id] || {};
+
+// [column, type]  type: num | money | date | (text)
+const RP_DEF = {
+  tickets: {
+    label: 'Tickets', open: r => ['ticket', r['Ticket ID'], r['Ticket ID']],
+    dates: ['Created', 'Received', 'Closed'],
+    filters: ['Status', 'Dealer', 'City', 'State', 'Complaint', 'Customer Type', 'Source', 'Attended By', 'Created By', 'Outcome', 'Repeat customer', 'Follow-up overdue', 'Call-back open', 'Low feedback'],
+    cols: [['Ticket ID'], ['Created', 'date'], ['Customer'], ['Contact'], ['Phone'], ['Dealer'], ['City'], ['State'], ['Complaint'], ['Status'], ['Outcome'],
+      ['Calls', 'num'], ['Items', 'num'], ['Attended By'], ['Received', 'date'], ['Closed', 'date'], ['Turnaround (days)', 'num'], ['Age (days)', 'num'],
+      ['Rating', 'num'], ['Customer Type'], ['Source'], ['Vehicle'], ['Created By'], ['Repeat customer'], ['Follow-up overdue'], ['Call-back open'], ['Low feedback']],
+    rows: () => (RP.data.tickets || []).map(t => {
+      const closed = t['Status'] === 'Closed', ended = isEnded(t['Status']);
+      return { 'Ticket ID': t['Ticket ID'], 'Created': d10(t['Created At']), 'Customer': t['Company Name'], 'Contact': t['Contact Person'], 'Phone': t['Phone'],
+        'Dealer': dealerOf(t), 'City': t['City'], 'State': t['State'], 'Complaint': t['Complaint'], 'Status': t['Status'], 'Outcome': t['Outcome'],
+        'Calls': rpNum(t['Total Calls']) || 0, 'Items': rpNum(t['Total Items']) || 0, 'Attended By': t['Attended By'], 'Received': d10(t['Received Date']),
+        'Closed': d10(t['Closed At']), 'Turnaround (days)': closed ? rpDays(t['Created At'], t['Closed At']) : '', 'Age (days)': ended ? '' : rpDays(t['Created At'], todayStr()),
+        'Rating': rpNum(t['Rating']), 'Customer Type': t['Customer Type'], 'Source': t['Source'], 'Vehicle': t['Vehicle Model'], 'Created By': t['Created By'],
+        'Repeat customer': yn(+t['Previous Tickets'] > 0), 'Follow-up overdue': yn(isDue(t)), 'Call-back open': yn(!!t['Open Callback']), 'Low feedback': yn(t['Feedback Flag'] === 'Low') };
+    }),
+    stats: R => [['Tickets', R.length], ['Open', R.filter(r => !isEnded(r.Status)).length], ['Closed', R.filter(r => r.Status === 'Closed').length],
+      ['Cancelled', R.filter(r => r.Status === 'Cancelled').length], ['Avg turnaround', rpAvg(R, 'Turnaround (days)') === '' ? '—' : rpAvg(R, 'Turnaround (days)') + ' days'],
+      ['Repeat customers', R.filter(r => r['Repeat customer'] === 'Yes').length]]
+  },
+  items: {
+    label: 'Batteries & chargers', open: r => ['item', r['Item ID'], r['Ticket ID']],
+    dates: ['Received', 'Dispatched', 'Report date'],
+    filters: ['Type', 'Category', 'Model', 'Brand', 'Warranty', 'Condition', 'Status', 'Fault Code', 'Root Cause', 'Repair Result', 'Final Outcome', 'Dealer', 'City', 'Report By', 'Dispatched By', 'Repeat serial'],
+    cols: [['Item ID'], ['Ticket ID'], ['Customer'], ['Dealer'], ['City'], ['Type'], ['Category'], ['Model'], ['Brand'], ['Serial No'], ['Warranty'], ['Condition'], ['Status'],
+      ['Fault Code'], ['Root Cause'], ['Repair Result'], ['Final Outcome'], ['Parts Cost', 'money'], ['Labour', 'money'], ['Repair Cost', 'money'],
+      ['Received', 'date'], ['Report date', 'date'], ['Dispatched', 'date'], ['Days in service', 'num'], ['Report By'], ['Dispatched By'], ['Repeat serial'], ['Replacement ID']],
+    rows: () => { const M = rpMaps(); return (RP.data.items || []).map(i => { const t = tkOf(M, i['Ticket ID']);
+      return { 'Item ID': i['Item ID'], 'Ticket ID': i['Ticket ID'], 'Customer': i['Customer'] || t['Company Name'], 'Dealer': dealerOf(t), 'City': t['City'],
+        'Type': i['Item Type'], 'Category': i['Category'], 'Model': i['Model'], 'Brand': i['Brand'], 'Serial No': String(i['Serial No'] || '').replace(/^'/, ''),
+        'Warranty': i['Warranty'], 'Condition': i['Condition'], 'Status': i['Item Status'], 'Fault Code': i['Fault Code'], 'Root Cause': i['Root Cause'],
+        'Repair Result': i['Repair Result'], 'Final Outcome': i['Final Outcome'], 'Parts Cost': rpNum(i['Parts Cost']), 'Labour': rpNum(i['Labour']), 'Repair Cost': rpNum(i['Repair Cost']),
+        'Received': d10(i['Received Date']), 'Report date': d10(i['Report At']), 'Dispatched': d10(i['Dispatch Date']),
+        'Days in service': rpDays(i['Received Date'], i['Dispatch Date'] || (itemDone(i['Item Status']) ? '' : todayStr())),
+        'Report By': i['Report By'], 'Dispatched By': i['Dispatched By'], 'Repeat serial': yn(+i['Repeat Count'] > 0), 'Replacement ID': i['Replacement ID'] }; }); },
+    stats: R => [['Items', R.length], ['Batteries', R.filter(r => r.Type !== 'Charger').length], ['Chargers', R.filter(r => r.Type === 'Charger').length],
+      ['Repaired', R.filter(r => r['Repair Result'] === 'Repaired').length], ['Replace', R.filter(r => r['Repair Result'] === 'Replace').length],
+      ['Repair cost', inr(rpSum(R, 'Repair Cost'))], ['Avg days in service', rpAvg(R, 'Days in service') === '' ? '—' : rpAvg(R, 'Days in service')]]
+  },
+  calls: {
+    label: 'Calls', open: r => r['Call ID'] ? ['call', r['Call ID'], r['Ticket ID']] : ['ticket', r['Ticket ID'], r['Ticket ID']],
+    dates: ['Date'], filters: ['Attended By', 'Result', 'Has next follow-up', 'Dealer', 'City', 'Ticket status'],
+    cols: [['Call ID'], ['Date', 'date'], ['Time'], ['Ticket ID'], ['Customer'], ['Dealer'], ['City'], ['Attended By'], ['Result'], ['Next Follow-up'], ['Checks'], ['Notes'], ['Ticket status'], ['Has next follow-up']],
+    rows: () => { const M = rpMaps(); return (RP.data.calls || []).map(c => { const t = tkOf(M, c.ticketId);
+      return { 'Call ID': c.id, 'Date': d10(c.time), 'Time': String(c.time || '').substring(11, 16), 'Ticket ID': c.ticketId, 'Customer': t['Company Name'], 'Dealer': dealerOf(t), 'City': t['City'],
+        'Attended By': c.by, 'Result': c.result, 'Next Follow-up': c.next, 'Checks': c.checks, 'Notes': c.notes || '', 'Ticket status': t['Status'], 'Has next follow-up': yn(!!c.next) }; }); },
+    stats: R => [['Calls', R.length], ['Tickets', rpUniq(R, 'Ticket ID')], ['Staff', rpUniq(R, 'Attended By')], ['With next follow-up', R.filter(r => r['Has next follow-up'] === 'Yes').length]]
+  },
+  pickups: {
+    label: 'Pickups', open: r => ['pickup', r['Pickup ID'], r['Ticket ID']],
+    dates: ['Created', 'Pickup Date'], filters: ['Status', 'Pickup By', 'Transport', 'Dealer', 'City', 'Created By'],
+    cols: [['Pickup ID'], ['Ticket ID'], ['Customer'], ['Dealer'], ['City'], ['Created', 'date'], ['Pickup Date', 'date'], ['Pickup By'], ['Transport'], ['LR No'], ['Boxes', 'num'],
+      ['Exp batteries', 'num'], ['Exp chargers', 'num'], ['Status'], ['Receipt ID'], ['Created By']],
+    rows: () => { const M = rpMaps(); return (RP.data.pickups || []).map(p => { const t = tkOf(M, p['Ticket ID']);
+      return { 'Pickup ID': p['Pickup ID'], 'Ticket ID': p['Ticket ID'], 'Customer': t['Company Name'], 'Dealer': dealerOf(t), 'City': t['City'], 'Created': d10(p['Created At']),
+        'Pickup Date': d10(p['Pickup Date']), 'Pickup By': p['Pickup By'], 'Transport': p['Transport Name'], 'LR No': p['LR No'], 'Boxes': rpNum(p['No. of Boxes']),
+        'Exp batteries': rpNum(p['Exp Battery Qty']), 'Exp chargers': rpNum(p['Exp Charger Qty']), 'Status': p['Status'], 'Receipt ID': p['Receipt ID'], 'Created By': p['Created By'] }; }); },
+    stats: R => [['Pickups', R.length], ['Still on the way', R.filter(r => r.Status === 'Arranged').length], ['Received', R.filter(r => r['Receipt ID']).length],
+      ['Batteries expected', rpSum(R, 'Exp batteries')], ['Chargers expected', rpSum(R, 'Exp chargers')]]
+  },
+  receipts: {
+    label: 'Repair jobs (received)', open: r => ['receipt', r['Receipt ID'], r['Ticket ID']],
+    dates: ['Received'], filters: ['Received By', 'Qty mismatch', 'Dealer', 'City'],
+    cols: [['Receipt ID'], ['Ticket ID'], ['Customer'], ['Dealer'], ['City'], ['Received', 'date'], ['Received By'], ['Batteries', 'num'], ['Chargers', 'num'],
+      ['Exp batteries', 'num'], ['Exp chargers', 'num'], ['Qty mismatch'], ['Qty Note'], ['Pickup ID'], ['Remarks']],
+    rows: () => { const M = rpMaps(); return (RP.data.receipts || []).map(x => { const t = tkOf(M, x['Ticket ID']);
+      return { 'Receipt ID': x['Receipt ID'], 'Ticket ID': x['Ticket ID'], 'Customer': t['Company Name'], 'Dealer': dealerOf(t), 'City': t['City'], 'Received': d10(x['Received Date']),
+        'Received By': x['Received By'], 'Batteries': rpNum(x['Battery Qty']) || 0, 'Chargers': rpNum(x['Charger Qty']) || 0, 'Exp batteries': rpNum(x['Exp Battery Qty']),
+        'Exp chargers': rpNum(x['Exp Charger Qty']), 'Qty mismatch': yn(!!x['Qty Note']), 'Qty Note': x['Qty Note'], 'Pickup ID': x['Pickup ID'], 'Remarks': x['Remarks'] }; }); },
+    stats: R => [['Jobs', R.length], ['Batteries', rpSum(R, 'Batteries')], ['Chargers', rpSum(R, 'Chargers')], ['Qty mismatch', R.filter(r => r['Qty mismatch'] === 'Yes').length]]
+  },
+  dispatches: {
+    label: 'Dispatches', open: r => r['Dispatch ID'] ? ['dispatch', r['Dispatch ID'], r['Ticket ID']] : ['ticket', r['Ticket ID'], r['Ticket ID']],
+    dates: ['Date'], filters: ['Dispatched By', 'Transport', 'Dealer', 'City', 'Has replacement'],
+    cols: [['Dispatch ID'], ['Date', 'date'], ['Ticket ID'], ['Customer'], ['Dealer'], ['City'], ['Batteries', 'num'], ['Chargers', 'num'], ['Transport'], ['LR No'],
+      ['Dispatched By'], ['Charges', 'money'], ['Items'], ['Problem Found'], ['Has replacement'], ['Remarks']],
+    rows: () => { const M = rpMaps(); return (RP.data.dispatches || []).map(d => { const t = tkOf(M, d['Ticket ID']);
+      return { 'Dispatch ID': d['Dispatch ID'], 'Date': d10(d['Dispatch Date']), 'Ticket ID': d['Ticket ID'], 'Customer': t['Company Name'], 'Dealer': dealerOf(t), 'City': t['City'],
+        'Batteries': rpNum(d['Batteries']) || 0, 'Chargers': rpNum(d['Chargers']) || 0, 'Transport': d['Transport'], 'LR No': d['LR No'], 'Dispatched By': d['Dispatched By'],
+        'Charges': rpNum(d['Charges']), 'Items': d['Item IDs'], 'Problem Found': d['Problem Found'], 'Has replacement': yn(!!d['Replacement IDs']), 'Remarks': d['Remarks'] }; }); },
+    stats: R => [['Dispatches', R.length], ['Batteries', rpSum(R, 'Batteries')], ['Chargers', rpSum(R, 'Chargers')], ['Charges', inr(rpSum(R, 'Charges'))]]
+  },
+  replacements: {
+    label: 'Replacements', open: r => ['replacement', r['Replacement ID'], r['Ticket ID']],
+    dates: ['Requested', 'Sent'], filters: ['Type', 'Status', 'Warranty', 'Chargeable', 'Source', 'Old Model', 'New Model', 'Approved By', 'Old battery outcome', 'Dealer', 'City'],
+    cols: [['Replacement ID'], ['Ticket ID'], ['Customer'], ['Dealer'], ['City'], ['Type'], ['Status'], ['Warranty'], ['Chargeable'], ['Charge', 'money'], ['Reason'],
+      ['Old Model'], ['Old Serial'], ['New Model'], ['New Serial'], ['Source'], ['Requested', 'date'], ['Requested By'], ['Approved By'], ['Sent', 'date'], ['Transport'], ['Old battery outcome']],
+    rows: () => { const M = rpMaps(); return (RP.data.replacements || []).map(x => { const t = tkOf(M, x['Ticket ID']);
+      return { 'Replacement ID': x['Replacement ID'], 'Ticket ID': x['Ticket ID'], 'Customer': t['Company Name'], 'Dealer': dealerOf(t), 'City': t['City'], 'Type': x['Type'],
+        'Status': x['Status'], 'Warranty': x['Warranty'], 'Chargeable': x['Chargeable'], 'Charge': rpNum(x['Charge Amount']), 'Reason': x['Reason'], 'Old Model': x['Old Model'],
+        'Old Serial': String(x['Old Serial'] || '').replace(/^'/, ''), 'New Model': x['New Model'], 'New Serial': String(x['New Serial'] || '').replace(/^'/, ''), 'Source': x['Source'],
+        'Requested': d10(x['Requested At']), 'Requested By': x['Requested By'], 'Approved By': x['Approved By'], 'Sent': d10(x['Dispatch Date']), 'Transport': x['Transport'],
+        'Old battery outcome': x['Old Outcome'] || (x['Against Item ID'] ? 'With us' : 'Not received') }; }); },
+    stats: R => [['Replacements', R.length], ['Pending approval', R.filter(r => r.Status === 'Pending Approval').length], ['Sent', R.filter(r => r.Sent).length],
+      ['In warranty', R.filter(r => /^in/i.test(r.Warranty || '')).length], ['Charged', inr(rpSum(R, 'Charge'))]]
+  },
+  parts: {
+    label: 'Parts used', open: r => ['item', r['Item ID'], r['Ticket ID']],
+    dates: ['Date'], filters: ['Part', 'Model', 'Root Cause', 'Repair Result', 'Added By', 'Dealer'],
+    cols: [['Part Use ID'], ['Date', 'date'], ['Part'], ['Qty', 'num'], ['Rate', 'money'], ['Amount', 'money'], ['Item ID'], ['Ticket ID'], ['Customer'], ['Dealer'], ['Model'], ['Root Cause'], ['Repair Result'], ['Added By']],
+    rows: () => { const M = rpMaps(); return (RP.data.parts || []).map(p => { const t = tkOf(M, p['Ticket ID']), i = M.IM[p['Item ID']] || {};
+      return { 'Part Use ID': p['Part Use ID'], 'Date': d10(p['Added At']), 'Part': p['Part'], 'Qty': rpNum(p['Qty']), 'Rate': rpNum(p['Rate']), 'Amount': rpNum(p['Amount']),
+        'Item ID': p['Item ID'], 'Ticket ID': p['Ticket ID'], 'Customer': t['Company Name'], 'Dealer': dealerOf(t), 'Model': i['Model'], 'Root Cause': i['Root Cause'],
+        'Repair Result': i['Repair Result'], 'Added By': p['Added By'] }; }); },
+    stats: R => [['Lines', R.length], ['Different parts', rpUniq(R, 'Part')], ['Qty used', rpSum(R, 'Qty')], ['Amount', inr(rpSum(R, 'Amount'))]]
+  },
+  feedback: {
+    label: 'Feedback', open: r => r['Feedback ID'] ? ['feedback', r['Feedback ID'], r['Ticket ID']] : ['ticket', r['Ticket ID'], r['Ticket ID']],
+    dates: ['Date'], filters: ['Rating', 'Problem solved', 'Low (1–2 stars)', 'Dealer', 'City', 'Complaint'],
+    cols: [['Feedback ID'], ['Date', 'date'], ['Ticket ID'], ['Customer'], ['Dealer'], ['City'], ['Complaint'], ['Rating', 'num'], ['Problem solved'], ['Comment'], ['Low (1–2 stars)']],
+    rows: () => { const M = rpMaps(); return (RP.data.feedback || []).map(f => { const t = tkOf(M, f['Ticket ID']);
+      return { 'Feedback ID': f['Feedback ID'], 'Date': d10(f['Time']), 'Ticket ID': f['Ticket ID'], 'Customer': t['Company Name'], 'Dealer': dealerOf(t), 'City': t['City'],
+        'Complaint': t['Complaint'], 'Rating': rpNum(f['Rating']), 'Problem solved': f['Solved'], 'Comment': f['Comment'], 'Low (1–2 stars)': yn(+f['Rating'] > 0 && +f['Rating'] <= 2) }; }); },
+    stats: R => [['Responses', R.length], ['Avg rating', rpAvg(R, 'Rating') === '' ? '—' : rpAvg(R, 'Rating')], ['Solved', R.length ? Math.round(R.filter(r => /^y/i.test(r['Problem solved'] || '')).length / R.length * 100) + '%' : '—'],
+      ['Low (1–2 stars)', R.filter(r => r['Low (1–2 stars)'] === 'Yes').length]]
+  },
+  tsum: {
+    label: 'Ticket summary', base: 'tickets', groups: ['Dealer', 'City', 'State', 'Complaint', 'Status', 'Source', 'Customer Type', 'Attended By', 'Created By', 'Month'],
+    cols: g => [[g], ['Tickets', 'num'], ['Open', 'num'], ['Closed', 'num'], ['Cancelled', 'num'], ['Items', 'num'], ['Avg turnaround (days)', 'num'], ['Repeat customers', 'num'], ['Avg rating', 'num'], ['Low feedback', 'num']],
+    agg: (g, R) => ({ [g]: g, 'Tickets': R.length, 'Open': R.filter(r => !isEnded(r.Status)).length, 'Closed': R.filter(r => r.Status === 'Closed').length,
+      'Cancelled': R.filter(r => r.Status === 'Cancelled').length, 'Items': rpSum(R, 'Items'), 'Avg turnaround (days)': rpAvg(R, 'Turnaround (days)'),
+      'Repeat customers': R.filter(r => r['Repeat customer'] === 'Yes').length, 'Avg rating': rpAvg(R, 'Rating'), 'Low feedback': R.filter(r => r['Low feedback'] === 'Yes').length }),
+    month: r => d10(r.Created).substring(0, 7)
+  },
+  isum: {
+    label: 'Item summary', base: 'items', groups: ['Model', 'Root Cause', 'Fault Code', 'Repair Result', 'Warranty', 'Type', 'Category', 'Dealer', 'City', 'Report By', 'Month'],
+    cols: g => [[g], ['Items', 'num'], ['Repaired', 'num'], ['Replace', 'num'], ['No fault found', 'num'], ['Not repairable', 'num'], ['Dispatched', 'num'], ['Repeat serials', 'num'],
+      ['Repair cost', 'money'], ['Avg days in service', 'num']],
+    agg: (g, R) => ({ [g]: g, 'Items': R.length, 'Repaired': R.filter(r => r['Repair Result'] === 'Repaired').length, 'Replace': R.filter(r => r['Repair Result'] === 'Replace').length,
+      'No fault found': R.filter(r => r['Repair Result'] === 'No fault found').length, 'Not repairable': R.filter(r => r['Repair Result'] === 'Not repairable').length,
+      'Dispatched': R.filter(r => r.Dispatched).length, 'Repeat serials': R.filter(r => r['Repeat serial'] === 'Yes').length, 'Repair cost': rpSum(R, 'Repair Cost'),
+      'Avg days in service': rpAvg(R, 'Days in service') }),
+    month: r => d10(r.Received).substring(0, 7)
+  }
+};
+const RP_ORDER = ['tickets', 'items', 'calls', 'pickups', 'receipts', 'dispatches', 'replacements', 'parts', 'feedback', 'tsum', 'isum'];
+
+/* ---------- data ---------- */
+function openReports() { if (!RP_DEF[RP.key]) RP.key = 'tickets'; RP.limit = 100; rpLoad(false); }
+async function rpLoad(force) {
+  if (RP.data && !force) return rpRender();
+  if (RP.busy) return;
+  RP.busy = true;
+  if (!RP.data) $('rpBody').innerHTML = '<div class="skeleton sk-block"></div><div class="skeleton sk-block"></div>';
+  const btn = $('rpRefresh'); if (btn) btn.disabled = true;
+  try {
+    const r = await api({ action: 'getReportData' });
+    if (!r || !r.ok) { toast('❌ ' + ((r && r.msg) || 'Could not load report data')); if (!RP.data) $('rpBody').innerHTML = '<div class="empty">Could not load report data</div>'; return; }
+    RP.data = r.data; RP.at = r.data.generatedAt || ''; RP.cache = {};
+    rpRender();
+  } catch (e) { if (e !== 'auth' && !RP.data) $('rpBody').innerHTML = '<div class="empty">Network error — try Refresh</div>'; }
+  finally { RP.busy = false; if (btn) btn.disabled = false; }
+}
+function rpBase(key) { RP.cache = RP.cache || {}; return RP.cache[key] || (RP.cache[key] = RP_DEF[key].rows()); }
+
+/* ---------- date presets ---------- */
+const RP_PRESETS = [['', 'All time'], ['today', 'Today'], ['yday', 'Yesterday'], ['week', 'This week'], ['7', 'Last 7 days'], ['30', 'Last 30 days'],
+  ['month', 'This month'], ['lmonth', 'Last month'], ['quarter', 'This quarter'], ['year', 'This year'], ['custom', 'Custom range']];
+function ymd(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+function rpRange(p) {
+  const t = new Date(); t.setHours(0, 0, 0, 0); const d = n => { const x = new Date(t); x.setDate(x.getDate() + n); return x; };
+  if (p === 'today') return [ymd(t), ymd(t)];
+  if (p === 'yday') return [ymd(d(-1)), ymd(d(-1))];
+  if (p === 'week') return [ymd(d(-((t.getDay() + 6) % 7))), ymd(t)];
+  if (p === '7') return [ymd(d(-6)), ymd(t)];
+  if (p === '30') return [ymd(d(-29)), ymd(t)];
+  if (p === 'month') return [ymd(new Date(t.getFullYear(), t.getMonth(), 1)), ymd(t)];
+  if (p === 'lmonth') return [ymd(new Date(t.getFullYear(), t.getMonth() - 1, 1)), ymd(new Date(t.getFullYear(), t.getMonth(), 0))];
+  if (p === 'quarter') return [ymd(new Date(t.getFullYear(), Math.floor(t.getMonth() / 3) * 3, 1)), ymd(t)];
+  if (p === 'year') return [ymd(new Date(t.getFullYear(), 0, 1)), ymd(t)];
+  return ['', ''];
+}
+
+/* ---------- filtering ---------- */
+const rpBaseKey = () => RP_DEF[RP.key].base || RP.key;
+function rpDt() { const k = rpBaseKey(); return RP.dt[k] || (RP.dt[k] = { field: RP_DEF[k].dates[0], preset: '', from: '', to: '' }); }
+function rpF() { const k = rpBaseKey(); return RP.f[k] || (RP.f[k] = {}); }
+function rpFiltered() {
+  const k = rpBaseKey(), def = RP_DEF[k], F = rpF(), dt = rpDt(), q = RP.q.toLowerCase().trim();
+  const cols = def.cols.map(c => c[0]);
+  return rpBase(k).filter(r => {
+    if (dt.from || dt.to) { const v = d10(r[dt.field]); if (!v || (dt.from && v < dt.from) || (dt.to && v > dt.to)) return false; }
+    for (const f in F) { const sel = F[f]; if (sel && sel.length && sel.indexOf(r[f] === '' || r[f] == null ? '(blank)' : String(r[f])) === -1) return false; }
+    if (q && cols.map(c => r[c]).join(' ').toLowerCase().indexOf(q) === -1) return false;
+    return true;
+  });
+}
+function rpOptions(f) {
+  const k = rpBaseKey(), n = {};
+  rpBase(k).forEach(r => { const v = r[f] === '' || r[f] == null ? '(blank)' : String(r[f]); n[v] = (n[v] || 0) + 1; });
+  return Object.keys(n).sort((a, b) => a === '(blank)' ? 1 : b === '(blank)' ? -1 : a.localeCompare(b, undefined, { numeric: true })).map(v => [v, n[v]]);
+}
+// grouped (summary) or plain rows + their columns, sorted
+function rpView() {
+  const def = RP_DEF[RP.key], base = rpFiltered();
+  let rows = base, cols;
+  if (def.base) {
+    const g = RP.g[RP.key] && def.groups.indexOf(RP.g[RP.key]) !== -1 ? RP.g[RP.key] : def.groups[0];
+    RP.g[RP.key] = g;
+    const by = {};
+    base.forEach(r => { const v = g === 'Month' ? def.month(r) || '(blank)' : (r[g] === '' || r[g] == null ? '(blank)' : String(r[g])); (by[v] = by[v] || []).push(r); });
+    rows = Object.keys(by).map(v => Object.assign(def.agg(g, by[v]), { [g]: v }));
+    cols = def.cols(g);
+  } else cols = def.cols;
+  const s = RP.sort[RP.key] || (def.base ? { k: cols[1][0], d: -1 } : null);
+  if (s && cols.some(c => c[0] === s.k)) {
+    const typ = (cols.find(c => c[0] === s.k) || [])[1];
+    rows = rows.slice().sort((a, b) => {
+      let x = a[s.k], y = b[s.k];
+      if (typ === 'num' || typ === 'money') { x = x === '' || x == null ? -Infinity : +x; y = y === '' || y == null ? -Infinity : +y; return (x - y) * s.d; }
+      return String(x == null ? '' : x).localeCompare(String(y == null ? '' : y), undefined, { numeric: true }) * s.d;
+    });
+  } else if (!def.base) rows = rows.slice().reverse();   // newest first
+  return { rows, cols, base };
+}
+
+/* ---------- render ---------- */
+function rpRender() {
+  if (!RP.data) return;
+  const def = RP_DEF[RP.key], bk = rpBaseKey(), bdef = RP_DEF[bk], dt = rpDt(), F = rpF();
+  $('rpTabs').innerHTML = RP_ORDER.map(k => '<button class="chip' + (k === RP.key ? ' active' : '') + (k === 'tsum' ? ' rp-sep' : '') + '" data-k="' + k + '" onclick="rpSetKey(this.dataset.k)">' + RP_DEF[k].label + '</button>').join('');
+  const active = Object.keys(F).filter(f => F[f] && F[f].length).length + (dt.from || dt.to ? 1 : 0);
+  let h = '<div class="card rp-filters">' +
+    '<div class="rp-row">' +
+      '<label class="rp-fld"><span>Date</span><select id="rp_dtf" onchange="rpDtSet()">' + bdef.dates.map(d => '<option' + (d === dt.field ? ' selected' : '') + '>' + esc(d) + '</option>').join('') + '</select></label>' +
+      '<label class="rp-fld"><span>Period</span><select id="rp_dtp" onchange="rpDtSet(true)">' + RP_PRESETS.map(p => '<option value="' + p[0] + '"' + (p[0] === dt.preset ? ' selected' : '') + '>' + p[1] + '</option>').join('') + '</select></label>' +
+      '<label class="rp-fld"><span>From</span><input type="date" id="rp_from" value="' + esc(dt.from) + '" onchange="rpDtSet()"></label>' +
+      '<label class="rp-fld"><span>To</span><input type="date" id="rp_to" value="' + esc(dt.to) + '" onchange="rpDtSet()"></label>' +
+      (def.base ? '<label class="rp-fld"><span>Group by</span><select onchange="RP.g[RP.key]=this.value;rpSave();rpRender()">' + def.groups.map(g => '<option' + (g === RP.g[RP.key] ? ' selected' : '') + '>' + esc(g) + '</option>').join('') + '</select></label>' : '') +
+    '</div>' +
+    '<div class="rp-ms-wrap">' + bdef.filters.map(f => rpMs(f, F[f] || [])).join('') + '</div>' +
+    (active ? '<div class="rp-active">' + (dt.from || dt.to ? '<span class="rp-chip">' + esc(dt.field) + ': ' + esc(dt.from ? niceDate(dt.from) : '…') + ' – ' + esc(dt.to ? niceDate(dt.to) : '…') +
+        '<button aria-label="Remove" onclick="rpDtClear()">' + ico('x', 'ic-xs') + '</button></span>' : '') +
+      Object.keys(F).filter(f => F[f] && F[f].length).map(f => '<span class="rp-chip">' + esc(f) + ': ' + esc(F[f].length > 2 ? F[f].length + ' selected' : F[f].join(', ')) +
+        '<button aria-label="Remove" data-f="' + esc(f) + '" onclick="rpClearOne(this.dataset.f)">' + ico('x', 'ic-xs') + '</button></span>').join('') +
+      '<button class="link-btn" onclick="rpClearAll()">Clear all</button></div>' : '') +
+  '</div>';
+  const V = rpView();
+  const stats = def.base ? [['Groups', V.rows.length], [bdef.label, V.base.length]] : def.stats(V.rows);
+  h += '<div class="rp-stats">' + stats.map(s => '<div><span>' + esc(s[0]) + '</span><b>' + esc(String(s[1])) + '</b></div>').join('') + '</div>';
+  const shown = V.rows.slice(0, RP.limit), s = RP.sort[RP.key] || {};
+  h += '<div class="tbl-card"><div class="tbl-tools">' +
+    '<label class="tsearch">' + ico('search') + '<input id="rp_q" placeholder="Search in this report…" value="' + esc(RP.q) + '" oninput="RP.q=this.value;RP.limit=100;rpRenderSoon()"></label>' +
+    '<span class="rp-count">' + V.rows.length.toLocaleString('en-IN') + ' row' + (V.rows.length === 1 ? '' : 's') + '</span>' +
+    '<button class="btn btn-primary btn-sm rp-csv" onclick="rpCsv()"' + (V.rows.length ? '' : ' disabled') + '>' + ico('download') + 'Download CSV</button>' +
+    '</div>' +
+    (V.rows.length ? '<div class="dt-scroll rp-scroll"><table class="dt rp-table"><thead><tr>' + V.cols.map(c => '<th class="' + (c[1] === 'num' || c[1] === 'money' ? 'num' : '') + (s.k === c[0] ? ' sorted' : '') + '" data-k="' + esc(c[0]) + '" onclick="rpSort(this.dataset.k)">' +
+        esc(c[0]) + (s.k === c[0] ? (s.d > 0 ? ' ↑' : ' ↓') : '') + '</th>').join('') + '</tr></thead><tbody>' +
+      shown.map((r, i) => '<tr class="rp-row-click" data-i="' + i + '" onclick="rpOpen(+this.dataset.i)">' + V.cols.map(c => {
+        const v = r[c[0]], num = c[1] === 'num' || c[1] === 'money';
+        const txt = v === '' || v == null ? '' : c[1] === 'money' ? inr(v) : c[1] === 'date' ? shortDate(v) : String(v);
+        return '<td class="' + (num ? 'num' : '') + (c[0] === 'Status' ? '' : '') + '">' + (c[0] === 'Status' && txt ? pill(txt) : esc(txt)) + '</td>';
+      }).join('') + '</tr>').join('') + '</tbody>' +
+      rpTotals(V) + '</table></div>' +
+      '<div class="dt-foot"><span>Showing ' + shown.length.toLocaleString('en-IN') + ' of ' + V.rows.length.toLocaleString('en-IN') + ' · data as of ' + esc(RP.at) + '</span>' +
+      (V.rows.length > shown.length ? '<button class="btn btn-ghost btn-sm" onclick="RP.limit+=200;rpRender()">Show 200 more</button>' : '') + '</div>'
+      : '<div class="empty">No rows match these filters</div>') +
+    '</div>';
+  RP.view = V;
+  const y = window.scrollY, fq = document.activeElement && document.activeElement.id === 'rp_q';
+  $('rpBody').innerHTML = h;
+  if (fq) { const el = $('rp_q'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  window.scrollTo(0, y);
+}
+let _rpT = 0;
+function rpRenderSoon() { clearTimeout(_rpT); _rpT = setTimeout(rpRender, 180); }
+function rpTotals(V) {
+  const sums = V.cols.map(c => c[1] === 'money' || (c[1] === 'num' && !/avg|days|rating/i.test(c[0])) ? rpSum(V.rows, c[0]) : null);
+  if (!sums.some(x => x !== null)) return '';
+  return '<tfoot><tr>' + V.cols.map((c, i) => '<td class="' + (sums[i] !== null ? 'num' : '') + '">' + (i === 0 ? '<b>Total</b>' : sums[i] === null ? '' : '<b>' + (c[1] === 'money' ? inr(sums[i]) : sums[i].toLocaleString('en-IN')) + '</b>') + '</td>').join('') + '</tr></tfoot>';
+}
+// multi-select filter (native <details>, closes on outside click)
+function rpMs(f, sel) {
+  const opts = rpOptions(f);
+  return '<details class="rp-ms' + (sel.length ? ' on' : '') + '" data-f="' + esc(f) + '"><summary>' + esc(f) + (sel.length ? ' <b>' + sel.length + '</b>' : '') + ico('chev') + '</summary>' +
+    '<div class="rp-pop">' + (opts.length > 8 ? '<input class="rp-pop-q" placeholder="Search…" oninput="rpMsFind(this)">' : '') +
+    '<div class="rp-opts">' + (opts.length ? opts.map(([v, n]) => '<label><input type="checkbox" value="' + esc(v) + '"' + (sel.indexOf(v) !== -1 ? ' checked' : '') + ' onchange="rpMsPick(this)"><span>' + esc(v) + '</span><small>' + n + '</small></label>').join('')
+      : '<div class="muted-sm">No values</div>') + '</div>' +
+    (sel.length ? '<button class="link-btn" data-f="' + esc(f) + '" onclick="rpClearOne(this.dataset.f)">Clear</button>' : '') + '</div></details>';
+}
+function rpMsFind(inp) { const q = inp.value.toLowerCase(); inp.parentNode.querySelectorAll('.rp-opts label').forEach(l => { l.hidden = l.textContent.toLowerCase().indexOf(q) === -1; }); }
+function rpMsPick(cb) {
+  const f = cb.closest('details').dataset.f, F = rpF(), s = F[f] || [];
+  F[f] = cb.checked ? s.concat([cb.value]).filter((v, i, a) => a.indexOf(v) === i) : s.filter(v => v !== cb.value);
+  if (!F[f].length) delete F[f];
+  RP.limit = 100; rpSave();
+  const open = f; rpRender();
+  const d = document.querySelector('.rp-ms[data-f="' + CSS.escape(open) + '"]'); if (d) d.open = true;
+}
+document.addEventListener('click', e => { document.querySelectorAll('.rp-ms[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; }); });
+document.addEventListener('toggle', e => { if (e.target.classList && e.target.classList.contains('rp-ms') && e.target.open) document.querySelectorAll('.rp-ms[open]').forEach(d => { if (d !== e.target) d.open = false; }); }, true);
+
+function rpSetKey(k) { RP.key = k; RP.limit = 100; RP.q = ''; rpSave(); rpRender(); }
+function rpSort(k) { const s = RP.sort[RP.key]; RP.sort[RP.key] = s && s.k === k ? { k, d: -s.d } : { k, d: 1 }; rpRender(); }
+function rpDtSet(fromPreset) {
+  const dt = rpDt(); dt.field = $('rp_dtf').value;
+  if (fromPreset) { dt.preset = $('rp_dtp').value; if (dt.preset !== 'custom') { const r = rpRange(dt.preset); dt.from = r[0]; dt.to = r[1]; } }
+  else { const f = $('rp_from').value, t = $('rp_to').value; if (f !== dt.from || t !== dt.to) { dt.from = f; dt.to = t; dt.preset = f || t ? 'custom' : ''; } }
+  if (dt.from && dt.to && dt.from > dt.to) { const x = dt.from; dt.from = dt.to; dt.to = x; }
+  RP.limit = 100; rpSave(); rpRender();
+}
+function rpDtClear() { const dt = rpDt(); dt.from = ''; dt.to = ''; dt.preset = ''; rpSave(); rpRender(); }
+function rpClearOne(f) { delete rpF()[f]; rpSave(); rpRender(); }
+function rpClearAll() { RP.f[rpBaseKey()] = {}; rpDtClear(); RP.q = ''; rpRender(); }
+// row → its record page · summary row → the detail report filtered to that group
+function rpOpen(i) {
+  const def = RP_DEF[RP.key], r = RP.view && RP.view.rows[i]; if (!r) return;
+  if (def.base) {
+    const g = RP.g[RP.key], v = r[g];
+    if (g === 'Month') { const dt = rpDt(); const m = String(v).match(/^(\d{4})-(\d{2})$/); if (m) { dt.field = def.base === 'tickets' ? 'Created' : 'Received'; dt.from = v + '-01'; dt.to = ymd(new Date(+m[1], +m[2], 0)); dt.preset = 'custom'; } }
+    else rpF()[g] = [String(v)];
+    RP.key = def.base; RP.limit = 100; rpSave(); rpRender(); window.scrollTo(0, 0); return;
+  }
+  const o = def.open(r); if (o && o[1]) openRecord(o[0], o[1], o[2], { fresh: true });
+}
+
+/* ---------- CSV: exactly the rows and columns on screen (all pages) ---------- */
+function rpCsvCell(v, c) {
+  if (v == null) v = '';
+  let s = String(v);
+  if (c[1] !== 'num' && c[1] !== 'money' && /^[=+\-@\t\r]/.test(s)) s = "'" + s;          // no formulas when opened in Excel
+  if (/^\d{11,}$/.test(s) || (/^0\d+$/.test(s))) s = '="' + s + '"';                     // keep long numbers / leading zeros (phone, serial) as text
+  return /[",\n\r]/.test(s) || /^="/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function rpCsv() {
+  const V = rpView(); if (!V.rows.length) return;
+  const def = RP_DEF[RP.key], dt = rpDt(), F = rpF();
+  const lines = [V.cols.map(c => rpCsvCell(c[0], [])).join(',')].concat(V.rows.map(r => V.cols.map(c => rpCsvCell(r[c[0]], c)).join(',')));
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const name = 'litpax-' + def.label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-$/, '') + (def.base ? '-by-' + String(RP.g[RP.key]).toLowerCase().replace(/[^a-z0-9]+/g, '-') : '') +
+    (dt.from || dt.to ? '_' + (dt.from || 'start') + '_to_' + (dt.to || todayStr()) : '') + '_' + todayStr() + '.csv';
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  const nf = Object.keys(F).filter(f => F[f] && F[f].length).length;
+  toast('✅ Downloaded ' + V.rows.length + ' rows' + (nf || dt.from || dt.to ? ' (filtered)' : ''));
+}
+
 /* ---------- UTILS ---------- */
 const $ = id => document.getElementById(id);
 const pad2 = n => ('0' + n).slice(-2);
@@ -241,6 +605,10 @@ const ICO = {
   info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
   refresh: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
   logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
+  chev: '<path d="m6 9 6 6 6-6"/>',
+  chart: '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
   star: '<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>'
 };
 const ico = (k, cls) => '<svg class="ic' + (cls ? ' ' + cls : '') + '" viewBox="0 0 24 24" aria-hidden="true">' + (ICO[k] || '') + '</svg>';
@@ -448,10 +816,11 @@ const SCREENS = {
   masters:   { id: 'scrMasters',  icon: '⚙️', label: 'Masters',      title: 'Masters',      sub: 'Dropdown lists — names and battery / charger types', open: openMasters },
   tracker:   { id: 'scrTracker',  icon: '🛰️', label: 'Ticket Tracker', title: 'Ticket Tracker', sub: 'Where every ticket and battery is right now — with SLA', open: openTracker },
   settings:  { id: 'scrSettings', icon: '🛠️', label: 'Settings',     title: 'Settings',     sub: 'SLA targets, lists, WhatsApp messages and screens per role', open: openSettings },
+  reports:   { id: 'scrReports',  icon: '📊', label: 'Reports',      title: 'Reports',      sub: 'Filter any data and download exactly what you see as CSV', open: openReports },
   records:   { id: 'scrRecords',  icon: '🗂️', label: 'Records',      title: 'Records',      sub: 'Every customer, call, pickup, repair job, item and dispatch — click any row to open it', open: () => openRecords() }
 };
-const NAV_ICO = { newTicket: 'plus', tickets: 'ticket', board: 'wrench', dispatch: 'truck', masters: 'list', tracker: 'activity', settings: 'sliders', records: 'folder' };
-const NAV_ADMIN = { masters: 1, settings: 1 };
+const NAV_ICO = { reports: 'chart', newTicket: 'plus', tickets: 'ticket', board: 'wrench', dispatch: 'truck', masters: 'list', tracker: 'activity', settings: 'sliders', records: 'folder' };
+const NAV_ADMIN = { reports: 1, masters: 1, settings: 1 };
 function navRender(nav) {
   const item = k => '<button class="sb-item' + (k === CURRENT ? ' active' : '') + '" data-nav="' + k + '" onclick="go(this.dataset.nav)">' + ico(NAV_ICO[k] || 'list') + '<span>' + SCREENS[k].label + '</span></button>';
   const work = nav.filter(k => !NAV_ADMIN[k]), adm = nav.filter(k => NAV_ADMIN[k]);
@@ -459,8 +828,9 @@ function navRender(nav) {
 }
 // every role can browse records (read-only lists — actions still follow the role)
 function navList(nav) {
-  const n = nav.filter(k => k !== 'records'), i = n.indexOf('settings');
+  const n = nav.filter(k => k !== 'records' && k !== 'reports'), i = n.indexOf('settings');
   if (i === -1) n.push('records'); else n.splice(i, 0, 'records');
+  if (can('admin')) { const m = n.indexOf('masters') !== -1 ? n.indexOf('masters') : n.indexOf('settings'); if (m === -1) n.push('reports'); else n.splice(m, 0, 'reports'); }
   return n;
 }
 let CURRENT = '';
@@ -1849,7 +2219,7 @@ function trkOpen(id) {
    SETTINGS — values come from the "Settings" tab of the sheet (config.js is only a fallback)
    ============================================================ */
 let SETTINGS = null;
-const SCREEN_NEED = { newTicket: 'create', board: 'repair', dispatch: 'repair', masters: 'admin', settings: 'admin' };
+const SCREEN_NEED = { newTicket: 'create', board: 'repair', dispatch: 'repair', masters: 'admin', settings: 'admin', reports: 'admin' };
 const ROLE_OF_NAV = { NAV_ATTENDANT: 'attendant', NAV_SERVICE: 'service', NAV_REPAIR: 'repair', NAV_ADMIN: 'admin' };
 
 async function ensureSettings(force) {
@@ -1909,7 +2279,7 @@ function setField(x) {
     const allowed = Object.keys(SCREENS).filter(k => !SCREEN_NEED[k] || perms.indexOf(SCREEN_NEED[k]) !== -1);
     input = '<div id="' + id + '" class="set-nav">' +
       '<div class="set-checks">' + allowed.map(k => '<label class="set-chk"><input type="checkbox" value="' + k + '"' + (cur.indexOf(k) !== -1 ? ' checked' : '') +
-        (r === 'admin' && k === 'settings' ? ' checked disabled' : '') + '> ' + SCREENS[k].icon + ' ' + esc(SCREENS[k].label) + '</label>').join('') + '</div>' +
+        (r === 'admin' && (k === 'settings' || k === 'reports') ? ' checked disabled' : '') + '> ' + SCREENS[k].icon + ' ' + esc(SCREENS[k].label) + '</label>').join('') + '</div>' +
       '<label class="set-first">Opens after login <select>' + allowed.map(k => '<option value="' + k + '"' + (cur[0] === k ? ' selected' : '') + '>' + esc(SCREENS[k].label) + '</option>').join('') + '</select></label></div>';
   } else {
     input = '<input id="' + id + '" ' + (x.type === 'num' ? 'type="number" min="0" step="any"' : 'type="text"') + ' value="' + esc(x.value) + '">';
