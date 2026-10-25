@@ -177,3 +177,7 @@ h1 { font-size: 22px; line-height: 1.25; margin: 6px 0; letter-spacing: -.3px; }
   .bot { right: 0; bottom: 0; width: 100%; height: 100%; border-radius: 0; border: 0; }
   body.bot-open { overflow: hidden; }
 }
+
+/* replacement battery card */
+.item.repl { border-color: rgba(124,58,237,.35); background: linear-gradient(180deg, #faf7ff, #fff); }
+.it-note { margin-top: 8px; font-size: 13px; color: var(--amber); background: var(--amber-soft); border-radius: 8px; padding: 7px 10px; }
