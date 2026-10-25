@@ -367,6 +367,15 @@
       <div class="mst-note">💡 These lists can also be edited directly in the <b>Masters</b> tab of the Google Sheet — one value per row under each column.</div>
     </section>
 
+    <!-- ===== REPORTS (admin) ===== -->
+    <section id="scrReports" class="screen">
+      <div class="rp-top">
+        <div id="rpTabs" class="vtabs rp-tabs"></div>
+        <button id="rpRefresh" class="btn btn-ghost btn-sm" onclick="rpLoad(true)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>Refresh data</button>
+      </div>
+      <div id="rpBody"></div>
+    </section>
+
     <!-- ===== RECORDS (every object) ===== -->
     <section id="scrRecords" class="screen">
       <div id="recTabs" class="chips"></div>
