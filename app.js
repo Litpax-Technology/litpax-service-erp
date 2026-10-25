@@ -1,5 +1,5 @@
 /* ============================================================
-   LITPAX SERVICE HUB v7 — app.js  (record pages: Customer › Ticket › Pickup / Repair Job › Item › Dispatch)
+   LITPAX SERVICE HUB v9 — app.js  (record pages: Customer › Ticket › Pickup / Repair Job › Item › Dispatch)
    One Ticket ID → Phase 1 (Basic) → Phase 2 (Service/CRM) → Phase 3 (Repair)
    ============================================================ */
 
@@ -267,6 +267,7 @@ function go(key) {
   $(S.id).classList.add('active');
   $('hdrTitle').textContent = S.title; $('hdrSub').textContent = S.sub;
   toggleSidebar(false); window.scrollTo(0, 0);
+  if ($('asFab')) $('asFab').hidden = key === 'settings';   // keeps the Save bar free
   S.open();
 }
 function toggleSidebar(force) {
@@ -333,6 +334,7 @@ function logout() {
 // clear stale cached data after any change
 function afterChange() {
   Object.keys(REC_MEM).forEach(k => delete REC_MEM[k]);
+  AS.data = {};
   ['tickets', 'board_items', 'tracker'].concat(Object.keys(REC_LISTS).map(k => 'rec_' + k)).forEach(cacheDel);
   if (CURRENT === 'tickets') tkLoad(true);
 }
@@ -440,7 +442,7 @@ let TK = [];
 let tkFilter = 'open';
 const TK_CHIPS = [
   ['open', 'Open'], ['New', 'New'], ['In Follow-up', 'Follow-up'], ['In Transit', 'In Transit'],
-  ['repair', 'In Repair'], ['due', '📅 Follow-up Due'], ['fb', '⭐ Feedback Due'], ['lowfb', '🔴 Low Feedback'],
+  ['repair', 'In Repair'], ['due', '📅 Follow-up Due'], ['cb', '📞 Call-back'], ['fb', '⭐ Feedback Due'], ['lowfb', '🔴 Low Feedback'],
   ['Closed', 'Closed'], ['Cancelled', 'Cancelled'], ['all', 'All']
 ];
 const REPAIR_SET = ['Received', 'In Repair', 'Partial Dispatch'];
@@ -459,6 +461,7 @@ function tkMatch(t, f) {
    if (f === 'due') return isDue(t);
   if (f === 'fb') return isFbDue(t);
   if (f === 'lowfb') return t['Feedback Flag'] === 'Low';
+  if (f === 'cb') return !!t['Open Callback'];
   return s === f;
 }
 
@@ -504,7 +507,8 @@ function tkRender() {
     if (isFbDue(t)) tags.push('<span class="tag tag-amber">⭐ Feedback due</span>');
     if (t['Rating']) tags.push('<span class="tag ' + (t['Feedback Flag'] === 'Low' ? 'tag-red' : 'tag-green') + '">⭐ ' + esc(t['Rating']) + '/5</span>');
     if (t['Feedback Flag'] === 'Low') tags.push('<span class="tag tag-red">🔴 Low feedback</span>');
-    return '<div class="tk-card' + (due || t['Feedback Flag'] === 'Low' ? ' due' : '') + '" data-id="' + esc(t['Ticket ID']) + '" onclick="drawerOpen(this.dataset.id)">' +
+    if (t['Open Callback']) tags.push('<span class="tag tag-red" title="Customer asked for a call back on the tracking page">📞 Call back · ' + esc(t['Open Callback']) + '</span>');
+    return '<div class="tk-card' + (due || t['Feedback Flag'] === 'Low' || t['Open Callback'] ? ' due' : '') + '" data-id="' + esc(t['Ticket ID']) + '" onclick="drawerOpen(this.dataset.id)">' +
       '<div class="tk-top"><span class="tk-id">' + esc(t['Ticket ID']) + '</span>' + pill(t['Status']) + '</div>' +
       '<div class="tk-company">' + esc(t['Company Name']) + '</div>' +
       '<div class="tk-meta">' + esc(t['Contact Person']) + ' · ' + esc(t['Phone']) + (dealerOf(t) ? ' · 🏪 ' + esc(dealerOf(t)) : '') + (t['City'] ? ' · 📍 ' + esc(t['City']) : '') + '</div>' +
@@ -619,7 +623,7 @@ async function callSave(btn) {
   if (!d.attendedBy) return toast('⚠️ Select Attended By');
   if (!d.notes) return toast('⚠️ Please add call notes');
   const r = await run(d, btn); if (!r) return;
-  toast('✅ Call log saved' + (r.callId ? ' — ' + r.callId : '')); DR_TAB = 'calls'; afterChange(); drawerReload();
+  toast('✅ Call log saved' + (r.callId ? ' — ' + r.callId : '') + ((r.callbacksDone || []).length ? ' · call-back ' + r.callbacksDone.join(', ') + ' closed' : '')); DR_TAB = 'calls'; afterChange(); drawerReload();
 }
 
 function ticketSolve() {
@@ -1886,8 +1890,8 @@ function renderTicket() {
     (can('admin') ? '<button class="btn btn-ghost" onclick="ticketReopen(this)">↩️ Reopen ticket</button>' : '<div class="muted-sm">Only admin can reopen a cancelled ticket.</div>') + '</div>';
 
   // ---- actions (service team) ----
-  const lowFb = t['Feedback Flag'] === 'Low';
-  if (can('service') && (open || lowFb)) {
+  const lowFb = t['Feedback Flag'] === 'Low', wantsCall = (CUR.callbacks || []).some(c => c['Status'] === 'Open');
+  if (can('service') && (open || lowFb || wantsCall)) {
     const b = [];
     b.push('<button class="btn btn-primary" onclick="callFormToggle()">📞 Add Call Log</button>');
     if (!sent && early) b.push('<button class="btn btn-green" onclick="ticketSolve(this)">✅ Solved on Call</button>');
@@ -1900,6 +1904,9 @@ function renderTicket() {
     h += '<div class="dsec actions">' +
       (lowFb ? '<div class="note note-red">🔴 The customer gave low feedback. Call them and save a call log — that clears this flag.</div>' : '') +
       (sent && early ? '<div class="note">🚚 The customer has already sent the items — no troubleshooting needed. Just note the problem and fill in the pickup details.</div>' : '') +
+      ((CUR.callbacks || []).filter(c => c['Status'] === 'Open').map(c => '<div class="note note-red">📞 <b>Customer asked for a call back</b> ' + idChip(c['Callback ID']) +
+        ' — ' + esc(c['Preferred Time']) + ' · ' + esc(String(c['Requested At']).substring(0, 16)) + (c['Message'] ? '<br>“' + esc(c['Message']) + '”' : '') +
+        '<br><span class="muted-sm">Saving a call log closes this request.</span></div>').join('')) +
       (opk && inRepair ? '<div class="note">🚚 Another lot is on the way — ' + esc(opk['Pickup ID']) + (opk['Exp Battery Qty'] || opk['Exp Charger Qty'] ? ' (' + esc(itemsText(+opk['Exp Battery Qty'] || 0, +opk['Exp Charger Qty'] || 0)) + ')' : '') + '</div>' : '') +
       '<div class="btn-wrap">' + b.join('') + '</div>' + callFormHtml(t) + '</div>';
   }
@@ -2154,6 +2161,9 @@ const REC_LISTS = {
   items: { label: '🔋 Items', type: 'item', id: 'Item ID',
     cols: [['Item', r => esc((r['Item Type'] === 'Charger' ? '⚡ ' : '🔋 ') + [r['Category'], r['Model']].filter(Boolean).join(' · '))], ['Serial', r => esc(r['Serial No'])],
            ['Customer', r => esc(r['Customer'])], ['Repair Job', r => esc(r['Receipt ID'])], ['Status', r => pill(r['Item Status'])]] },
+  callbacks: { label: '📞 Call-backs', type: 'ticket', id: 'Callback ID', open: 'Ticket ID',
+    cols: [['Ticket', r => esc(r['Ticket ID'])], ['Customer', r => esc([r['Customer'], r['Phone']].filter(Boolean).join(' · '))], ['When', r => esc(r['Preferred Time'])],
+           ['Asked', r => esc(String(r['Requested At']).substring(0, 16))], ['Status', r => pill(r['Status'] === 'Open' ? 'Open' : 'Done')]] },
   dispatches: { label: '📦 Dispatches', type: 'dispatch', id: 'Dispatch ID',
     cols: [['Ticket', r => esc(r['Ticket ID'])], ['Customer', r => esc(r['Customer'])], ['Date', r => esc(niceDate(r['Dispatch Date']))],
            ['Items', r => esc(itemsText(+r['Batteries'] || 0, +r['Chargers'] || 0))], ['Transport', r => esc(r['Transport'])]] }
@@ -2182,7 +2192,203 @@ function recRender() {
   if (!rows.length) { $('recList').innerHTML = '<div class="empty">No records</div>'; return; }
   const show = rows.slice(0, REC_LIMIT);
   $('recList').innerHTML = '<div class="rl"><div class="rl-row rl-head"><span>ID</span>' + L.cols.map(c => '<span>' + c[0] + '</span>').join('') + '</div>' +
-    show.map(r => '<div class="rl-row rec-click" data-t="' + L.type + '" data-i="' + esc(r[L.id] || '') + '" data-k="' + esc(r['Ticket ID'] || '') + '" onclick="lkGo(this,event)">' +
+    show.map(r => '<div class="rl-row rec-click" data-t="' + L.type + '" data-i="' + esc(r[L.open || L.id] || '') + '" data-k="' + esc(r['Ticket ID'] || '') + '" onclick="lkGo(this,event)">' +
       '<span>' + idChip(r[L.id], !r[L.id]) + '</span>' + L.cols.map(c => '<span data-l="' + c[0] + '">' + (c[1](r) || '—') + '</span>').join('') + '</div>').join('') + '</div>' +
     (rows.length > REC_LIMIT ? '<button class="btn btn-ghost btn-block" onclick="REC_LIMIT += 200; recRender()">Show more (' + (rows.length - REC_LIMIT) + ')</button>' : '');
 }
+
+/* ============================================================
+   ASSISTANT (staff) — rule-based, no AI / API key.
+   Type a question or tap a chip → answers from the app's own (cached) data,
+   every result opens its record page. English + Hinglish keywords.
+   ============================================================ */
+const AS = { open: false, started: false, data: {} };
+const AS_CMDS = [
+  ['help',     /^\s*(help|\?|commands?|kya kar sakte)\s*$/i,                                    '❔ Help'],
+  ['callback', /\b(call ?backs?|call me|callback|ring back)\b/i,                               '📞 Call-backs'],
+  ['fbdue',    /\b(feedback due|ask feedback|feedback pending)\b/i,                             '⭐ Feedback due'],
+  ['due',      /\b(follow ?-?ups?|due|pending calls?|call karna|calls? (today|aaj))\b/i,       '📅 Follow-ups due'],
+  ['sla',      /\b(sla|late|overdue|delay(ed)?|breach|der|lagging)\b/i,                        '⏱ SLA late'],
+  ['transit',  /\b(transit|pickups?|on the way|raste)\b/i,                                     '🚚 In transit'],
+  ['recv',     /\b(received|receive|aaya|aaye|aayi|inward|repair jobs?)\b/i,                  '📥 Received'],
+  ['disp',     /\b(dispatch(ed)?|gaya|gaye|gayi|bheja|outward|sent)\b/i,                       '📦 Dispatched'],
+  ['lowfb',    /\b(low feedback|bad rating|complain(t)? feedback|lowfb|unhappy|naraz)\b/i,      '🔴 Low feedback'],
+  ['repeat',   /\b(repeat|dobara|again|baar baar)\b/i,                                          '🔁 Repeat batteries'],
+  ['model',    /\b(model|models)\b/i,                                                           '🔋 Model-wise'],
+  ['open',     /\b(open|chalu|active)\s*tickets?\b/i,                                           '🎫 Open tickets'],
+  ['stuck',    /\b(stuck|old|aging|ageing|purane|pending repair|repair pending|days?|din)\b/i, '🔧 Stuck in repair'],
+  ['summary',  /\b(summary|today|aaj|snapshot|dashboard|overview|report)\b/i,              '📊 Today']
+];
+const AS_CHIPS = ['summary', 'callback', 'due', 'sla', 'stuck', 'recv', 'disp', 'lowfb'];
+
+function asBoot() {
+  if ($('asFab')) return;
+  const w = document.createElement('div');
+  w.innerHTML =
+    '<button id="asFab" class="as-fab" onclick="asToggle()" title="Assistant (Ctrl+K)"><span>✨</span><b>Ask</b></button>' +
+    '<section id="asPanel" class="as-panel" hidden>' +
+      '<header class="as-head"><div class="as-av">✨</div><div><b>Service Assistant</b><span>Ask about tickets, call-backs, SLA, repair, dispatch</span></div>' +
+        '<button class="as-x" onclick="asToggle(false)">✕</button></header>' +
+      '<div id="asLog" class="as-log"></div>' +
+      '<div id="asChips" class="as-chips"></div>' +
+      '<form class="as-in" onsubmit="asSend(event)"><input id="asInput" autocomplete="off" placeholder="e.g. stuck 5 days · model 48V · DSP-0004 · Rohtak">' +
+      '<button type="submit">➤</button></form>' +
+    '</section>';
+  ($('appWrap') || document.body).appendChild(w);   // only visible once signed in
+  document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && $('appWrap').style.display !== 'none') { e.preventDefault(); asToggle(true); } });
+}
+function asToggle(force) {
+  AS.open = typeof force === 'boolean' ? force : !AS.open;
+  $('asPanel').hidden = !AS.open; $('asFab').classList.toggle('on', AS.open);
+  if (AS.open && !AS.started) { AS.started = true; asAdd('<b>Namaste 👋</b> Ask me anything about today\'s work, or tap a chip. Type any ID, phone or serial to open it.', 'bot'); }
+  if (AS.open) { asChipsShow(AS_CHIPS); setTimeout(() => $('asInput').focus(), 50); }
+}
+function asAdd(html, who) {
+  const d = document.createElement('div'); d.className = 'as-msg ' + who; d.innerHTML = html;
+  $('asLog').appendChild(d); $('asLog').scrollTop = $('asLog').scrollHeight; return d;
+}
+function asChipsShow(keys) {
+  $('asChips').innerHTML = keys.map(k => { const c = AS_CMDS.find(x => x[0] === k); return c ? '<button type="button" data-k="' + k + '" onclick="asChip(this)">' + c[2] + '</button>' : ''; }).join('');
+}
+function asChip(el) { asAdd(esc(el.textContent), 'me'); asRun(el.dataset.k, ''); }
+function asSend(e) {
+  e.preventDefault();
+  const q = $('asInput').value.trim(); if (!q) return;
+  $('asInput').value = ''; asAdd(esc(q), 'me'); asAsk(q);
+}
+
+// ---- data (all cached server-side; refreshed after any save) ----
+async function asGet(k) {
+  const fresh = AS.data[k] && Date.now() - AS.data[k].at < 60000;
+  if (fresh) return AS.data[k].v;
+  let v = null;
+  if (k === 'tickets') { const r = await api({ action: 'getTickets' }); v = r && r.ok ? r.tickets : null; }
+  else if (k === 'tracker') { const r = await api({ action: 'getTracker' }); v = r && r.ok ? r.tickets : null; }
+  else { const r = await api({ action: 'listRecords', type: k }); v = r && r.ok ? r.rows : null; }
+  if (!v) throw 'load';
+  AS.data[k] = { v, at: Date.now() };
+  return v;
+}
+const dayStr = n => daysAgoStr(n);
+const ageDays = d => { const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? Math.floor((Date.now() - new Date(+m[1], m[2] - 1, +m[3]).getTime()) / 864e5) : 0; };
+
+// result list → clickable rows
+function asRows(title, rows, more) {
+  if (!rows.length) return '<b>' + title + '</b><div class="as-empty">Nothing here 🎉</div>';
+  const show = rows.slice(0, 15);
+  return '<b>' + title + '</b> <span class="as-n">' + rows.length + '</span><div class="as-rows">' + show.map(r =>
+    '<div class="as-row rec-click" data-t="' + r.t + '" data-i="' + esc(r.id) + '" data-k="' + esc(r.tid || '') + '" onclick="lkGo(this,event)">' +
+      idChip(r.id) + '<span class="as-main">' + esc(r.main || '') + '<small>' + esc(r.sub || '') + '</small></span>' + (r.right || '') + '</div>').join('') + '</div>' +
+    (rows.length > show.length ? '<div class="as-more">+ ' + (rows.length - show.length) + ' more' + (more ? ' — ' + more : '') + '</div>' : '');
+}
+const tkRow = (t, sub) => ({ t: 'ticket', id: t['Ticket ID'], tid: t['Ticket ID'], main: t['Company Name'], sub: sub || [t['Contact Person'], t['Phone'], t['City']].filter(Boolean).join(' · '), right: pill(t['Status']) });
+
+async function asAsk(q) {
+  const Q = q.trim();
+  // an ID, phone or serial → open it
+  if (/^(CUS|LTX-R|CAL|PCK|RCV|DSP|FBK|CBR|WA)-\d/i.test(Q) || /^\d{10}$/.test(Q)) return asFind(Q);
+  const cmd = AS_CMDS.find(c => c[1].test(Q));
+  if (cmd) return asRun(cmd[0], Q);
+  // otherwise: search tickets by name / city / dealer / complaint, then serial numbers
+  const wait = asAdd('<span class="as-typing"><i></i><i></i><i></i></span>', 'bot');
+  try {
+    const T = await asGet('tickets'), s = Q.toLowerCase();
+    const hits = T.filter(t => ['Company Name', 'Contact Person', 'City', 'State', 'Dealer', 'Complaint', 'Customer Type', 'Source'].some(k => String(t[k] || '').toLowerCase().indexOf(s) !== -1));
+    wait.remove();
+    if (hits.length) return asAdd(asRows('Tickets matching “' + esc(Q) + '”', hits.slice().reverse().map(t => tkRow(t))), 'bot');
+  } catch (e) { wait.remove(); }
+  return asFind(Q, true);
+}
+async function asFind(q, soft) {
+  let r;
+  try { r = await api({ action: 'findRecord', q }); } catch (e) { r = null; }
+  if (r && r.ok && r.type === 'serial') return asAdd(asRows('Serial ' + esc(q) + ' — ' + r.matches.length + ' visits', r.matches.map(m => ({ t: 'item', id: m.itemId, tid: m.ticketId, main: m.model, sub: niceDate(m.received) + ' · ' + m.ticketId, right: pill(m.status) }))), 'bot');
+  if (r && r.ok) { asAdd('Opening <b>' + esc(r.id) + '</b> →', 'bot'); return openRecord(r.type, r.id, r.ticketId, { fresh: true }); }
+  asAdd(soft ? 'I didn\'t understand “' + esc(q) + '”. Try one of these, or type <b>help</b>.' : esc((r && r.msg) || 'Nothing found'), 'bot');
+  asChipsShow(AS_CHIPS);
+}
+
+async function asRun(k, q) {
+  const wait = asAdd('<span class="as-typing"><i></i><i></i><i></i></span>', 'bot');
+  let html = '';
+  try { html = await asAnswer(k, q || ''); } catch (e) { html = '❌ Could not load data — check the connection and try again.'; }
+  wait.remove();
+  asAdd(html, 'bot');
+}
+
+async function asAnswer(k, q) {
+  const today = todayStr(), num = (q.match(/\d+/) || [])[0];
+  if (k === 'help') return '<b>You can ask:</b><ul class="as-help">' +
+    '<li><b>today / summary</b> — today at a glance</li><li><b>call-backs</b> — customers who asked us to call</li>' +
+    '<li><b>follow-ups due</b>, <b>sla late</b>, <b>in transit</b></li><li><b>stuck 5 days</b> — items in repair longer than N days</li>' +
+    '<li><b>received today / yesterday</b>, <b>dispatched this week</b></li><li><b>low feedback</b>, <b>feedback due</b>, <b>repeat batteries</b></li>' +
+    '<li><b>model 48V</b> — items of a model and where they are</li><li>any <b>name, city, dealer, complaint</b> — matching tickets</li>' +
+    '<li>any <b>ID, phone or serial no.</b> — opens it</li></ul><div class="muted-sm">Shortcut: Ctrl + K</div>';
+
+  if (k === 'summary') {
+    const [T, R, D, C] = await Promise.all([asGet('tickets'), asGet('receipts'), asGet('dispatches'), asGet('callbacks')]);
+    const n = f => T.filter(f).length, rcv = R.filter(r => String(r['Received Date']).substring(0, 10) === today), dsp = D.filter(d => String(d['Dispatch Date']).substring(0, 10) === today);
+    const sum = (L, a) => L.reduce((x, r) => x + (+r[a] || 0), 0);
+    const tile = (ico, v, l, cmd) => '<button class="as-tile" ' + (cmd ? 'data-k="' + cmd + '" onclick="asChip(this)"' : '') + '><span>' + ico + '</span><b>' + v + '</b><small>' + l + '</small></button>';
+    return '<b>Today · ' + esc(niceDate(today)) + '</b><div class="as-tiles">' +
+      tile('🎫', n(t => String(t['Created At']).substring(0, 10) === today), 'new tickets') +
+      tile('📞', C.filter(c => c['Status'] === 'Open').length, 'call-backs open', 'callback') +
+      tile('📅', n(isDue), 'follow-ups due', 'due') +
+      tile('📥', sum(rcv, 'Battery Qty') + ' / ' + sum(rcv, 'Charger Qty'), 'received (bat / chg)', 'recv') +
+      tile('📦', sum(dsp, 'Batteries') + ' / ' + sum(dsp, 'Chargers'), 'dispatched (bat / chg)', 'disp') +
+      tile('🔧', n(t => REPAIR_SET.indexOf(t['Status']) !== -1), 'tickets in repair', 'stuck') +
+      tile('🚚', n(t => t['Status'] === 'In Transit'), 'in transit', 'transit') +
+      tile('🔴', n(t => t['Feedback Flag'] === 'Low'), 'low feedback', 'lowfb') + '</div>';
+  }
+  if (k === 'callback') {
+    const C = (await asGet('callbacks')).filter(c => c['Status'] === 'Open');
+    return asRows('Open call-back requests', C.map(c => ({ t: 'ticket', id: c['Ticket ID'], tid: c['Ticket ID'], main: c['Customer'] + ' · ' + c['Phone'],
+      sub: c['Preferred Time'] + ' · asked ' + String(c['Requested At']).substring(0, 16) + (c['Message'] ? ' · “' + c['Message'] + '”' : ''), right: idChip(c['Callback ID']) })));
+  }
+  if (k === 'due') return asRows('Follow-ups due', (await asGet('tickets')).filter(isDue).map(t => tkRow(t, '📅 ' + t['Next Follow-up'] + ' · ' + (t['Complaint'] || ''))));
+  if (k === 'transit') return asRows('In transit', (await asGet('tickets')).filter(t => t['Status'] === 'In Transit').map(t => tkRow(t, 'since ' + niceDate(t['Updated At'] || t['Created At']))));
+  if (k === 'open') return asRows('Open tickets', (await asGet('tickets')).filter(t => !isEnded(t['Status'])).reverse().map(t => tkRow(t)));
+  if (k === 'lowfb') return asRows('Low feedback — call them', (await asGet('tickets')).filter(t => t['Feedback Flag'] === 'Low').map(t => tkRow(t, '⭐ ' + t['Rating'] + '/5')));
+  if (k === 'fbdue') return asRows('Ask for feedback', (await asGet('tickets')).filter(isFbDue).map(t => tkRow(t, 'closed ' + niceDate(t['Closed At']))));
+  if (k === 'sla') {
+    const L = (await asGet('tracker')).map(trkModel).filter(m => m.sla === 'late' || m.sla === 'risk').sort((a, b) => (a.sla === 'late' ? 0 : 1) - (b.sla === 'late' ? 0 : 1));
+    return asRows('SLA late / at risk', L.map(m => ({ t: 'ticket', id: m.t.id, tid: m.t.id, main: m.t.company, sub: m.nowLabel + ' · ' + (m.segs.find(s => s.running) || {}).label,
+      right: '<span class="pill pill-' + (m.sla === 'late' ? 'red' : 'amber') + '">' + (m.sla === 'late' ? 'Late' : 'At risk') + '</span>' })));
+  }
+  if (k === 'stuck') {
+    const days = num != null ? +num : 3, I = await asGet('items');
+    const L = I.filter(i => String(i['Item Status']).toLowerCase() !== 'dispatched' && ageDays(i['Received Date']) >= days).sort((a, b) => ageDays(b['Received Date']) - ageDays(a['Received Date']));
+    return asRows('In repair for ' + days + '+ days', L.map(i => ({ t: 'item', id: i['Item ID'], tid: i['Ticket ID'], main: [i['Category'], i['Model']].filter(Boolean).join(' · '),
+      sub: i['Customer'] + ' · ' + ageDays(i['Received Date']) + ' days', right: pill(i['Item Status']) })), 'try “stuck 7 days”');
+  }
+  if (k === 'recv' || k === 'disp') {
+    const since = /yesterday|kal/i.test(q) ? dayStr(1) : /week|hafte|7/i.test(q) ? dayStr(7) : /month|mahine|30/i.test(q) ? dayStr(30) : today;
+    const until = /yesterday|kal/i.test(q) ? dayStr(1) : today;
+    const lbl = since === today ? 'today' : until === since ? 'yesterday' : 'since ' + niceDate(since);
+    if (k === 'recv') {
+      const R = (await asGet('receipts')).filter(r => { const d = String(r['Received Date']).substring(0, 10); return d >= since && d <= until; });
+      return asRows('Received ' + lbl, R.map(r => ({ t: 'receipt', id: r['Receipt ID'], tid: r['Ticket ID'], main: r['Customer'], sub: itemsText(+r['Battery Qty'] || 0, +r['Charger Qty'] || 0) + ' · ' + niceDate(r['Received Date']) })));
+    }
+    const D = (await asGet('dispatches')).filter(d => { const x = String(d['Dispatch Date']).substring(0, 10); return x >= since && x <= until; });
+    return asRows('Dispatched ' + lbl, D.map(d => ({ t: 'dispatch', id: d['Dispatch ID'], tid: d['Ticket ID'], main: d['Customer'], sub: itemsText(+d['Batteries'] || 0, +d['Chargers'] || 0) + (d['Transport'] ? ' · ' + d['Transport'] : '') })));
+  }
+  if (k === 'repeat') {
+    const I = (await asGet('items')).filter(i => +i['Repeat Count'] > 0);
+    return asRows('Repeat batteries (serial came before)', I.map(i => ({ t: 'item', id: i['Item ID'], tid: i['Ticket ID'], main: [i['Model'], i['Serial No'] && 'SN ' + i['Serial No']].filter(Boolean).join(' · '),
+      sub: i['Customer'] + ' · ' + (+i['Repeat Count'] + 1) + 'th visit', right: pill(i['Item Status']) })));
+  }
+  if (k === 'model') {
+    const I = await asGet('items'), m = q.replace(/\bmodels?\b/i, '').trim().toUpperCase().replace(/\s+/g, '');
+    if (!m) {   // model-wise table
+      const by = {};
+      I.forEach(i => { const x = i['Model'] || '—'; by[x] = by[x] || { n: 0, open: 0 }; by[x].n++; if (String(i['Item Status']).toLowerCase() !== 'dispatched') by[x].open++; });
+      const rows = Object.keys(by).sort((a, b) => by[b].n - by[a].n).slice(0, 15);
+      return '<b>Model-wise</b><table class="as-table"><tr><th>Model</th><th>Total</th><th>With us</th></tr>' +
+        rows.map(x => '<tr><td>' + esc(x) + '</td><td>' + by[x].n + '</td><td>' + by[x].open + '</td></tr>').join('') + '</table><div class="muted-sm">Type “model 48V” for one model</div>';
+    }
+    const L = I.filter(i => String(i['Model']).toUpperCase().replace(/[^A-Z0-9]/g, '').indexOf(m.replace(/[^A-Z0-9]/g, '')) !== -1);
+    return asRows('Model ' + esc(m), L.map(i => ({ t: 'item', id: i['Item ID'], tid: i['Ticket ID'], main: i['Model'], sub: i['Customer'] + ' · ' + niceDate(i['Received Date']), right: pill(i['Item Status']) })));
+  }
+  return 'Type <b>help</b> to see what I can do.';
+}
+window.addEventListener('load', asBoot);
