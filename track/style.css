@@ -128,3 +128,52 @@ h1 { font-size: 22px; line-height: 1.25; margin: 6px 0; letter-spacing: -.3px; }
 }
 
 .pill-gray { background: #f1f2f6; color: #6b7280; }
+
+/* ---------- HELP BOT ---------- */
+.bot-fab { position: fixed; right: 18px; bottom: 18px; z-index: 60; display: flex; align-items: center; gap: 8px; border: 0; border-radius: 999px;
+  padding: 12px 16px 12px 14px; background: linear-gradient(135deg, #4f46e5, #6d5efc); color: #fff; font-weight: 600; font-size: 14px;
+  box-shadow: 0 10px 28px -8px rgba(79,70,229,.6), 0 2px 6px rgba(16,24,40,.18); transition: transform .2s, box-shadow .2s; }
+.bot-fab:hover { transform: translateY(-2px); box-shadow: 0 14px 32px -8px rgba(79,70,229,.7), 0 2px 6px rgba(16,24,40,.2); }
+.bot-fab-ico { font-size: 18px; line-height: 1; }
+.bot-fab-txt { max-width: 0; overflow: hidden; white-space: nowrap; transition: max-width .35s ease; }
+.bot-fab.peek .bot-fab-txt, .bot-fab:hover .bot-fab-txt { max-width: 120px; }
+.bot-fab.on { transform: scale(.92); opacity: .0; pointer-events: none; }
+
+.bot { position: fixed; right: 18px; bottom: 18px; z-index: 61; width: 380px; height: min(600px, calc(100vh - 36px)); display: flex; flex-direction: column;
+  background: #fff; border: 1px solid var(--border); border-radius: 20px; overflow: hidden;
+  box-shadow: 0 30px 60px -20px rgba(16,24,40,.35), 0 8px 20px -8px rgba(16,24,40,.15); animation: botIn .22s ease-out; }
+@keyframes botIn { from { opacity: 0; transform: translateY(14px) scale(.98); } to { opacity: 1; transform: none; } }
+.bot-head { display: flex; align-items: center; gap: 10px; padding: 14px 14px 14px 16px; color: #fff;
+  background: radial-gradient(120% 160% at 0% 0%, #2b2f63 0%, #14163a 60%, #0d0f26 100%); }
+.bot-av { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, #ef5359, #f5a524); box-shadow: inset 0 0 0 1px rgba(255,255,255,.25); }
+.bot-hd { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.bot-hd b { font-size: 15px; }
+.bot-hd > span { font-size: 12px; color: #b9bce0; display: flex; align-items: center; gap: 6px; }
+.bot-dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.2); display: inline-block; }
+.bot-lang, .bot-x { border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.08); color: #fff; border-radius: 9px; font-size: 12px; padding: 6px 9px; }
+.bot-x { width: 32px; padding: 6px 0; }
+.bot-lang:hover, .bot-x:hover { background: rgba(255,255,255,.16); }
+.bot-log { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 14px 8px; display: flex; flex-direction: column; gap: 8px; background: #f7f8fb; }
+.bot-msg { max-width: 86%; padding: 10px 13px; border-radius: 16px; font-size: 14px; line-height: 1.45; word-wrap: break-word; animation: msgIn .18s ease-out; }
+@keyframes msgIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.bot-msg.b-bot { align-self: flex-start; background: #fff; border: 1px solid var(--border); border-bottom-left-radius: 6px; color: var(--text); }
+.bot-msg.b-me { align-self: flex-end; background: var(--primary); color: #fff; border-bottom-right-radius: 6px; }
+.bot-msg a { color: var(--primary); }
+.bot-list { margin: 6px 0 2px 18px; display: flex; flex-direction: column; gap: 3px; }
+.bot-typing { display: inline-flex; gap: 4px; padding: 3px 0; }
+.bot-typing i { width: 6px; height: 6px; border-radius: 50%; background: #b3b8cc; animation: dot 1s infinite; }
+.bot-typing i:nth-child(2) { animation-delay: .15s; } .bot-typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes dot { 0%, 60%, 100% { transform: translateY(0); opacity: .5; } 30% { transform: translateY(-4px); opacity: 1; } }
+.bot-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; background: #f7f8fb; }
+.bot-chips:empty { display: none; }
+.bot-chips button { border: 1px solid rgba(79,70,229,.3); background: #fff; color: var(--primary); border-radius: 999px; padding: 7px 12px; font-size: 13px; font-weight: 500;
+  transition: background .15s, color .15s; }
+.bot-chips button:hover { background: var(--primary); color: #fff; }
+.bot-in { display: flex; gap: 8px; padding: 10px 12px 12px; border-top: 1px solid var(--border); background: #fff; }
+.bot-in input { flex: 1; padding: 11px 14px; border-radius: 999px; font-size: 15px; }
+.bot-in button { width: 44px; border: 0; border-radius: 50%; background: var(--primary); color: #fff; font-size: 16px; }
+@media (max-width: 520px) {
+  .bot { right: 0; bottom: 0; width: 100%; height: 100%; border-radius: 0; border: 0; }
+  body.bot-open { overflow: hidden; }
+}
