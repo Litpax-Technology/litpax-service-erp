@@ -6,7 +6,7 @@
 <title>Litpax Service Hub</title>
 <link rel="icon" type="image/png" href="assets/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
   <script>
   (function () {
@@ -237,17 +237,20 @@
       <img src="assets/logo.png" alt="Litpax" width="104" height="30">
       <div class="sb-app">Service Hub</div>
     </div>
-    <div id="sbRole" class="sb-role"></div>
-    <nav id="sbNav" class="sb-nav"></nav>
-    <button class="sb-logout" onclick="logout()">⎋ Logout</button>
+    <nav id="sbNav" class="sb-nav" aria-label="Main"></nav>
+    <div class="sb-user">
+      <div class="sb-av"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+      <div id="sbRole" class="sb-role"></div>
+      <button class="sb-logout" onclick="logout()" title="Sign out" aria-label="Sign out"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></button>
+    </div>
   </aside>
   <div id="sbOverlay" class="sb-overlay" onclick="toggleSidebar(false)"></div>
 
   <main class="main">
     <header class="topbar">
-      <button class="menu-btn" onclick="toggleSidebar()">☰</button>
-      <div><div id="hdrTitle" class="hdr-title"></div><div id="hdrSub" class="hdr-sub"></div></div>
-      <div class="gsearch"><input id="gSearch" placeholder="🔎 Any ID, phone or serial no." autocomplete="off" onkeydown="if(event.key==='Enter')gSearch()"></div>
+      <button class="menu-btn" onclick="toggleSidebar()" aria-label="Menu"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      <div class="hdr-txt"><div class="hdr-crumb"><span id="hdrGroup">Service</span><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg><b id="hdrTitle" class="hdr-title"></b></div><div id="hdrSub" class="hdr-sub"></div></div>
+      <label class="gsearch"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input id="gSearch" placeholder="Search any ID, phone or serial no." autocomplete="off" onkeydown="if(event.key==='Enter')gSearch()"><kbd>/</kbd></label>
       <div id="hdrDate" class="hdr-date"></div>
     </header>
 
@@ -294,7 +297,7 @@
       </div>
 
       <div id="newSuccess" class="card success-card" style="display:none">
-        <div class="success-ico">✅</div>
+        <div class="success-ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></div>
         <div class="success-title">Ticket created</div>
         <div id="newId" class="success-id"></div>
         <div id="newCust" class="success-cust"></div>
@@ -309,12 +312,22 @@
 
     <!-- ===== TICKETS LIST ===== -->
     <section id="scrTickets" class="screen">
-      <div class="toolbar">
-        <input id="tkSearch" class="search" placeholder="🔍 Ticket ID, company, phone, dealer, city..." oninput="tkRender()">
-        <button class="btn btn-ghost btn-icon" title="Refresh" onclick="tkLoad(true)">↻</button>
+      <div id="tkKpis" class="kpi-row"></div>
+      <div class="tk-wrap">
+        <div class="tbl-card">
+          <div id="tkChips" class="vtabs"></div>
+          <div class="tbl-tools">
+            <label class="tsearch"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input id="tkSearch" placeholder="Search ticket, company, phone, dealer, city…" oninput="TK_LIMIT = 50; tkRender()"></label>
+            <div class="vt-toggle" role="group" aria-label="View">
+              <button type="button" data-v="list" onclick="tkSetView(this.dataset.v)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>List</button>
+              <button type="button" data-v="board" onclick="tkSetView(this.dataset.v)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18"/></svg>Board</button>
+            </div>
+            <button class="btn btn-ghost btn-icon" title="Refresh" aria-label="Refresh" onclick="tkLoad(true)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
+          </div>
+          <div id="tkList" class="tk-list"></div>
+        </div>
+        <aside id="tkPrev" class="tk-prev" hidden aria-label="Ticket preview"></aside>
       </div>
-      <div id="tkChips" class="chips"></div>
-      <div id="tkList" class="tk-list"></div>
     </section>
 
         <!-- ===== TICKET TRACKER ===== -->
@@ -322,8 +335,8 @@
       <div id="trkKpis" class="trk-kpis"></div>
       <div id="trkStages" class="trk-stages"></div>
       <div class="toolbar">
-        <input id="trkSearch" class="search" placeholder="🔍 Ticket ID, company, phone, dealer, city..." oninput="trkRender()">
-        <button class="btn btn-ghost btn-icon" title="Refresh" onclick="trkLoad(false)">↻</button>
+        <input id="trkSearch" class="search" placeholder="Search ticket, company, phone, dealer, city…" oninput="trkRender()">
+        <button class="btn btn-ghost btn-icon" title="Refresh" aria-label="Refresh" onclick="trkLoad(false)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
       </div>
       <div id="trkChips" class="chips"></div>
       <div id="trkList" class="trk-list"></div>
@@ -334,7 +347,7 @@
       <div class="board-grid">
         <div class="card">
           <div class="card-head"><span>⏳ Pending — not planned yet <b id="pendCount" class="count">0</b></span>
-            <button class="btn btn-ghost btn-icon" title="Refresh" onclick="boardLoad(true)">↻</button></div>
+            <button class="btn btn-ghost btn-icon" title="Refresh" aria-label="Refresh" onclick="boardLoad(true)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button></div>
           <div id="boardPending"></div>
         </div>
         <div class="card">
@@ -355,9 +368,9 @@
     <section id="scrRecords" class="screen">
       <div id="recTabs" class="chips"></div>
       <div class="toolbar">
-        <input id="recSearch" class="search" placeholder="🔍 Filter — ID, customer, serial, transport..." oninput="REC_LIMIT = 100; recRender()">
+        <input id="recSearch" class="search" placeholder="Filter by ID, customer, serial, transport…" oninput="REC_LIMIT = 100; recRender()">
         <span id="recCount" class="rec-count"></span>
-        <button class="btn btn-ghost btn-icon" title="Refresh" onclick="recLoad(true)">↻</button>
+        <button class="btn btn-ghost btn-icon" title="Refresh" aria-label="Refresh" onclick="recLoad(true)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
       </div>
       <div id="recList"></div>
     </section>
@@ -371,7 +384,7 @@
     <section id="scrDispatch" class="screen">
       <div class="card">
         <div class="card-head"><span>🔁 Replacements to send — <b id="rsCount">0</b></span>
-          <button class="btn btn-ghost btn-icon" title="Refresh" onclick="replLoadDispatch()">↻</button></div>
+          <button class="btn btn-ghost btn-icon" title="Refresh" aria-label="Refresh" onclick="replLoadDispatch()"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button></div>
         <div id="rsList" class="rs-list"></div>
       </div>
       <div class="card">
@@ -381,8 +394,8 @@
       </div>
       <div class="card">
         <div class="card-head"><span>📦 Ready — Final QC &amp; Pack</span>
-          <button class="btn btn-ghost btn-icon" title="Refresh" onclick="dispLoad(true)">↻</button></div>
-        <input id="dSearch" class="search" placeholder="🔍 Item / Ticket / Customer / Serial" oninput="dispRender()">
+          <button class="btn btn-ghost btn-icon" title="Refresh" aria-label="Refresh" onclick="dispLoad(true)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button></div>
+        <input id="dSearch" class="search" placeholder="Search item, ticket, customer, serial…" oninput="dispRender()">
         <div id="dList" class="d-list"></div>
       </div>
       <div class="card">
@@ -406,14 +419,14 @@
 <!-- ================= TICKET DRAWER ================= -->
 <div id="drawerOv" class="drawer-ov"></div>
 <aside id="drawer" class="drawer">
-  <div class="drawer-head"><div id="drTitle" class="dr-title"></div><button class="x-btn" onclick="drawerClose()">✕</button></div>
+  <div class="drawer-head"><div id="drTitle" class="dr-title"></div><button class="x-btn" onclick="drawerClose()" aria-label="Close"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
   <div id="drBody" class="drawer-body"></div>
 </aside>
 
 <!-- ================= MODAL ================= -->
 <div id="modalOv" class="modal-ov">
   <div class="modal">
-    <div class="modal-head"><span id="mdTitle"></span><button class="x-btn" onclick="modalClose()">✕</button></div>
+    <div class="modal-head"><span id="mdTitle"></span><button class="x-btn" onclick="modalClose()" aria-label="Close"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div id="mdBody" class="modal-body"></div>
   </div>
 </div>
