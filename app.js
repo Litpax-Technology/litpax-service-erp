@@ -44,16 +44,39 @@ async function apiPost(params) {
 }
 
 // button busy state + error toast; returns the response on success, otherwise null
+// button busy state + error toast; returns the response on success, otherwise null
+// Saves carry a request ID: a retry of the SAME save (timeout, slow network, double tap) reuses it,
+// so the server returns the first result instead of saving twice.
+const READ_ACTIONS = { login: 1, logout: 1, ping: 1, getSite: 1, getTickets: 1, getTicket: 1, getMasters: 1, getTracker: 1, getItems: 1, getReportData: 1,
+  getSettings: 1, lookupPhone: 1, getModels: 1, findRecord: 1, getCustomer: 1, listRecords: 1, getTechJobs: 1, getTracking: 1 };
+const PENDING_REQ = {};
+const newReqId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function run(params, btn, post, busyText) {
   let old = '';
   if (btn) { old = btn.innerHTML; btn.disabled = true; btn.textContent = busyText || '⏳ ...'; }
+  const write = !READ_ACTIONS[params.action];
+  let key = '';
+  if (write) {
+    try { key = params.action + '|' + JSON.stringify(params); } catch (e) { key = ''; }
+    params = Object.assign({}, params, { reqId: (key && PENDING_REQ[key]) || newReqId() });
+    if (key) PENDING_REQ[key] = params.reqId;
+  }
   try {
-    const r = await (post ? apiPost(params) : api(params));
-    if (!r || !r.ok) { toast('❌ ' + ((r && r.msg) || 'Something went wrong')); return null; }
-    return r;
-  } catch (e) {
-    if (e !== 'auth') toast('❌ Network error — please try again');
-    return null;
+    for (let attempt = 0; ; attempt++) {
+      let r;
+      try { r = await (post ? apiPost(params) : api(params)); }
+      catch (e) {
+        if (e === 'auth') return null;
+        // a save can be retried safely (same request ID) — try twice more before giving up
+        if (write && attempt < 2) { if (btn) btn.textContent = '⏳ Retrying...'; await sleep(1500 * (attempt + 1)); continue; }
+        toast('❌ Network error — please try again'); return null;
+      }
+      if (r && r.busy && attempt < 4) { if (btn) btn.textContent = '⏳ Saving...'; await sleep(2000); continue; }
+      if (!r || !r.ok) { if (key) delete PENDING_REQ[key]; toast('❌ ' + ((r && r.msg) || 'Something went wrong')); return null; }
+      if (key) delete PENDING_REQ[key];
+      return r;
+    }
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = old; }
   }
@@ -309,7 +332,8 @@ function logout() {
 
 // clear stale cached data after any change
 function afterChange() {
-  ['tickets', 'board_items', 'tracker'].forEach(cacheDel);
+  Object.keys(REC_MEM).forEach(k => delete REC_MEM[k]);
+  ['tickets', 'board_items', 'tracker'].concat(Object.keys(REC_LISTS).map(k => 'rec_' + k)).forEach(cacheDel);
   if (CURRENT === 'tickets') tkLoad(true);
 }
 
@@ -1670,6 +1694,10 @@ async function refreshModels(btn) {
 const REC_ICO = { customer: '👤', ticket: '🎫', call: '📞', pickup: '🚚', receipt: '🧰', item: '🔋', dispatch: '📦', feedback: '⭐', whatsapp: '📲' };
 const REC_LABEL = { customer: 'Customer', ticket: 'Ticket', call: 'Call', pickup: 'Pickup', receipt: 'Repair Job', item: 'Item', dispatch: 'Dispatch', feedback: 'Feedback', whatsapp: 'WhatsApp' };
 let REC = null, REC_HIST = [], CUST = null, _recSeq = 0;
+// tickets / customers opened in this session — shown instantly next time, then refreshed in the background
+const REC_MEM = {};
+const memPut = (k, v) => { REC_MEM[k] = { v, at: Date.now() }; };
+const memGet = k => { const m = REC_MEM[k]; return m && Date.now() - m.at < 10 * 60000 ? m.v : null; };
 let DR_TAB = 'overview';
 
 const serialKey = s => String(s || '').replace(/^'/, '').replace(/\s+/g, '').toUpperCase();
@@ -1759,9 +1787,13 @@ async function openRecord(type, id, tid, opts) {
   try {
     if (type === 'customer') {
       if (!have || opts.reload) {
+        const m = !opts.reload && memGet('cu_' + id);
+        if (m) { CUST = m; renderRecord(); }
         const r = await api({ action: 'getCustomer', customerId: id });
         if (seq !== _recSeq) return;
-        if (!r || !r.ok) return recError((r && r.msg) || 'Could not load');
+        if (!r || !r.ok) return m ? null : recError((r && r.msg) || 'Could not load');
+        memPut('cu_' + id, r);
+        if (m && JSON.stringify(m) === JSON.stringify(r)) return;
         CUST = r;
       }
       return renderRecord();
@@ -1773,9 +1805,13 @@ async function openRecord(type, id, tid, opts) {
       REC.tid = f.ticketId;
     }
     if (!have || opts.reload) {
+      const m = !opts.reload && memGet('tk_' + REC.tid);
+      if (m) { CUR = m; renderRecord(); }          // instant from memory …
       const [r] = await Promise.all([api({ action: 'getTicket', ticketId: REC.tid }), ensureMasters()]);
       if (seq !== _recSeq) return;
-      if (!r || !r.ok) return recError((r && r.msg) || 'Could not load');
+      if (!r || !r.ok) return m ? null : recError((r && r.msg) || 'Could not load');
+      memPut('tk_' + REC.tid, r);
+      if (m && JSON.stringify(m) === JSON.stringify(r)) return;   // … and redrawn only if something changed
       CUR = r;
     }
     renderRecord();
