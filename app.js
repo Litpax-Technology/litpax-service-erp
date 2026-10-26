@@ -305,7 +305,7 @@ const RP_DEF = {
       ['Batteries expected', rpSum(R, 'Exp batteries')], ['Chargers expected', rpSum(R, 'Exp chargers')]]
   },
   receipts: {
-    label: 'Repair jobs (received)', open: r => ['receipt', r['Receipt ID'], r['Ticket ID']],
+    label: 'Repair jobs', open: r => ['receipt', r['Receipt ID'], r['Ticket ID']],
     dates: ['Received'], filters: ['Received By', 'Qty mismatch', 'Dealer', 'City'],
     cols: [['Receipt ID'], ['Ticket ID'], ['Customer'], ['Dealer'], ['City'], ['Received', 'date'], ['Received By'], ['Batteries', 'num'], ['Chargers', 'num'],
       ['Exp batteries', 'num'], ['Exp chargers', 'num'], ['Qty mismatch'], ['Qty Note'], ['Pickup ID'], ['Remarks']],
@@ -400,7 +400,7 @@ async function rpLoad(force) {
 function rpBase(key) { RP.cache = RP.cache || {}; return RP.cache[key] || (RP.cache[key] = RP_DEF[key].rows()); }
 
 /* ---------- date presets ---------- */
-const RP_PRESETS = [['', 'All time'], ['today', 'Today'], ['yday', 'Yesterday'], ['week', 'This week'], ['7', 'Last 7 days'], ['30', 'Last 30 days'],
+const RP_PRESETS = [['', 'No date filter'], ['any', 'Has a date'], ['today', 'Today'], ['yday', 'Yesterday'], ['week', 'This week'], ['7', 'Last 7 days'], ['30', 'Last 30 days'],
   ['month', 'This month'], ['lmonth', 'Last month'], ['quarter', 'This quarter'], ['year', 'This year'], ['custom', 'Custom range']];
 function ymd(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
 function rpRange(p) {
@@ -426,7 +426,8 @@ function rpFiltered(except) {
   const k = rpBaseKey(), def = RP_DEF[k], F = rpF(), dt = rpDt(), q = RP.q.toLowerCase().trim();
   const cols = def.cols.map(c => c[0]);
   return rpBase(k).filter(r => {
-    if (dt.from || dt.to) { const v = d10(r[dt.field]); if (!v || (dt.from && v < dt.from) || (dt.to && v > dt.to)) return false; }
+    if (dt.preset === 'any') { if (!d10(r[dt.field])) return false; }
+    else if (dt.from || dt.to) { const v = d10(r[dt.field]); if (!v || (dt.from && v < dt.from) || (dt.to && v > dt.to)) return false; }
     for (const f in F) { if (f === except) continue; const sel = F[f]; if (sel && sel.length && sel.indexOf(r[f] === '' || r[f] == null ? '(blank)' : String(r[f])) === -1) return false; }
     if (q && cols.map(c => r[c]).join(' ').toLowerCase().indexOf(q) === -1) return false;
     return true;
@@ -467,22 +468,38 @@ function rpRender() {
   if (!RP.data) return;
   const def = RP_DEF[RP.key], bk = rpBaseKey(), bdef = RP_DEF[bk], dt = rpDt(), F = rpF();
   $('rpTabs').innerHTML = RP_ORDER.map(k => '<button class="chip' + (k === RP.key ? ' active' : '') + (k === 'tsum' ? ' rp-sep' : '') + '" data-k="' + k + '" onclick="rpSetKey(this.dataset.k)">' + RP_DEF[k].label + '</button>').join('');
-  const active = Object.keys(F).filter(f => F[f] && F[f].length).length + (dt.from || dt.to ? 1 : 0);
-  let h = '<div class="card rp-filters">' +
-    '<div class="rp-row">' +
-      '<label class="rp-fld"><span>Date</span><select id="rp_dtf" onchange="rpDtSet()">' + bdef.dates.map(d => '<option' + (d === dt.field ? ' selected' : '') + '>' + esc(d) + '</option>').join('') + '</select></label>' +
-      '<label class="rp-fld"><span>Period</span><select id="rp_dtp" onchange="rpDtSet(true)">' + RP_PRESETS.map(p => '<option value="' + p[0] + '"' + (p[0] === dt.preset ? ' selected' : '') + '>' + p[1] + '</option>').join('') + '</select></label>' +
-      '<label class="rp-fld"><span>From</span><input type="date" id="rp_from" value="' + esc(dt.from) + '" onchange="rpDtSet()"></label>' +
-      '<label class="rp-fld"><span>To</span><input type="date" id="rp_to" value="' + esc(dt.to) + '" onchange="rpDtSet()"></label>' +
-      (def.base ? '<label class="rp-fld"><span>Group by</span><select onchange="RP.g[RP.key]=this.value;rpSave();rpRender()">' + def.groups.map(g => '<option' + (g === RP.g[RP.key] ? ' selected' : '') + '>' + esc(g) + '</option>').join('') + '</select></label>' : '') +
+  const nf = Object.keys(F).filter(f => F[f] && F[f].length).length, dated = dt.preset === 'any' || !!(dt.from || dt.to);
+  const NOUN = { tickets: 'tickets', items: 'items', calls: 'calls', pickups: 'pickups', receipts: 'repair jobs', dispatches: 'dispatches',
+    replacements: 'replacements', parts: 'part lines', feedback: 'feedback responses' }[bk] || 'rows';
+  const fld = String(dt.field).toLowerCase();
+  const sentence = dt.preset === 'any' ? 'Showing <b>' + NOUN + '</b> that have a <b>' + esc(fld) + '</b> date'
+    : dt.from && dt.to ? 'Showing <b>' + NOUN + '</b> with <b>' + esc(fld) + '</b> date ' + (dt.from === dt.to ? 'on <b>' + esc(niceDate(dt.from)) + '</b>' : 'between <b>' + esc(niceDate(dt.from)) + '</b> and <b>' + esc(niceDate(dt.to)) + '</b>')
+    : dt.from ? 'Showing <b>' + NOUN + '</b> with <b>' + esc(fld) + '</b> date on or after <b>' + esc(niceDate(dt.from)) + '</b>'
+    : dt.to ? 'Showing <b>' + NOUN + '</b> with <b>' + esc(fld) + '</b> date on or before <b>' + esc(niceDate(dt.to)) + '</b>'
+    : 'Showing <b>all ' + NOUN + '</b> — no date filter';
+  const ranged = dt.preset !== '' && dt.preset !== 'any';
+  const MAIN = 6, list = bdef.filters, shownF = RP.more ? list : list.filter((f, i) => i < MAIN || (F[f] && F[f].length));
+  const hidden = list.length - shownF.length;
+  let h = '<div class="card rp-filters' + (RP.fopen ? ' open' : '') + '">' +
+    '<button type="button" class="rp-fhead" onclick="rpToggle(\'fopen\')">' + ico('sliders') + '<span>Filters' + (nf + (dated ? 1 : 0) ? ' · <b>' + (nf + (dated ? 1 : 0)) + ' active</b>' : '') + '</span>' + ico('chev') + '</button>' +
+    '<div class="rp-fbody">' +
+    '<div class="rp-datebar">' +
+      '<label class="rp-ctl"><span>Period</span><select id="rp_dtp" onchange="rpDtSet(true)">' + RP_PRESETS.map(p => '<option value="' + p[0] + '"' + (p[0] === dt.preset ? ' selected' : '') + '>' + p[1] + '</option>').join('') + '</select></label>' +
+      '<label class="rp-ctl' + (dt.preset === '' ? ' off' : '') + '"><span>Date</span><select id="rp_dtf" onchange="rpDtSet()"' + (dt.preset === '' ? ' disabled' : '') + '>' +
+        bdef.dates.map(d => '<option value="' + esc(d) + '"' + (d === dt.field ? ' selected' : '') + '>' + esc(d) + '</option>').join('') + '</select></label>' +
+      (ranged ? '<div class="rp-range"><label class="rp-ctl"><span>From</span><input type="date" id="rp_from" value="' + esc(dt.from) + '" onchange="rpDtSet()"></label>' +
+        '<span class="rp-dash">–</span><label class="rp-ctl"><span>To</span><input type="date" id="rp_to" value="' + esc(dt.to) + '" onchange="rpDtSet()"></label></div>' : '') +
+      (def.base ? '<label class="rp-ctl rp-grp"><span>Group by</span><select onchange="RP.g[RP.key]=this.value;rpSave();rpRender()">' + def.groups.map(g => '<option' + (g === RP.g[RP.key] ? ' selected' : '') + '>' + esc(g) + '</option>').join('') + '</select></label>' : '') +
     '</div>' +
-    '<div class="rp-ms-wrap">' + bdef.filters.map(f => rpMs(f, F[f] || [])).join('') + '</div>' +
-    (active ? '<div class="rp-active">' + (dt.from || dt.to ? '<span class="rp-chip">' + esc(dt.field) + ': ' + esc(dt.from ? niceDate(dt.from) : '…') + ' – ' + esc(dt.to ? niceDate(dt.to) : '…') +
-        '<button aria-label="Remove" onclick="rpDtClear()">' + ico('x', 'ic-xs') + '</button></span>' : '') +
+    '<div class="rp-sentence">' + ico('info') + '<span>' + sentence + (nf ? ' · ' + nf + ' more filter' + (nf > 1 ? 's' : '') : '') + '</span></div>' +
+    '<div class="rp-ms-wrap">' + shownF.map(f => rpMs(f, F[f] || [])).join('') +
+      (list.length > MAIN ? '<button type="button" class="rp-more" onclick="rpToggle(\'more\')">' + (RP.more ? 'Fewer filters' : '+ ' + hidden + ' more filter' + (hidden > 1 ? 's' : '')) + '</button>' : '') + '</div>' +
+    (nf || dated ? '<div class="rp-active">' + (dated ? '<span class="rp-chip">' + esc(dt.field) + ': ' + esc(dt.preset === 'any' ? 'has a date' : (dt.from ? niceDate(dt.from) : '…') + ' – ' + (dt.to ? niceDate(dt.to) : '…')) +
+        '<button aria-label="Remove date filter" onclick="rpDtClear()">' + ico('x', 'ic-xs') + '</button></span>' : '') +
       Object.keys(F).filter(f => F[f] && F[f].length).map(f => '<span class="rp-chip">' + esc(f) + ': ' + esc(F[f].length > 2 ? F[f].length + ' selected' : F[f].join(', ')) +
         '<button aria-label="Remove" data-f="' + esc(f) + '" onclick="rpClearOne(this.dataset.f)">' + ico('x', 'ic-xs') + '</button></span>').join('') +
       '<button class="link-btn" onclick="rpClearAll()">Clear all</button></div>' : '') +
-  '</div>';
+    '</div></div>';
   const V = rpView();
   const stats = def.base ? [['Groups', V.rows.length], [bdef.label, V.base.length]] : def.stats(V.rows);
   h += '<div class="rp-stats">' + stats.map(s => '<div><span>' + esc(s[0]) + '</span><b>' + esc(String(s[1])) + '</b></div>').join('') + '</div>';
@@ -542,11 +559,16 @@ function rpSetKey(k) { RP.key = k; RP.limit = 100; RP.q = ''; rpSave(); rpRender
 function rpSort(k) { const s = RP.sort[RP.key]; RP.sort[RP.key] = s && s.k === k ? { k, d: -s.d } : { k, d: 1 }; rpRender(); }
 function rpDtSet(fromPreset) {
   const dt = rpDt(); dt.field = $('rp_dtf').value;
-  if (fromPreset) { dt.preset = $('rp_dtp').value; if (dt.preset !== 'custom') { const r = rpRange(dt.preset); dt.from = r[0]; dt.to = r[1]; } }
-  else { const f = $('rp_from').value, t = $('rp_to').value; if (f !== dt.from || t !== dt.to) { dt.from = f; dt.to = t; dt.preset = f || t ? 'custom' : ''; } }
+  if (fromPreset) {
+    dt.preset = $('rp_dtp').value;
+    if (dt.preset === 'custom') { if (!dt.from && !dt.to) { const r = rpRange('month'); dt.from = r[0]; dt.to = r[1]; } }
+    else { const r = rpRange(dt.preset); dt.from = r[0]; dt.to = r[1]; }
+  }
+  else if ($('rp_from')) { const f = $('rp_from').value, t = $('rp_to').value; if (f !== dt.from || t !== dt.to) { dt.from = f; dt.to = t; dt.preset = f || t ? 'custom' : ''; } }
   if (dt.from && dt.to && dt.from > dt.to) { const x = dt.from; dt.from = dt.to; dt.to = x; }
   RP.limit = 100; rpSave(); rpRender();
 }
+function rpToggle(k) { RP[k] = !RP[k]; rpRender(); }
 function rpDtClear() { const dt = rpDt(); dt.from = ''; dt.to = ''; dt.preset = ''; rpSave(); rpRender(); }
 function rpClearOne(f) { delete rpF()[f]; rpSave(); rpRender(); }
 function rpClearAll() { RP.f[rpBaseKey()] = {}; rpDtClear(); RP.q = ''; rpRender(); }
