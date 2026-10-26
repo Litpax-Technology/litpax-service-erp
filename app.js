@@ -421,19 +421,21 @@ function rpRange(p) {
 const rpBaseKey = () => RP_DEF[RP.key].base || RP.key;
 function rpDt() { const k = rpBaseKey(); return RP.dt[k] || (RP.dt[k] = { field: RP_DEF[k].dates[0], preset: '', from: '', to: '' }); }
 function rpF() { const k = rpBaseKey(); return RP.f[k] || (RP.f[k] = {}); }
-function rpFiltered() {
+// except = a filter to ignore (its own dropdown shows what the OTHER filters leave)
+function rpFiltered(except) {
   const k = rpBaseKey(), def = RP_DEF[k], F = rpF(), dt = rpDt(), q = RP.q.toLowerCase().trim();
   const cols = def.cols.map(c => c[0]);
   return rpBase(k).filter(r => {
     if (dt.from || dt.to) { const v = d10(r[dt.field]); if (!v || (dt.from && v < dt.from) || (dt.to && v > dt.to)) return false; }
-    for (const f in F) { const sel = F[f]; if (sel && sel.length && sel.indexOf(r[f] === '' || r[f] == null ? '(blank)' : String(r[f])) === -1) return false; }
+    for (const f in F) { if (f === except) continue; const sel = F[f]; if (sel && sel.length && sel.indexOf(r[f] === '' || r[f] == null ? '(blank)' : String(r[f])) === -1) return false; }
     if (q && cols.map(c => r[c]).join(' ').toLowerCase().indexOf(q) === -1) return false;
     return true;
   });
 }
 function rpOptions(f) {
-  const k = rpBaseKey(), n = {};
-  rpBase(k).forEach(r => { const v = r[f] === '' || r[f] == null ? '(blank)' : String(r[f]); n[v] = (n[v] || 0) + 1; });
+  const n = {};
+  rpFiltered(f).forEach(r => { const v = r[f] === '' || r[f] == null ? '(blank)' : String(r[f]); n[v] = (n[v] || 0) + 1; });
+  (rpF()[f] || []).forEach(v => { if (!n[v]) n[v] = 0; });   // a ticked value stays visible even when nothing matches now
   return Object.keys(n).sort((a, b) => a === '(blank)' ? 1 : b === '(blank)' ? -1 : a.localeCompare(b, undefined, { numeric: true })).map(v => [v, n[v]]);
 }
 // grouped (summary) or plain rows + their columns, sorted
