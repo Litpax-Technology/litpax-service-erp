@@ -485,8 +485,8 @@ function rpRender() {
     '<div class="rp-fbody">' +
     '<div class="rp-datebar">' +
       '<label class="rp-ctl"><span>Period</span><select id="rp_dtp" onchange="rpDtSet(true)">' + RP_PRESETS.map(p => '<option value="' + p[0] + '"' + (p[0] === dt.preset ? ' selected' : '') + '>' + p[1] + '</option>').join('') + '</select></label>' +
-      '<label class="rp-ctl' + (dt.preset === '' ? ' off' : '') + '"><span>Date</span><select id="rp_dtf" onchange="rpDtSet()"' + (dt.preset === '' ? ' disabled' : '') + '>' +
-        bdef.dates.map(d => '<option value="' + esc(d) + '"' + (d === dt.field ? ' selected' : '') + '>' + esc(d) + '</option>').join('') + '</select></label>' +
+      '<label class="rp-ctl' + (dt.preset === '' ? ' off' : '') + '"><span>Filter on</span><select id="rp_dtf" onchange="rpDtSet()"' + (dt.preset === '' ? ' disabled' : '') + '>' +
+        bdef.dates.map(d => '<option value="' + esc(d) + '"' + (d === dt.field ? ' selected' : '') + '>' + esc(/date$/i.test(d) ? d : d + ' date') + '</option>').join('') + '</select></label>' +
       (ranged ? '<div class="rp-range"><label class="rp-ctl"><span>From</span><input type="date" id="rp_from" value="' + esc(dt.from) + '" onchange="rpDtSet()"></label>' +
         '<span class="rp-dash">–</span><label class="rp-ctl"><span>To</span><input type="date" id="rp_to" value="' + esc(dt.to) + '" onchange="rpDtSet()"></label></div>' : '') +
       (def.base ? '<label class="rp-ctl rp-grp"><span>Group by</span><select onchange="RP.g[RP.key]=this.value;rpSave();rpRender()">' + def.groups.map(g => '<option' + (g === RP.g[RP.key] ? ' selected' : '') + '>' + esc(g) + '</option>').join('') + '</select></label>' : '') +
