@@ -2009,7 +2009,7 @@ async function mstRemove(el) {
 /* ============================================================
    TICKET TRACKER — every ticket, every step, SLA
    ============================================================ */
-let TRK = [], trkFilter = 'open', trkStage = '', trkTimer = 0;
+let TRK = [], trkFilter = 'all', trkStage = '', trkTimer = 0;
 const TRK_STEPS = ['Registered', 'Service call', 'Pickup', 'Received', 'Repair', 'Dispatched'];
 const TRK_NOW = ['', 'Awaiting first call', 'Awaiting pickup', 'In transit', 'In repair', 'Ready to dispatch'];
 const TRK_MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -2112,7 +2112,7 @@ async function trkLoad(silent) {
   } catch (e) { if (e !== 'auth' && !silent && !TRK.length) $('trkList').innerHTML = '<div class="empty">Could not load data ❌</div>'; }
 }
 
-function trkSetFilter(f) { trkFilter = f; trkRender(); }
+function trkSetFilter(f) { trkFilter = f; trkStage = ''; trkRender(); }
 function trkSetStage(s) { trkStage = trkStage === s ? '' : s; if (trkStage) trkFilter = 'open'; trkRender(); }
 function trkMatch(m, f) {
   if (f === 'all') return true;
