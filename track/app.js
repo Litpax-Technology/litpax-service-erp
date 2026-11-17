@@ -165,6 +165,10 @@ function buildSteps(t, items) {
   const disp = items.filter(i => i.step === (STATE.steps || []).length - 1).length;
   const received = !!t.receivedDate;
   const closed = t.status === 'Closed';
+  const outItems = items.filter(i => i.step === (STATE.steps || []).length - 1 && !i.exchanged);
+  const dispDate = outItems.map(i => i.dispatchDate).filter(Boolean).sort().pop() || '';
+  const dispShip = [...new Set(outItems.map(i => [i.transport && 'Transport: ' + i.transport, i.lr && 'LR No: ' + i.lr,
+    i.trackInfo && 'Tracking: ' + i.trackInfo].filter(Boolean).join(' · ')).filter(Boolean))].join(' | ');
   const shipKnown = !!t.pickupDate || t.batterySent === 'Yes';
   const shipLabel = t.pickupBy === 'Company' ? 'Pickup Arranged'
     : (t.pickupBy === 'Customer' || t.batterySent === 'Yes' ? 'Items Sent by You' : 'Pickup / Shipping');
@@ -173,7 +177,7 @@ function buildSteps(t, items) {
     { l: 'Complaint Registered', d: t.createdAt, s: 'done' },
     {
       l: shipLabel, d: t.pickupDate,
-      x: [t.pickupTransport && 'Transport: ' + t.pickupTransport, t.pickupLr && 'LR No: ' + t.pickupLr].filter(Boolean).join(' · ')
+      x: [t.pickupTransport && 'Transport: ' + t.pickupTransport, t.pickupLr && 'LR No: ' + t.pickupLr, t.pickupTrack && 'Tracking: ' + t.pickupTrack].filter(Boolean).join(' · ')
         || (!shipKnown && !received ? 'Our service team will contact you for pickup details' : ''),
       s: received ? 'done' : (shipKnown ? 'now' : '')
     },
@@ -188,8 +192,8 @@ function buildSteps(t, items) {
       s: !received ? '' : (closed || (total && disp === total) ? 'done' : 'now')
     },
     {
-      l: disp && disp < total ? 'Partially Dispatched' : 'Dispatched', d: closed ? t.closedAt : '',
-      x: disp ? disp + ' of ' + total + ' item(s) dispatched' : '',
+      l: disp && disp < total ? 'Partially Dispatched' : 'Dispatched', d: closed ? t.closedAt : dispDate,
+      x: [disp ? disp + ' of ' + total + ' item(s) dispatched' : '', dispShip].filter(Boolean).join(' · '),
       s: closed ? 'done' : (disp ? 'now' : '')
     }
   ];
@@ -215,7 +219,7 @@ function renderItems(items) {
     '<div class="it-top"><span class="it-name">🔁 Replacement battery' + (repl.length > 1 ? ' #' + (i + 1) : '') + '</span>' +
       '<span class="it-stage">' + (r.sent ? 'Dispatched' : 'Being arranged') + '</span></div>' +
     (r.model ? '<div class="it-desc">' + esc(r.model) + '</div>' : '') +
-    (r.sent ? '<div class="it-disp">Dispatched ' + esc(fmtDate(r.dispatchDate)) + (r.transport ? ' · ' + esc(r.transport) : '') + (r.lr ? ' · LR ' + esc(r.lr) : '') + '</div>' : '') +
+    (r.sent ? '<div class="it-disp">Dispatched ' + esc(fmtDate(r.dispatchDate)) + (r.transport ? ' · ' + esc(r.transport) : '') + (r.lr ? ' · LR ' + esc(r.lr) : '') + (r.trackInfo ? ' · ' + esc(r.trackInfo) : '') + '</div>' : '') +
     (r.sent && !r.oldReceived ? '<div class="it-note">Please send your old battery back — our team will arrange the pickup.</div>' : '') +
   '</div>').join('');
   $('items').innerHTML = rHtml + items.map(it => {
@@ -230,7 +234,7 @@ function renderItems(items) {
       (it.exchanged ? '' : '<div class="it-steps">' + steps.map((s, i) =>
         '<span class="' + (i < it.step ? 'p' : (i === it.step ? 'c' : '')) + '" title="' + esc(s) + '"></span>').join('') + '</div>' +
       '<div class="it-step-lbl">Step ' + (it.step + 1) + ' of ' + steps.length + '</div>') +
-      (done && !it.exchanged ? '<div class="it-disp">Dispatched ' + esc(fmtDate(it.dispatchDate)) + (it.transport ? ' · ' + esc(it.transport) : '') + '</div>' : '') +
+      (done && !it.exchanged ? '<div class="it-disp">Dispatched ' + esc(fmtDate(it.dispatchDate)) + (it.transport ? ' · ' + esc(it.transport) : '') + (it.lr ? ' · LR ' + esc(it.lr) : '') + (it.trackInfo ? ' · ' + esc(it.trackInfo) : '') + '</div>' : '') +
     '</div>';
   }).join('');
 }

@@ -1709,7 +1709,7 @@ function boardRender() {
   }
 
   // planned cards
-  $('boardActive').innerHTML = active.length ? active.map(it => {
+  const card = it => {
     const idx = STAGES.indexOf(it.status), inPlan = idx === -1, last = STAGES.length - 1;
     const pct = inPlan ? 0 : Math.round((idx + 1) / STAGES.length * 100);
     const opts = STAGES.map(s => '<option value="' + esc(s) + '"' + (s === it.status ? ' selected' : '') + '>' + esc(s) + '</option>').join('');
@@ -1731,7 +1731,13 @@ function boardRender() {
         (inPlan ? '<option value="" selected disabled>-- Select stage --</option>' : '') + opts + '</select>' +
       (it.stageAt ? '<div class="bc-at">Updated: ' + esc(it.stageAt) + '</div>' : '') +
     '</div>';
-  }).join('') : '<div class="empty">' + (df ? 'No items planned for this date 📅' : 'No planned items') + '</div>';
+  };
+  $('boardActive').innerHTML = active.length ? active.map(card).join('') : '<div class="empty">' + (df ? 'No items planned for this date 📅' : 'No planned items') + '</div>';
+
+  const prev = df ? boardItems.filter(it => live(it) && it.planned && it.planDate && it.planDate < df)
+                      .sort((a, b) => a.planDate < b.planDate ? -1 : 1) : [];
+  $('prevCount').textContent = prev.length;
+  $('boardPrev').innerHTML = prev.length ? prev.map(card).join('') : '<div class="empty">No previous pending ✅</div>';
 }
 
 /* ---- item details: fault code, repair cost, serial, warranty ---- */
@@ -2760,7 +2766,7 @@ function renderPickup() {
   if (DR_TAB === 'details') {
     body += sec('📦 Coming in this pickup', kvh([['Batteries', tv(p['Exp Battery Qty'] || 0)], ['Chargers', tv(p['Exp Charger Qty'] || 0)], ['Boxes', tv(p['No. of Boxes'])],
       ['Received', r ? esc(itemsText(+r['Battery Qty'] || 0, +r['Charger Qty'] || 0)) + (r['Qty Note'] ? ' <span class="tag tag-red">⚠️ short</span>' : ' <span class="tag tag-green">✓ matches</span>') : '']]));
-    body += sec('🚚 Transport', kvh([['Arranged by', tv(p['Pickup By'])], ['Place', tv(p['Pickup Place'])], ['Transport', tv(p['Transport Name'])], ['LR No', tv(p['LR No'])],
+    body += sec('🚚 Transport', kvh([['Arranged by', tv(p['Pickup By'])], ['Place', tv(p['Pickup Place'])], ['Transport', tv(p['Transport Name'])], ['LR No', tv(p['LR No'])], ['Tracking', tv(p['Tracking Detail'])],
       ['Builty', safeUrl(p['Builty URL']) ? '<a class="call-link" href="' + esc(safeUrl(p['Builty URL'])) + '" target="_blank" rel="noopener">📎 View builty</a>' : tv('')],
       ['Saved', tv(p['Created At'] + (p['Created By'] ? ' · ' + p['Created By'] : ''))]]));
   }
@@ -2847,6 +2853,7 @@ function renderDispatch() {
   const rIds = String(d['Receipt IDs'] || '').split(/\s*,\s*/).filter(Boolean);
   let h = recHead('dispatch', d['Dispatch ID'], '<span class="pill pill-green">' + esc(itemsText(+d['Batteries'] || 0, +d['Chargers'] || 0)) + '</span>',
     [['Ticket', tkLk()], ['Customer', custLk()], ['Repair Job', rIds.length ? rIds.map(x => lk('receipt', x, REC.tid)).join(' ') : tv('')], ['Date', tv(niceDate(d['Dispatch Date']))]]);
+  if (d['Dispatch ID'] && (can('repair') || can('admin'))) h += '<div class="rp-actions"><button class="btn btn-violet btn-sm" onclick="dispEditOpen()">✏️ Edit transport</button></div>';
   h += tabsHtml([['details', 'Details'], ['items', 'Items', L.length], ['history', 'History', recHistory(d['Dispatch ID']).length]]);
   let body = '';
   if (DR_TAB === 'details') body += sec('📦 Dispatch', kvh([['Dispatched by', tv(d['Dispatched By'])], ['Transport', tv(d['Transport'])], ['LR No', tv(d['LR No'])], ['Tracking', tv(d['Tracking Detail'])], ['Charges', tv(rupee(d['Charges']))],
@@ -3331,7 +3338,7 @@ async function replCancel(btn) {
   toast('🚫 ' + btn.dataset.id + ' cancelled'); afterChange(); drawerReload();
 }
 // send the new battery (repair / dispatch team)
-let REPL_STOCK = [];
+let REPL_STOCK = [], REPL_CUR = null;
 async function replSendOpen(id) {
   await Promise.all([ensureMasters(), ensureModels()]);
   modalOpen('🚚 Send replacement — ' + id, '<div class="skeleton sk-block"></div>');
@@ -3342,6 +3349,7 @@ async function replSendOpen(id) {
     REPL_STOCK = b && b.ok ? b.rows.filter(x => x['Status'] === 'Available') : [];
   } catch (e) {}
   if (!rp) return modalClose(), toast('❌ Could not load ' + id);
+  REPL_CUR = rp;
   const same = REPL_STOCK.filter(s => modelKey(s['Model']) === modelKey(rp['Old Model']));
   const stockOpts = REPL_STOCK.map(s => '<option value="' + esc(s['Stock ID']) + '">' + esc(s['Stock ID'] + ' · ' + s['Model'] + ' · SN ' + (s['Serial No'] || '—')) +
     (modelKey(s['Model']) === modelKey(rp['Old Model']) ? ' ✓ same model' : '') + '</option>').join('');
@@ -3359,6 +3367,8 @@ async function replSendOpen(id) {
     '<div class="form-grid">' + fg('Dispatch date <b>*</b>', 'rs_date', 'date', todayStr()) +
       '<div class="fg"><label>Dispatched by <b>*</b></label><select id="rs_by">' + optList(M().dispatchedBy, '', '-- Select --') + '</select></div>' +
       fg('Transport', 'rs_tr', 'text', '', ' maxlength="150"') + fg('LR / docket no', 'rs_lr', 'text', '', ' maxlength="60"') +
+      '<div class="fg full"><label>Tracking Detail</label><input id="rs_track" maxlength="300"></div>' +
+      '<div class="fg full"><label>Delivery address (for challan)</label><input id="rs_addr" maxlength="300"></div>' +
       fg('Charges (₹)', 'rs_ch', 'number', '', ' min="0"') + fg('Remarks', 'rs_rem', 'text', '', ' maxlength="500"') + '</div>' +
     '<button class="btn btn-primary btn-block" data-id="' + esc(id) + '" onclick="replSend(this)">Dispatch new battery 🚚</button>';
 }
@@ -3366,13 +3376,18 @@ function replSrc() { const s = segVal('rs_src'); $('rs_new').hidden = s !== 'New
 async function replSend(btn) {
   const d = { action: 'dispatchReplacement', replacementId: btn.dataset.id, source: segVal('rs_src'), stockId: $('rs_stock').value,
     category: $('rs_cat').value, model: $('rs_model').value.trim(), serial: $('rs_serial').value.trim(), dispatchDate: $('rs_date').value,
-    dispatchedBy: $('rs_by').value, transport: $('rs_tr').value.trim(), lr: $('rs_lr').value.trim(), charges: $('rs_ch').value, remarks: $('rs_rem').value.trim() };
+    dispatchedBy: $('rs_by').value, transport: $('rs_tr').value.trim(), lr: $('rs_lr').value.trim(), trackInfo: $('rs_track').value.trim(),
+    address: $('rs_addr').value.trim(), charges: $('rs_ch').value, remarks: $('rs_rem').value.trim() };
   if (d.source === 'New from Production' && (!d.model || !d.serial)) return toast('⚠️ Enter model and new serial no');
   if (d.source === 'Refurbished Stock' && !d.stockId) return toast('⚠️ Pick the stock battery');
   if (!d.dispatchedBy) return toast('⚠️ Select Dispatched By');
   const m = modelOf(d.model); if (m) d.model = m.code;
   const r = await run(d, btn); if (!r) return;
-  modalClose(); toast('✅ Replacement dispatched — ' + r.dispatchId); afterChange();
+  const stk = REPL_STOCK.find(s => s['Stock ID'] === d.stockId) || {};
+  const chl = Object.assign({}, REPL_CUR, { 'Dispatch ID': r.dispatchId, 'New Model': d.model || stk['Model'], 'New Serial': d.serial || stk['Serial No'],
+    'Dispatch Date': d.dispatchDate, 'Dispatched By': d.dispatchedBy, 'Transport': d.transport, 'LR No': d.lr, 'Tracking Detail': d.trackInfo, 'Address': d.address });
+  toast('✅ Replacement dispatched — ' + r.dispatchId); afterChange();
+  replChallan(chl);
   if (CURRENT === 'dispatch') openDispatch();
   if ($('drawer').classList.contains('open')) drawerReload();
 }
@@ -3411,6 +3426,7 @@ function renderReplacement() {
     '<button class="btn btn-ghost btn-sm btn-danger" data-id="' + esc(x['Replacement ID']) + '" onclick="replDecide(this,\'reject\')">Reject</button>');
   if (st === 'Requested' && can('repair')) b.push('<button class="btn btn-primary btn-sm" data-id="' + esc(x['Replacement ID']) + '" onclick="replSendOpen(this.dataset.id)">🚚 Send new battery</button>');
   if ((st === 'Requested' || st === 'Pending Approval') && can('service')) b.push('<button class="btn btn-ghost btn-sm btn-danger" data-id="' + esc(x['Replacement ID']) + '" onclick="replCancel(this)">Cancel</button>');
+  if (x['Dispatch ID']) b.push('<button class="btn btn-ghost btn-sm" onclick="replChallan(Object.assign({}, CUR.replacements.find(r => r[\'Replacement ID\'] === REC.id), { City: CUR.ticket[\'City\'], State: CUR.ticket[\'State\'] }))">🧾 Challan</button>');
   if (b.length) h += '<div class="rp-actions">' + b.join('') + '</div>';
   h += sec('🔁 Request', kvh([['Reason', tv(x['Reason'])], ['Old battery', tv([x['Old Category'], x['Old Model'], x['Old Serial'] && 'SN ' + x['Old Serial']].filter(Boolean).join(' · '))],
     ['Chargeable', tv(x['Chargeable'] === 'Yes' ? 'Yes' + (x['Charge Amount'] !== '' ? ' · ' + rupee(x['Charge Amount']) : '') : 'No')],
@@ -3420,4 +3436,35 @@ function renderReplacement() {
   h += sec('♻️ Old battery', kvh([['Received', tv(x['Old Received At'])], ['Went to', tv(x['Old Outcome'])], ['Closed', tv(x['Closed At'])], ['Remarks', tv(x['Remarks'])]]));
   h += sec('🕘 History', histList(recHistory(x['Replacement ID'])));
   $('drBody').innerHTML = h;
+}
+
+/* ---------- Dispatch: edit transport / LR / tracking ---------- */
+function dispEditOpen() {
+  const d = (CUR.dispatches || []).find(x => x['Dispatch ID'] === REC.id); if (!d) return;
+  modalOpen('✏️ Edit transport — ' + d['Dispatch ID'],
+    '<div class="form-grid">' +
+      fg('Transport Name', 'de_tr', 'text', d['Transport'], ' maxlength="150"') +
+      fg('LR / Docket No', 'de_lr', 'text', d['LR No'], ' maxlength="60"') +
+      '<div class="fg full"><label>Tracking Detail</label><input id="de_track" maxlength="300" value="' + esc(d['Tracking Detail'] || '') + '"></div>' +
+    '</div><button class="btn btn-primary btn-block" data-id="' + esc(d['Dispatch ID']) + '" onclick="dispEditSave(this)">Save ✓</button>');
+}
+async function dispEditSave(btn) {
+  const r = await run({ action: 'editDispatchTransport', dispatchId: btn.dataset.id,
+    transport: $('de_tr').value.trim(), lr: $('de_lr').value.trim(), trackInfo: $('de_track').value.trim() }, btn);
+  if (!r) return;
+  modalClose(); toast('✅ Transport updated'); cacheDel('tickets'); drawerReload();
+}
+
+/* ---------- Advance Replacement: Delivery Challan ---------- */
+function replChallan(x) {
+  modalOpen('🧾 Delivery Challan — ' + (x['Dispatch ID'] || x['Replacement ID']),
+    '<div class="slip" id="slip">' + slipHead('Delivery Challan', niceDate(x['Dispatch Date'])) +
+      '<div class="slip-sec">Challan No: <b>' + esc(x['Dispatch ID'] || x['Replacement ID']) + '</b> · Ticket: <b>' + esc(x['Ticket ID']) + '</b> · ' + esc(x['Customer'] || '') + '</div>' +
+      kv([['Type', 'Advance Replacement'], ['Delivery address', x['Address'] || [x['City'], x['State']].filter(Boolean).join(', ')],
+          ['Dispatched By', x['Dispatched By']], ['Transport', x['Transport']], ['LR / Docket', x['LR No']], ['Tracking', x['Tracking Detail']]]) +
+      '<table class="slip-table"><tr><th>#</th><th>Item</th><th>Model</th><th>Serial No</th><th>Qty</th></tr>' +
+        '<tr><td>1</td><td>Battery (replacement)</td><td>' + esc(x['New Model'] || '—') + '</td><td>' + esc(x['New Serial'] || '—') + '</td><td>1</td></tr></table>' +
+      '<div class="slip-sec">Old battery to be returned: ' + esc([x['Old Model'], x['Old Serial'] && 'SN ' + x['Old Serial']].filter(Boolean).join(' · ') || '—') + '</div>' +
+      '<div class="slip-sign"><div>Dispatched by (Litpax)</div><div>Received by (Customer / Transporter)</div></div></div>' +
+    '<button class="btn btn-primary btn-block" onclick="slipPrint()">🖨️ Print Challan</button>');
 }
