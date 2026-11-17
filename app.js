@@ -1391,6 +1391,7 @@ function pickupOpen() {
       fg('Place', 'p_place', 'text', t['Pickup Place'], ' maxlength="150"') +
       fg('Transport Name', 'p_transport', 'text', t['Transport Name'], ' maxlength="100"') +
       fg('LR No', 'p_lr', 'text', t['LR No'], ' maxlength="60"') +
+      '<div class="fg full"><label>Tracking Detail</label><input id="p_track" maxlength="300" value="' + esc(t['Tracking Detail'] || '') + '" placeholder="Tracking no. / link / driver contact"></div>' +
       '<div class="fg full"><label>Builty (photo or PDF, max ' + CONFIG.BUILTY_MAX_MB + ' MB)</label>' +
         '<label class="file-drop" for="p_file"><span id="p_fileName">📎 ' + (cur ? 'Replace builty' : 'Choose file') + '</span>' +
         '<input type="file" id="p_file" accept="image/jpeg,image/png,image/webp,application/pdf" onchange="pickupFilePick(this)"></label>' +
@@ -1408,7 +1409,7 @@ async function pickupSave(btn) {
     action: 'arrangePickup', ticketId: id, pickupBy: segVal('p_bySeg'),
     boxes: $('p_boxes').value, pickupDate: $('p_date').value, place: $('p_place').value.trim(),
     expB: $('p_expB').value, expC: $('p_expC').value,
-    transport: $('p_transport').value.trim(), lr: $('p_lr').value.trim()
+    transport: $('p_transport').value.trim(), lr: $('p_lr').value.trim(), trackInfo: $('p_track').value.trim()
   };
   if (!d.pickupBy) return toast('⚠️ Select Company or Customer');
   if (!d.pickupDate) return toast('⚠️ Enter pickup date');
@@ -1849,7 +1850,7 @@ async function dispSubmit() {
   if (!ids.length) return toast('⚠️ Select at least one item');
   const d = {
     action: 'dispatch', itemIds: JSON.stringify(ids), dispatchDate: $('d_date').value, dispatchedBy: $('d_by').value.trim(),
-    transport: $('d_transport').value.trim(), lr: $('d_lr').value.trim(), charges: $('d_cost').value.trim(), actualProblem: $('d_problem').value.trim(),
+    transport: $('d_transport').value.trim(), lr: $('d_lr').value.trim(), trackInfo: $('d_track').value.trim(), charges: $('d_cost').value.trim(), actualProblem: $('d_problem').value.trim(),
     address: $('d_address').value.trim(), remarks: $('d_remarks').value.trim()
   };
   if (!d.dispatchDate) return toast('⚠️ Enter dispatch date');
@@ -1863,7 +1864,7 @@ const sel = dispItems.filter(it => dispSel[it.itemId]);
   let tk = null;
   try { const g = await api({ action: 'getTicket', ticketId: (r.tickets || [])[0] }); if (g && g.ok) tk = g.ticket; } catch (e) {}
   dispSlip(sel, d, r, tk);
-  ['d_transport', 'd_lr', 'd_cost', 'd_problem', 'd_address', 'd_remarks'].forEach(id => { $(id).value = ''; });
+  ['d_transport', 'd_lr', 'd_track', 'd_cost', 'd_problem', 'd_address', 'd_remarks'].forEach(id => { $(id).value = ''; });
   cacheDel('board_items'); cacheDel('tickets'); cacheDel('tracker');
   dispLoad();
 }
@@ -1881,7 +1882,7 @@ function dispSlip(sel, d, r, tk) {
     '<div class="slip" id="slip">' +
       slipHead('Dispatch Slip', d.dispatchDate) +
       '<div class="slip-sec">Ticket: <b>' + esc((r.tickets || []).join(', ')) + '</b> · ' + esc(sel[0] ? sel[0].customer : '') + '</div>' +
-      kv([['Dispatched By', d.dispatchedBy], ['Transport', d.transport], ['Address', d.address], ['Charges', rupee(d.charges)], ['Problem Found', d.actualProblem]]) +
+      kv([['Dispatched By', d.dispatchedBy], ['Transport', d.transport], ['LR / Docket', d.lr], ['Tracking', d.trackInfo], ['Address', d.address], ['Charges', rupee(d.charges)], ['Problem Found', d.actualProblem]]) +
       '<table class="slip-table"><tr><th>#</th><th>Item ID</th><th>Item</th><th>Type</th><th>Model</th><th>Serial No</th><th>Fault</th></tr>' +
       sel.map((it, i) => '<tr><td>' + (i + 1) + '</td><td>' + esc(it.itemId) + '</td><td>' + esc(it.itemType) + '</td><td>' + esc(it.category || '—') + '</td><td>' + esc(it.model || '—') +
         '</td><td>' + esc(it.serial || '—') + '</td><td>' + esc(it.fault || '—') + '</td></tr>').join('') +
@@ -2848,7 +2849,7 @@ function renderDispatch() {
     [['Ticket', tkLk()], ['Customer', custLk()], ['Repair Job', rIds.length ? rIds.map(x => lk('receipt', x, REC.tid)).join(' ') : tv('')], ['Date', tv(niceDate(d['Dispatch Date']))]]);
   h += tabsHtml([['details', 'Details'], ['items', 'Items', L.length], ['history', 'History', recHistory(d['Dispatch ID']).length]]);
   let body = '';
-  if (DR_TAB === 'details') body += sec('📦 Dispatch', kvh([['Dispatched by', tv(d['Dispatched By'])], ['Transport', tv(d['Transport'])], ['Charges', tv(rupee(d['Charges']))],
+  if (DR_TAB === 'details') body += sec('📦 Dispatch', kvh([['Dispatched by', tv(d['Dispatched By'])], ['Transport', tv(d['Transport'])], ['LR No', tv(d['LR No'])], ['Tracking', tv(d['Tracking Detail'])], ['Charges', tv(rupee(d['Charges']))],
       ['Address', tv(d['Address'])], ['Problem found', tv(d['Problem Found'])], ['Remarks', tv(d['Remarks'])], ['Saved', tv(d['Created At'])]]));
   if (DR_TAB === 'items') body += L.length ? '<div class="items-mini">' + L.map(i => itemLine(i, REC.tid)).join('') + '</div>' : '<div class="rec-meta">' + esc(d['Item IDs']) + '</div>';
   if (DR_TAB === 'history') body += histList(recHistory(d['Dispatch ID']));
