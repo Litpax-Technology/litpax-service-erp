@@ -356,8 +356,10 @@
         <div class="card">
           <div class="card-head"><span>🔧 Planned <b id="repairCount" class="count">0</b></span>
             <input type="date" id="boardDateFilter" class="date-sm" onchange="boardRender()" title="Plan date (empty = all)"></div>
-          <div id="boardActive" class="board-cards"></div>
-        </div>
+              <div id="boardActive" class="board-cards"></div>
+              <div class="card-head" style="margin-top:14px"><span>⏳ Previous planned — still pending <b id="prevCount" class="count">0</b></span></div>
+              <div id="boardPrev" class="board-cards"></div>
+          </div>
       </div>
     </section>
 
