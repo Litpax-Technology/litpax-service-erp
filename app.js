@@ -49,7 +49,7 @@ async function apiPost(params) {
 // Saves carry a request ID: a retry of the SAME save (timeout, slow network, double tap) reuses it,
 // so the server returns the first result instead of saving twice.
 const READ_ACTIONS = { login: 1, logout: 1, ping: 1, getSite: 1, getTickets: 1, getTicket: 1, getMasters: 1, getTracker: 1, getItems: 1, getReportData: 1,
-  getSettings: 1, lookupPhone: 1, getModels: 1, findRecord: 1, getCustomer: 1, listRecords: 1, getTechJobs: 1, getTracking: 1, touch: 1, getSecurity: 1 };
+  getSettings: 1, lookupPhone: 1, getModels: 1, findRecord: 1, getCustomer: 1, listRecords: 1, getTechJobs: 1, getTracking: 1, touch: 1, getSecurity: 1, getTasks: 1 };
 const PENDING_REQ = {};
 const newReqId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -613,6 +613,7 @@ const idNum = id => parseInt(String(id || '').replace(/\D/g, ''), 10) || 0;
 
 /* ---------- v11 — icons (Lucide) + emoji-free UI chrome ---------- */
 const ICO = {
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
   plus: '<circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8"/>',
   ticket: '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2M13 17v2M13 11v2"/>',
   wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
@@ -839,11 +840,12 @@ const SCREENS = {
   dispatch:  { id: 'scrDispatch', icon: '🚚', label: 'Dispatch',     title: 'Dispatch',     sub: 'Send out items that passed Final QC & Pack', open: openDispatch },
   masters:   { id: 'scrMasters',  icon: '⚙️', label: 'Masters',      title: 'Masters',      sub: 'Dropdown lists — names and battery / charger types', open: openMasters },
   tracker:   { id: 'scrTracker',  icon: '🛰️', label: 'Ticket Tracker', title: 'Ticket Tracker', sub: 'Where every ticket and battery is right now — with SLA', open: openTracker },
+  delays:    { id: 'scrDelays',   icon: '⏰', label: 'Delays', title: 'Delays', sub: 'Every step that has passed its planned time', open: openDelays },
   settings:  { id: 'scrSettings', icon: '🛠️', label: 'Settings',     title: 'Settings',     sub: 'SLA targets, lists, WhatsApp messages and screens per role', open: openSettings },
   reports:   { id: 'scrReports',  icon: '📊', label: 'Reports',      title: 'Reports',      sub: 'Filter any data and download exactly what you see as CSV', open: openReports },
   records:   { id: 'scrRecords',  icon: '🗂️', label: 'Records',      title: 'Records',      sub: 'Every customer, call, pickup, repair job, item and dispatch — click any row to open it', open: () => openRecords() }
 };
-const NAV_ICO = { reports: 'chart', newTicket: 'plus', tickets: 'ticket', board: 'wrench', dispatch: 'truck', masters: 'list', tracker: 'activity', settings: 'sliders', records: 'folder' };
+const NAV_ICO = { reports: 'chart', newTicket: 'plus', tickets: 'ticket', board: 'wrench', dispatch: 'truck', masters: 'list', tracker: 'activity', delays: 'clock', settings: 'sliders', records: 'folder' };
 const NAV_ADMIN = { reports: 1, masters: 1, settings: 1 };
 function navRender(nav) {
   const item = k => '<button class="sb-item' + (k === CURRENT ? ' active' : '') + '" data-nav="' + k + '" onclick="go(this.dataset.nav)">' + ico(NAV_ICO[k] || 'list') + '<span>' + SCREENS[k].label + '</span></button>';
@@ -2965,6 +2967,92 @@ function recRender() {
     show.map(r => '<div class="rl-row rec-click" data-t="' + L.type + '" data-i="' + esc(r[L.open || L.id] || '') + '" data-k="' + esc(r['Ticket ID'] || '') + '" onclick="lkGo(this,event)">' +
       '<span>' + idChip(r[L.id], !r[L.id]) + '</span>' + L.cols.map(c => '<span data-l="' + c[0] + '">' + (c[1](r) || '—') + '</span>').join('') + '</div>').join('') + '</div>' +
     (rows.length > REC_LIMIT ? '<button class="btn btn-ghost btn-block" onclick="REC_LIMIT += 200; recRender()">Show more (' + (rows.length - REC_LIMIT) + ')</button>' : '');
+}
+
+/* ============================================================
+   DELAYS — every pending step that is past its Planned time (FMS style).
+   Service sees Service tasks, Repair sees Repair tasks, Attendant/Admin see all.
+   Only Admin can change a Planned time (reason required, original kept).
+   ============================================================ */
+let DLY = [], DLY_OFF = 0, DLY_ROLE = '', dlyView = 'late', dlyTeam = '', dlyMin = 0, dlyTimer = 0;
+const DLY_VIEWS = [['late', 'Late'], ['soon', 'Late + due in 4h'], ['all', 'All pending']];
+const dlyNow = () => Date.now() + DLY_OFF;
+
+function openDelays() {
+  dlyLoad(false);
+  clearInterval(dlyTimer);
+  dlyTimer = setInterval(() => {
+    if (CURRENT !== 'delays') return clearInterval(dlyTimer);
+    if (document.visibilityState === 'visible') dlyLoad(true);
+  }, 60000);
+}
+async function dlyLoad(silent) {
+  if (!DLY.length && !silent) $('dlyList').innerHTML = '<div class="skeleton sk-card"></div>'.repeat(3);
+  try {
+    const r = await api({ action: 'getTasks' });
+    if (!r || !r.ok) { if (!silent) toast('❌ ' + ((r && r.msg) || 'Could not load delays')); return; }
+    DLY = r.tasks || []; DLY_ROLE = r.role || role();
+    const sv = tsOf(r.now); DLY_OFF = sv ? sv - Date.now() : 0;
+    dlyRender();
+  } catch (e) { if (e !== 'auth' && !silent && !DLY.length) $('dlyList').innerHTML = '<div class="empty">Could not load data ❌</div>'; }
+}
+function dlyModel(x) {
+  const planned = tsOf(x.planned), over = dlyNow() - planned;
+  return Object.assign({}, x, { _p: planned, _over: over, _state: over > 0 ? 'late' : (over > -4 * 3600e3 ? 'soon' : 'ok') });
+}
+function dlyType(x) { return /^(plan|start|stage|dispatch)$/.test(x.kind) ? 'item' : x.kind === 'transit' ? 'pickup' : 'ticket'; }
+function dlyRender() {
+  if (!$('dlyList')) return;
+  const all = DLY.map(dlyModel), q = ($('dlySearch').value || '').trim().toLowerCase();
+  const late = all.filter(x => x._state === 'late'), soon = all.filter(x => x._state === 'soon');
+  const longest = late.reduce((m, x) => Math.max(m, x._over), 0), moved = all.filter(x => x.edited).length;
+  const kpi = (lbl, val, cls, sub) => '<div class="kpi ' + (cls || '') + '"><span>' + lbl + '</span><b>' + val + '</b>' + (sub ? '<small>' + sub + '</small>' : '') + '</div>';
+  $('dlyKpis').innerHTML = kpi('Late now', late.length, late.length ? 'late' : 'good', 'past planned time') +
+    kpi('Longest delay', late.length ? fmtDur(longest) : '—', late.length ? 'late' : '', 'oldest pending step') +
+    kpi('Due in 4 hours', soon.length, soon.length ? 'risk' : '', 'about to go late') +
+    kpi('Time changed', moved, '', 'planned time edited by admin');
+  $('dlyViews').innerHTML = DLY_VIEWS.map(v => '<button type="button" class="chip' + (dlyView === v[0] ? ' on' : '') + '" onclick="dlyView=\'' + v[0] + '\';dlyRender()">' + v[1] + '</button>').join('');
+  // team chips — only for roles that can see more than one team
+  const multi = DLY_ROLE !== 'service' && DLY_ROLE !== 'repair';
+  const cnt = t => all.filter(x => (!t || x.team === t) && x._state === 'late').length;
+  $('dlyTeams').style.display = multi ? '' : 'none';
+  if (multi) $('dlyTeams').innerHTML = [['', 'All teams'], ['service', 'Service'], ['repair', 'Repair']].map(t =>
+    '<button type="button" class="chip' + (dlyTeam === t[0] ? ' on' : '') + '" onclick="dlyTeam=\'' + t[0] + '\';dlyRender()">' + t[1] + '<b>' + cnt(t[0]) + '</b></button>').join('');
+  let rows = all.filter(x => (!multi || !dlyTeam || x.team === dlyTeam) &&
+    (dlyView === 'all' || (dlyView === 'soon' ? x._state !== 'ok' : x._state === 'late')) &&
+    (dlyView === 'all' || !dlyMin || x._over >= dlyMin * 3600e3));
+  if (q) rows = rows.filter(x => [x.step, x.tid, x.ref, x.company, x.person, x.phone, x.dealer, x.city, x.item].join(' ').toLowerCase().indexOf(q) !== -1);
+  rows.sort((a, b) => a._p - b._p);
+  const admin = can('admin');
+  $('dlyList').innerHTML = rows.length ? rows.map(x => {
+    const link = lk(dlyType(x), x.ref, x.tid, x.ref);
+    const badge = x._state === 'late' ? '<span class="dly-badge late">+' + fmtDur(x._over) + ' late</span>' :
+      x._state === 'soon' ? '<span class="dly-badge soon">due in ' + fmtDur(-x._over) + '</span>' : '<span class="dly-badge ok">on time</span>';
+    return '<div class="dly-row ' + x._state + '">' +
+      '<div class="dly-step"><b>' + esc(x.step) + '</b><span>' + link + ' · <span class="pill pill-' + (x.team === 'repair' ? 'amber' : 'blue') + '">' + esc(x.team) + '</span></span></div>' +
+      '<div class="dly-who"><b>' + esc(x.company || x.person || '—') + '</b><span>' + esc([x.person && x.company ? x.person : '', x.item, x.city].filter(Boolean).join(' · ')) + '</span></div>' +
+      '<div class="dly-time"><span>Planned ' + esc(fmtDT(x._p)) + '</span>' + badge +
+      (x.edited ? '<small>time changed (was ' + esc(fmtDT(tsOf(x.orig))) + ')</small>' : '') + '</div>' +
+      (admin ? '<button type="button" class="btn btn-ghost btn-sm" data-id="' + esc(x.id) + '" onclick="dlyEdit(this.dataset.id)">Change time</button>' : '') +
+      '</div>';
+  }).join('') : '<div class="empty">' + (dlyView === 'late' ? '🎉 Nothing is late right now' : 'No pending steps') + '</div>';
+}
+function dlyEdit(id) {
+  const x = DLY.find(t => t.id === id); if (!x) return;
+  const p = tsOf(x.planned), d = new Date(p), pad = pad2;
+  const val = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  modalOpen('Change planned time', '<div class="kv"><span>Step</span><span>' + esc(x.step) + ' · ' + esc(x.ref) + '</span></div>' +
+    '<div class="kv"><span>Now planned</span><span>' + esc(fmtDT(p)) + '</span></div>' +
+    '<label class="lbl">New planned time</label><input id="dlyNew" type="datetime-local" class="search" value="' + val + '">' +
+    '<label class="lbl">Reason (required)</label><input id="dlyWhy" class="search" placeholder="e.g. customer asked for later pickup">' +
+    '<button type="button" class="btn btn-primary btn-block" data-id="' + esc(id) + '" onclick="dlySave(this)">Save</button>');
+}
+async function dlySave(btn) {
+  const planned = $('dlyNew').value, reason = ($('dlyWhy').value || '').trim();
+  if (!planned) return toast('⚠️ Pick the new time');
+  if (!reason) return toast('⚠️ Please write a reason');
+  const r = await run({ action: 'setTaskPlanned', taskId: btn.dataset.id, planned: planned, reason: reason }, btn);
+  if (r) { modalClose(); toast('✅ Planned time updated'); dlyLoad(true); }
 }
 
 /* ============================================================
