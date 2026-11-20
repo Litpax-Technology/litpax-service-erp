@@ -342,7 +342,21 @@
         <button class="btn btn-ghost btn-icon" title="Refresh" aria-label="Refresh" onclick="trkLoad(false)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
       </div>
       <div id="trkChips" class="chips"></div>
-      <div id="trkList" class="trk-list"></div>
+        <div id="trkList" class="trk-list"></div>
+    </section>
+
+    <section id="scrDelays" class="screen">
+      <div id="dlyKpis" class="trk-kpis"></div>
+      <div class="toolbar">
+        <input id="dlySearch" class="search" placeholder="Search step, ticket, company, phone, item…" oninput="dlyRender()">
+        <select id="dlyMin" class="search" style="max-width:150px" onchange="dlyMin=+this.value;dlyRender()">
+          <option value="0">Any delay</option><option value="4">4h+</option><option value="12">12h+</option><option value="24">1 day+</option><option value="48">2 days+</option>
+        </select>
+        <button class="btn btn-ghost btn-icon" title="Refresh" aria-label="Refresh" onclick="dlyLoad(false)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
+      </div>
+      <div id="dlyViews" class="chips"></div>
+      <div id="dlyTeams" class="chips"></div>
+      <div id="dlyList" class="dly-list"></div>
     </section>
 
     <!-- ===== PHASE 3: REPAIR BOARD ===== -->
