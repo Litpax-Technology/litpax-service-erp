@@ -12,10 +12,10 @@ const CONFIG = {
 
   // nav = sidebar items for the role (the first one opens after login)
   ROLES: {
-    attendant: { label: 'Call Attendant', icon: '📞', nav: ['newTicket', 'tracker'] },
-    service:   { label: 'Service Team',   icon: '🎧', nav: ['tickets', 'tracker', 'newTicket'] },
-    repair:    { label: 'Repair Team',    icon: '🔧', nav: ['board', 'dispatch', 'tickets'] },
-    admin:     { label: 'Admin',          icon: '👑', nav: ['tickets', 'tracker', 'newTicket', 'board', 'dispatch', 'masters'] }
+    attendant: { label: 'Call Attendant', icon: '📞', nav: ['newTicket', 'tracker', 'delays'] },
+    service:   { label: 'Service Team',   icon: '🎧', nav: ['tickets', 'tracker', 'delays', 'newTicket'] },
+    repair:    { label: 'Repair Team',    icon: '🔧', nav: ['board', 'dispatch', 'delays', 'tickets'] },
+    admin:     { label: 'Admin',          icon: '👑', nav: ['tickets', 'tracker', 'delays', 'newTicket', 'board', 'dispatch', 'masters'] }
   },
 
   // ⚠️ Keep in sync with ROLE_PERMS in Code.gs
