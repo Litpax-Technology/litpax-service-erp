@@ -2975,7 +2975,7 @@ function recRender() {
    Service sees Service steps, Repair sees Repair steps, Attendant/Admin see all.
    Only Admin can change a Planned time (reason required, original kept).
    ============================================================ */
-let DLY = [], DLY_STAGES = [], DLY_OFF = 0, DLY_ROLE = '', dlyMode = 'grid', dlyView = 'late', dlyTeam = '', dlyLimit = 100, dlyTimer = 0;
+let DLY = [], DLY_STEPS = [], DLY_EVENTS = [], DLY_STAGES = [], DLY_OFF = 0, DLY_ROLE = '', dlyMode = 'grid', dlyView = 'late', dlyTeam = '', dlyLimit = 100, dlyTimer = 0;
 const DLY_GRID_VIEWS = [['late', 'Late'], ['open', 'Open'], ['done', 'Completed'], ['all', 'All']];
 const DLY_LIST_VIEWS = [['late', 'Late'], ['soon', 'Late + due in 4h'], ['pending', 'All pending'], ['done', 'Done'], ['all', 'Everything']];
 const dlyNow = () => Date.now() + DLY_OFF;
@@ -2993,7 +2993,7 @@ async function dlyLoad(silent) {
   try {
     const r = await api({ action: 'getFms' });
     if (!r || !r.ok) { if (!silent) toast('❌ ' + ((r && r.msg) || 'Could not load delays')); return; }
-    DLY = r.tasks || []; DLY_STAGES = r.stages || CONFIG.STAGES || []; DLY_ROLE = r.role || role();
+    DLY = r.tasks || []; DLY_STEPS = r.steps || []; DLY_EVENTS = r.events || []; DLY_STAGES = r.stages || CONFIG.STAGES || []; DLY_ROLE = r.role || role();
     const sv = tsOf(r.now); DLY_OFF = sv ? sv - Date.now() : 0;
     dlyRender();
   } catch (e) { if (e !== 'auth' && !silent && !DLY.length) $('dlyBody').innerHTML = '<div class="empty">Could not load data ❌</div>'; }
@@ -3008,12 +3008,13 @@ function dlyModel(x) {
   else { over = (Number(x.delay) || 0) * 3600e3; state = over > 0 ? 'donelate' : 'done'; }
   return Object.assign({}, x, { _p: p, _a: a, _over: over, _state: state, _pending: pending });
 }
-const dlyColKey = t => t.kind === 'stage' ? 'stage:' + t.step : t.kind;
+const dlyColKey = t => t.sid || ('n:' + t.step);
+// columns = the steps set up in ⚙ Steps (switched-off steps only while they still have tasks)
 function dlyCols() {
-  const svc = [['first_call', 'First call', 'service'], ['followup', 'Follow-up call', 'service'], ['transit', 'Pickup → received', 'service']];
-  const rep = [['plan', 'Plan on Repair Board', 'repair'], ['start', 'Start repair', 'repair']]
-    .concat(DLY_STAGES.slice(0, -1).map(s => ['stage:' + s, s, 'repair'])).concat([['dispatch', 'Dispatch', 'repair']]);
-  return svc.concat(rep).filter(c => (DLY_ROLE !== 'service' || c[2] === 'service') && (DLY_ROLE !== 'repair' || c[2] === 'repair') && (!dlyTeam || c[2] === dlyTeam));
+  const used = {};
+  DLY.forEach(t => { if (t.sid) used[t.sid] = 1; });
+  return DLY_STEPS.filter(s => s.active !== false || used[s.id]).map(s => [s.id, s.name, s.team])
+    .filter(c => (DLY_ROLE !== 'service' || c[2] === 'service') && (DLY_ROLE !== 'repair' || c[2] === 'repair') && (!dlyTeam || c[2] === dlyTeam));
 }
 // the task that represents a step: a pending one first, otherwise the latest finished one
 function dlyPick(list) {
@@ -3031,10 +3032,10 @@ function dlyRows(all) {
   const rows = [];
   Object.keys(byT).forEach(tid => {
     const list = byT[tid], head = list[0], items = {};
-    list.forEach(t => { if (/^(plan|start|stage|dispatch)$/.test(t.kind)) items[t.ref] = t.item || t.ref; });
-    const ids = Object.keys(items), tk = list.filter(t => !/^(plan|start|stage|dispatch)$/.test(t.kind));
+  list.forEach(t => { if (t.scope === 'item') items[t.ref] = t.item || t.ref; });
+    const ids = Object.keys(items), tk = list.filter(t => t.scope !== 'item');
     (ids.length ? ids : ['']).forEach(ref => {
-      const mine = tk.concat(ref ? list.filter(t => t.ref === ref && /^(plan|start|stage|dispatch)$/.test(t.kind)) : []);
+      const mine = tk.concat(ref ? list.filter(t => t.ref === ref && t.scope === 'item') : []);
       const cells = {};
       const g = {};
       mine.forEach(t => (g[dlyColKey(t)] = g[dlyColKey(t)] || []).push(t));
@@ -3073,6 +3074,7 @@ function dlyRender() {
   $('dlyMode').innerHTML = [['grid', 'Grid'], ['list', 'Task list']].map(m => '<button type="button" class="chip' + (dlyMode === m[0] ? ' on' : '') + '" onclick="dlySet(\'mode\',\'' + m[0] + '\')">' + m[1] + '</button>').join('');
   const multi = DLY_ROLE !== 'service' && DLY_ROLE !== 'repair';
   $('dlyTeams').style.display = multi ? '' : 'none';
+     if ($('dlyStepsBtn')) $('dlyStepsBtn').style.display = can('admin') ? '' : 'none';
   if (multi) $('dlyTeams').innerHTML = [['', 'All teams'], ['service', 'Service'], ['repair', 'Repair']].map(t =>
     '<button type="button" class="chip' + (dlyTeam === t[0] ? ' on' : '') + '" onclick="dlySet(\'team\',\'' + t[0] + '\')">' + t[1] + '<b>' + late.filter(x => !t[0] || x.team === t[0]).length + '</b></button>').join('');
   const views = dlyMode === 'grid' ? DLY_GRID_VIEWS : DLY_LIST_VIEWS;
@@ -3119,7 +3121,7 @@ function dlyRender() {
     }).join('') + '</tbody></table></div>' + (rows.length > dlyLimit ? '<button class="btn btn-ghost btn-block" onclick="dlyLimit+=100;dlyRender()">Show more (' + (rows.length - dlyLimit) + ')</button>' : '')
     : '<div class="empty">' + (dlyView === 'late' ? '🎉 Nothing is late right now' : 'No steps here') + '</div>';
 }
-function dlyRefType(x) { return /^(plan|start|stage|dispatch)$/.test(x.kind) ? 'item' : x.kind === 'transit' ? 'pickup' : 'ticket'; }
+function dlyRefType(x) { return x.scope === 'item' ? 'item' : x.scope === 'pickup' ? 'pickup' : 'ticket'; }
 
 // details of one step · admin can move a pending step's planned time
 function dlyOpen(id) {
@@ -3140,6 +3142,68 @@ async function dlySave(btn) {
   if (!reason) return toast('⚠️ Please write a reason');
   const r = await run({ action: 'setTaskPlanned', taskId: btn.dataset.id, planned: planned, reason: reason }, btn);
   if (r) { modalClose(); toast('✅ Planned time updated'); dlyLoad(true); }
+}
+
+// ---------- ⚙ STEPS (admin): add / edit / reorder / switch off the steps of the FMS ----------
+let DLY_ED = [], dlyEdN = 0;
+const DLY_DATE_OPTS = [['', 'Hours after it starts'], ['next_followup', 'The follow-up date (set on a call)'], ['plan_date', 'The plan date (Repair Board)']];
+function dlySteps() {
+  if (!can('admin')) return;
+  DLY_ED = DLY_STEPS.map(s => ({ id: s.id, name: s.name, team: s.team, starts: s.starts, done: s.done, hours: s.hours === '' ? '' : s.hours, dateFrom: s.dateFrom || '', active: s.active !== false }));
+  dlyEdN = 0;
+  dlyEdDraw();
+}
+function dlyEvLabel(k) { const e = DLY_EVENTS.find(x => x.key === k); return e ? e.label : k; }
+// the event that opens a step (a step can also open "right after" another step is Done)
+function dlyEdStart(s) {
+  if (String(s.starts).indexOf('after:') !== 0) return s.starts;
+  const t = DLY_ED.find(x => x.id === s.starts.substring(6));
+  return t ? t.done : '';
+}
+function dlyEdDraw() {
+  const opt = (v, cur, txt) => '<option value="' + esc(v) + '"' + (String(v) === String(cur) ? ' selected' : '') + '>' + esc(txt) + '</option>';
+  const cards = DLY_ED.map((s, i) => {
+    const sev = dlyEdStart(s), dates = DLY_DATE_OPTS.filter(d => !d[0] || (d[0] === 'next_followup' && sev === 'call_logged') || (d[0] === 'plan_date' && sev === 'planned'));
+    const startOpts = '<optgroup label="Starts when…">' + DLY_EVENTS.map(e => opt(e.key, s.starts, e.label)).join('') + '</optgroup>' +
+      '<optgroup label="Starts right after this step is Done">' + DLY_ED.filter(x => x !== s).map(x => opt('after:' + x.id, s.starts, (x.name || 'New step') + ' — Done')).join('') + '</optgroup>';
+    const doneOpts = '<option value="">Choose…</option>' + DLY_EVENTS.filter(e => e.done).map(e => opt(e.key, s.done, e.label)).join('');
+    const sum = s.done ? 'Opens: ' + esc(dlyEvLabel(sev)) + ' → Planned ' + (s.dateFrom ? 'on the ' + (s.dateFrom === 'plan_date' ? 'plan date' : 'follow-up date') : '+ ' + (s.hours || '?') + ' h') + ' → Done: ' + esc(dlyEvLabel(s.done)) : 'Choose when this step is Done';
+    return '<div class="fms-ed' + (s.active ? '' : ' off') + '"><div class="fms-ed-h"><b>' + (i + 1) + '</b>' +
+      '<input class="search" placeholder="Step name" value="' + esc(s.name) + '" oninput="DLY_ED[' + i + '].name=this.value">' +
+      '<button type="button" class="btn btn-ghost btn-sm" title="Move up" onclick="dlyEdMove(' + i + ',-1)">↑</button>' +
+      '<button type="button" class="btn btn-ghost btn-sm" title="Move down" onclick="dlyEdMove(' + i + ',1)">↓</button></div>' +
+      '<div class="fms-ed-g">' +
+      '<label>Team<select onchange="DLY_ED[' + i + '].team=this.value">' + opt('service', s.team, 'Service') + opt('repair', s.team, 'Repair') + '</select></label>' +
+      '<label>Starts<select onchange="DLY_ED[' + i + '].starts=this.value;dlyEdFix(' + i + ');dlyEdDraw()">' + startOpts + '</select></label>' +
+      '<label>Done when (automatic)<select onchange="DLY_ED[' + i + '].done=this.value;dlyEdDraw()">' + doneOpts + '</select></label>' +
+      '<label>Planned time<select onchange="DLY_ED[' + i + '].dateFrom=this.value;dlyEdDraw()">' + dates.map(d => opt(d[0], s.dateFrom, d[1])).join('') + '</select></label>' +
+      (s.dateFrom ? '' : '<label>Hours<input type="number" min="0.5" step="any" value="' + esc(s.hours) + '" oninput="DLY_ED[' + i + '].hours=this.value"></label>') +
+      '<label class="fms-ed-on"><input type="checkbox"' + (s.active ? ' checked' : '') + ' onchange="DLY_ED[' + i + '].active=this.checked;dlyEdDraw()"> Active</label></div>' +
+      '<small class="fms-ed-s">' + sum + '</small></div>';
+  }).join('');
+  modalOpen('⚙ FMS steps',
+    '<p class="fms-ed-tip">Each step <b>opens</b> at an event, gets a <b>Planned time</b> (hours after it opened, or a date) and is <b>Done automatically</b> when the app event happens. ' +
+    'The next step then opens with its own Planned time. A step is switched off, never deleted. New times apply to <b>new</b> tasks.</p>' + cards +
+    '<button type="button" class="btn btn-ghost btn-block" onclick="dlyEdAdd()">＋ Add step</button>' +
+    '<button type="button" class="btn btn-primary btn-block" style="margin-top:10px" onclick="dlyEdSave(this)">Save steps</button>');
+}
+// a date source only fits a step that starts at its own event
+function dlyEdFix(i) {
+  const s = DLY_ED[i], ev = dlyEdStart(s);
+  if ((s.dateFrom === 'next_followup' && ev !== 'call_logged') || (s.dateFrom === 'plan_date' && ev !== 'planned')) { s.dateFrom = ''; if (!s.hours) s.hours = 24; }
+}
+function dlyEdMove(i, d) { const j = i + d; if (j < 0 || j >= DLY_ED.length) return; const t = DLY_ED[i]; DLY_ED[i] = DLY_ED[j]; DLY_ED[j] = t; dlyEdDraw(); }
+function dlyEdAdd() {
+  const last = DLY_ED[DLY_ED.length - 1];
+  DLY_ED.push({ id: 'N' + (++dlyEdN), name: '', team: last ? last.team : 'service', starts: last ? 'after:' + last.id : 'ticket_created', done: '', hours: 24, dateFrom: '', active: true });
+  dlyEdDraw();
+  const m = $('mdBody'); if (m) m.scrollTop = m.scrollHeight;
+}
+async function dlyEdSave(btn) {
+  const bad = DLY_ED.findIndex(s => !String(s.name).trim());
+  if (bad >= 0) return toast('⚠️ Step ' + (bad + 1) + ': write a name');
+  const r = await run({ action: 'saveFmsSteps', steps: JSON.stringify(DLY_ED.map(s => ({ id: s.id, name: s.name, team: s.team, starts: s.starts, done: s.done, hours: s.hours, dateFrom: s.dateFrom, active: s.active }))) }, btn);
+  if (r) { modalClose(); toast('✅ Steps saved'); dlyLoad(true); }
 }
 
 /* ============================================================
