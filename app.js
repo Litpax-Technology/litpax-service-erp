@@ -3005,8 +3005,9 @@ function dlyModel(x) {
   const p = tsOf(x.planned), a = tsOf(x.actual), now = dlyNow(), pending = x.status === 'Pending';
   let state, over = 0;
   if (pending) { over = now - p; state = over > 0 ? 'late' : (over > -4 * 3600e3 ? 'soon' : 'ok'); }
+  else if (x.status === 'Skipped') state = 'skipped';
   else { over = (Number(x.delay) || 0) * 3600e3; state = over > 0 ? 'donelate' : 'done'; }
-  return Object.assign({}, x, { _p: p, _a: a, _over: over, _state: state, _pending: pending });
+  return Object.assign({}, x,
 }
 const dlyColKey = t => t.sid || ('n:' + t.step);
 // columns = the steps set up in ⚙ Steps (switched-off steps only while they still have tasks)
@@ -3018,10 +3019,11 @@ function dlyCols() {
 }
 // the task that represents a step: a pending one first, otherwise the latest finished one
 function dlyPick(list) {
+  const rank = t => t._pending ? 3 : t.status === 'Done' ? 2 : t.status === 'Skipped' ? 1 : 0;
   let best = null;
   list.forEach(t => {
-    if (!t._pending && t.status !== 'Done') return;
-    if (!best || (t._pending && !best._pending) || (t._pending === best._pending && String(t.created) > String(best.created))) best = t;
+    if (!rank(t)) return;
+    if (!best || rank(t) > rank(best) || (rank(t) === rank(best) && String(t.created) > String(best.created))) best = t;
   });
   return best;
 }
@@ -3050,6 +3052,7 @@ function dlyRows(all) {
 }
 function dlyCellHtml(c) {
   if (!c) return '<td class="fms-c none">—</td>';
+  if (c._state === 'skipped') return '<td class="fms-c skip" title="The other path was taken">Skipped</td>';
   const P = 'P ' + fmtDT(c._p);
   let cls, body;
   if (c._pending) {
@@ -3057,7 +3060,7 @@ function dlyCellHtml(c) {
     body = '<span class="fms-p">' + P + '</span>' + (c._state === 'late' ? '<b class="fms-l">Late ' + fmtDur(c._over) + '</b>' : c._state === 'soon' ? '<b class="fms-s">in ' + fmtDur(-c._over) + '</b>' : '<span class="fms-w">waiting</span>');
   } else {
     cls = c._state;
-    body = '<span class="fms-p">' + P + '</span><span class="fms-a">A ' + fmtDT(c._a) + '</span>' + (c._over > 0 ? '<b class="fms-l">+' + fmtDur(c._over) + '</b>' : '<b class="fms-ok">✓ on time</b>');
+    body = '<span class="fms-p">' + P + '</span><span class="fms-a">A ' + fmtDT(c._a) + '</span>' + (c.result ? '<b class="fms-r ' + (c.result === 'Yes' ? 'y' : 'n') + '">' + esc(c.result) + '</b>' : '') + (c._over > 0 ? '<b class="fms-l">+' + fmtDur(c._over) + '</b>' : '<b class="fms-ok">✓ on time</b>');
   }
   return '<td class="fms-c ' + cls + (c.edited ? ' chg' : '') + '" data-id="' + esc(c.id) + '" onclick="dlyOpen(this.dataset.id)">' + body + '</td>';
 }
@@ -3112,7 +3115,7 @@ function dlyRender() {
   const shown = rows.slice(0, dlyLimit), admin = can('admin');
   $('dlyBody').innerHTML = rows.length ? '<div class="fms-wrap"><table class="fms-t list"><thead><tr><th>Step</th><th>Ticket / Battery</th><th>Customer</th><th>Team</th><th>Planned</th><th>Actual</th><th>Delay</th><th>Status</th><th></th></tr></thead><tbody>' +
     shown.map(x => {
-      const st = x._pending ? (x._state === 'late' ? '<b class="fms-l">Late</b>' : x._state === 'soon' ? '<b class="fms-s">Due soon</b>' : '<span class="fms-w">Pending</span>') : '<b class="fms-ok">Done</b>';
+      const st = x._pending ? (x._state === 'late' ? '<b class="fms-l">Late</b>' : x._state === 'soon' ? '<b class="fms-s">Due soon</b>' : '<span class="fms-w">Pending</span>') : '<b class="fms-ok">Done' + (x.result ? ' · ' + esc(x.result) : '') + '</b>';
       const dl = x._pending ? (x._state === 'late' ? '<b class="fms-l">+' + fmtDur(x._over) + '</b>' : '—') : (x._over > 0 ? '<b class="fms-l">+' + fmtDur(x._over) + '</b>' : '<span class="fms-ok">0</span>');
       return '<tr class="' + (x._state === 'late' ? 'late' : '') + '"><td><b>' + esc(x.step) + '</b></td><td class="fms-id">' + lk(dlyRefType(x), x.ref, x.tid, x.ref) + (x.item ? '<small>' + esc(x.item) + '</small>' : '') + '</td>' +
         '<td class="fms-cu"><b>' + esc(x.company || x.person || '—') + '</b></td><td><span class="pill pill-' + (x.team === 'repair' ? 'amber' : 'blue') + '">' + esc(x.team) + '</span></td>' +
@@ -3145,64 +3148,85 @@ async function dlySave(btn) {
 }
 
 // ---------- ⚙ STEPS (admin): add / edit / reorder / switch off the steps of the FMS ----------
+// A step is Normal (one Done status) or Yes/No (a "Yes" status and a "No" status — the answer is saved). A step can run only on the Yes or the No path of a Yes/No step.
 let DLY_ED = [], dlyEdN = 0;
-const DLY_DATE_OPTS = [['', 'Hours after it starts'], ['next_followup', 'The follow-up date (set on a call)'], ['plan_date', 'The plan date (Repair Board)']];
+const DLY_DATE_OPTS = [['', 'Hours after it opens'], ['next_followup', 'The follow-up date (set on a call)'], ['plan_date', 'The plan date (Repair Board)']];
 function dlySteps() {
   if (!can('admin')) return;
-  DLY_ED = DLY_STEPS.map(s => ({ id: s.id, name: s.name, team: s.team, starts: s.starts, done: s.done, hours: s.hours === '' ? '' : s.hours, dateFrom: s.dateFrom || '', active: s.active !== false }));
+  DLY_ED = DLY_STEPS.map(s => ({ id: s.id, name: s.name, team: s.team, starts: s.starts, done: s.done, hours: s.hours === '' ? '' : s.hours, dateFrom: s.dateFrom || '', active: s.active !== false,
+    type: s.type === 'yesno' ? 'yesno' : 'normal', noWhen: s.noWhen || '', branchOf: s.branchOf || '', branchVal: s.branchVal || '' }));
   dlyEdN = 0;
   dlyEdDraw();
 }
 function dlyEvLabel(k) { const e = DLY_EVENTS.find(x => x.key === k); return e ? e.label : k; }
-// the event that opens a step (a step can also open "right after" another step is Done)
+// the status that opens a step (a step can also open "right after" another step is Done — for a Yes/No step: right after its Yes or its No)
 function dlyEdStart(s) {
   if (String(s.starts).indexOf('after:') !== 0) return s.starts;
   const t = DLY_ED.find(x => x.id === s.starts.substring(6));
-  return t ? t.done : '';
+  return !t ? '' : (t.type === 'yesno' && s.branchVal === 'No' ? t.noWhen : t.done);
 }
 function dlyEdDraw() {
   const opt = (v, cur, txt) => '<option value="' + esc(v) + '"' + (String(v) === String(cur) ? ' selected' : '') + '>' + esc(txt) + '</option>';
+  const evOpts = cur => '<option value="">Choose…</option>' + DLY_EVENTS.map(e => opt(e.key, cur, e.label)).join('');
   const cards = DLY_ED.map((s, i) => {
-    const sev = dlyEdStart(s), dates = DLY_DATE_OPTS.filter(d => !d[0] || (d[0] === 'next_followup' && sev === 'call_logged') || (d[0] === 'plan_date' && sev === 'planned'));
-    const startOpts = '<optgroup label="Starts when…">' + DLY_EVENTS.map(e => opt(e.key, s.starts, e.label)).join('') + '</optgroup>' +
-      '<optgroup label="Starts right after this step is Done">' + DLY_ED.filter(x => x !== s).map(x => opt('after:' + x.id, s.starts, (x.name || 'New step') + ' — Done')).join('') + '</optgroup>';
-    const doneOpts = '<option value="">Choose…</option>' + DLY_EVENTS.filter(e => e.done).map(e => opt(e.key, s.done, e.label)).join('');
-    const sum = s.done ? 'Opens: ' + esc(dlyEvLabel(sev)) + ' → Planned ' + (s.dateFrom ? 'on the ' + (s.dateFrom === 'plan_date' ? 'plan date' : 'follow-up date') : '+ ' + (s.hours || '?') + ' h') + ' → Done: ' + esc(dlyEvLabel(s.done)) : 'Choose when this step is Done';
+    const yn = s.type === 'yesno', sev = dlyEdStart(s), dates = DLY_DATE_OPTS.filter(d => !d[0] || (d[0] === 'next_followup' && sev === 'call_logged') || (d[0] === 'plan_date' && sev === 'planned'));
+    const startOpts = '<optgroup label="Opens when…">' + DLY_EVENTS.map(e => opt(e.key, s.starts, e.label)).join('') + '</optgroup>' +
+      '<optgroup label="Opens right after this step is Done">' + DLY_ED.filter(x => x !== s).map(x => opt('after:' + x.id, s.starts, (x.name || 'New step') + (x.type === 'yesno' ? ' — answered' : ' — Done'))).join('') + '</optgroup>';
+    const brOpts = '<option value="">Always (both paths)</option>' + DLY_ED.filter(x => x !== s && x.type === 'yesno').map(x =>
+      opt(x.id + '|Yes', s.branchOf + '|' + s.branchVal, 'Only if “' + (x.name || 'Yes/No step') + '” = Yes') + opt(x.id + '|No', s.branchOf + '|' + s.branchVal, 'Only if “' + (x.name || 'Yes/No step') + '” = No')).join('');
+    const hrs = s.dateFrom ? 'on the ' + (s.dateFrom === 'plan_date' ? 'plan date' : 'follow-up date') : (Number(s.hours) === 0 && String(s.hours) !== '' ? 'at once' : '+ ' + (s.hours === '' ? '?' : s.hours) + ' h');
+    const sum = s.done ? 'Opens: ' + esc(dlyEvLabel(sev)) + ' → Planned ' + hrs + ' → ' + (yn ? 'Yes: ' + esc(dlyEvLabel(s.done)) + ' · No: ' + esc(s.noWhen ? dlyEvLabel(s.noWhen) : '?') : 'Done: ' + esc(dlyEvLabel(s.done))) +
+      (s.branchOf ? ' · only on the ' + esc(s.branchVal) + ' path' : '') : 'Choose when this step is ' + (yn ? 'Yes' : 'Done');
     return '<div class="fms-ed' + (s.active ? '' : ' off') + '"><div class="fms-ed-h"><b>' + (i + 1) + '</b>' +
       '<input class="search" placeholder="Step name" value="' + esc(s.name) + '" oninput="DLY_ED[' + i + '].name=this.value">' +
       '<button type="button" class="btn btn-ghost btn-sm" title="Move up" onclick="dlyEdMove(' + i + ',-1)">↑</button>' +
       '<button type="button" class="btn btn-ghost btn-sm" title="Move down" onclick="dlyEdMove(' + i + ',1)">↓</button></div>' +
       '<div class="fms-ed-g">' +
       '<label>Team<select onchange="DLY_ED[' + i + '].team=this.value">' + opt('service', s.team, 'Service') + opt('repair', s.team, 'Repair') + '</select></label>' +
-      '<label>Starts<select onchange="DLY_ED[' + i + '].starts=this.value;dlyEdFix(' + i + ');dlyEdDraw()">' + startOpts + '</select></label>' +
-      '<label>Done when (automatic)<select onchange="DLY_ED[' + i + '].done=this.value;dlyEdDraw()">' + doneOpts + '</select></label>' +
+      '<label>Step type<select onchange="dlyEdType(' + i + ',this.value)">' + opt('normal', s.type, 'Normal (Done)') + opt('yesno', s.type, 'Yes / No') + '</select></label>' +
+      '<label>Opens<select onchange="DLY_ED[' + i + '].starts=this.value;dlyEdFix(' + i + ');dlyEdDraw()">' + startOpts + '</select></label>' +
+      '<label>' + (yn ? 'Yes when (automatic)' : 'Done when (automatic)') + '<select onchange="DLY_ED[' + i + '].done=this.value;dlyEdDraw()">' + evOpts(s.done) + '</select></label>' +
+      (yn ? '<label>No when (automatic)<select onchange="DLY_ED[' + i + '].noWhen=this.value;dlyEdDraw()">' + evOpts(s.noWhen) + '</select></label>' : '') +
       '<label>Planned time<select onchange="DLY_ED[' + i + '].dateFrom=this.value;dlyEdDraw()">' + dates.map(d => opt(d[0], s.dateFrom, d[1])).join('') + '</select></label>' +
-      (s.dateFrom ? '' : '<label>Hours<input type="number" min="0.5" step="any" value="' + esc(s.hours) + '" oninput="DLY_ED[' + i + '].hours=this.value"></label>') +
+      (s.dateFrom ? '' : '<label>Hours (0 = Done at once)<input type="number" min="0" step="any" value="' + esc(s.hours) + '" oninput="DLY_ED[' + i + '].hours=this.value"></label>') +
+      '<label>Runs on<select onchange="dlyEdBranch(' + i + ',this.value)">' + brOpts + '</select></label>' +
       '<label class="fms-ed-on"><input type="checkbox"' + (s.active ? ' checked' : '') + ' onchange="DLY_ED[' + i + '].active=this.checked;dlyEdDraw()"> Active</label></div>' +
       '<small class="fms-ed-s">' + sum + '</small></div>';
   }).join('');
   modalOpen('⚙ FMS steps',
-    '<p class="fms-ed-tip">Each step <b>opens</b> at an event, gets a <b>Planned time</b> (hours after it opened, or a date) and is <b>Done automatically</b> when the app event happens. ' +
-    'The next step then opens with its own Planned time. A step is switched off, never deleted. New times apply to <b>new</b> tasks.</p>' + cards +
+    '<p class="fms-ed-tip">Steps follow the <b>status</b>. A step <b>opens</b> at a status, gets a <b>Planned time</b> (hours after it opened, or a date) and is <b>Done automatically</b> when its status comes. ' +
+    'A <b>Yes / No</b> step is answered by whichever status comes first. A step can run only on the Yes or the No path — the other path is skipped. A step is switched off, never deleted. New times apply to <b>new</b> tasks.</p>' + cards +
     '<button type="button" class="btn btn-ghost btn-block" onclick="dlyEdAdd()">＋ Add step</button>' +
     '<button type="button" class="btn btn-primary btn-block" style="margin-top:10px" onclick="dlyEdSave(this)">Save steps</button>');
 }
-// a date source only fits a step that starts at its own event
+function dlyEdType(i, v) {
+  const s = DLY_ED[i]; s.type = v;
+  if (v !== 'yesno') { s.noWhen = ''; DLY_ED.forEach(x => { if (x.branchOf === s.id) { x.branchOf = ''; x.branchVal = ''; } }); }
+  dlyEdDraw();
+}
+function dlyEdBranch(i, v) {
+  const s = DLY_ED[i], p = String(v).split('|');
+  s.branchOf = p[0] || ''; s.branchVal = p[1] || '';
+  dlyEdFix(i); dlyEdDraw();
+}
+// a date source only fits a step that opens at its own status
 function dlyEdFix(i) {
   const s = DLY_ED[i], ev = dlyEdStart(s);
-  if ((s.dateFrom === 'next_followup' && ev !== 'call_logged') || (s.dateFrom === 'plan_date' && ev !== 'planned')) { s.dateFrom = ''; if (!s.hours) s.hours = 24; }
+  if ((s.dateFrom === 'next_followup' && ev !== 'call_logged') || (s.dateFrom === 'plan_date' && ev !== 'planned')) { s.dateFrom = ''; if (s.hours === '') s.hours = 24; }
 }
 function dlyEdMove(i, d) { const j = i + d; if (j < 0 || j >= DLY_ED.length) return; const t = DLY_ED[i]; DLY_ED[i] = DLY_ED[j]; DLY_ED[j] = t; dlyEdDraw(); }
 function dlyEdAdd() {
   const last = DLY_ED[DLY_ED.length - 1];
-  DLY_ED.push({ id: 'N' + (++dlyEdN), name: '', team: last ? last.team : 'service', starts: last ? 'after:' + last.id : 'ticket_created', done: '', hours: 24, dateFrom: '', active: true });
+  DLY_ED.push({ id: 'N' + (++dlyEdN), name: '', team: last ? last.team : 'service', starts: last ? 'after:' + last.id : 'ticket_created', done: '', hours: 24, dateFrom: '', active: true,
+    type: 'normal', noWhen: '', branchOf: '', branchVal: '' });
   dlyEdDraw();
   const m = $('mdBody'); if (m) m.scrollTop = m.scrollHeight;
 }
 async function dlyEdSave(btn) {
   const bad = DLY_ED.findIndex(s => !String(s.name).trim());
   if (bad >= 0) return toast('⚠️ Step ' + (bad + 1) + ': write a name');
-  const r = await run({ action: 'saveFmsSteps', steps: JSON.stringify(DLY_ED.map(s => ({ id: s.id, name: s.name, team: s.team, starts: s.starts, done: s.done, hours: s.hours, dateFrom: s.dateFrom, active: s.active }))) }, btn);
+  const r = await run({ action: 'saveFmsSteps', steps: JSON.stringify(DLY_ED.map(s => ({ id: s.id, name: s.name, team: s.team, starts: s.starts, done: s.done, hours: s.hours, dateFrom: s.dateFrom, active: s.active,
+    type: s.type, noWhen: s.noWhen, branchOf: s.branchOf, branchVal: s.branchVal }))) }, btn);
   if (r) { modalClose(); toast('✅ Steps saved'); dlyLoad(true); }
 }
 
