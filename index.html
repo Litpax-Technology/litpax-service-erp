@@ -349,7 +349,8 @@
       <div id="dlyKpis" class="trk-kpis"></div>
       <div class="toolbar">
         <input id="dlySearch" class="search" placeholder="Search ticket, item, company, phone, step…" oninput="dlyRender()">
-        <button class="btn btn-ghost btn-icon" title="Refresh" aria-label="Refresh" onclick="dlyLoad(false)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
+<button class="btn btn-ghost btn-icon" title="Refresh" aria-label="Refresh" onclick="dlyLoad(false)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
+        <button id="dlyStepsBtn" type="button" class="btn btn-ghost" style="display:none" onclick="dlySteps()">⚙ Steps</button>
       </div>
       <div id="dlyMode" class="chips"></div>
       <div id="dlyViews" class="chips"></div>
