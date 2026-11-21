@@ -1699,3 +1699,8 @@ button.kpi:hover { border-color: var(--border-strong); }
 .fms-ed-s { display: block; margin-top: 8px; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
 .fms-ed-tip { font-size: 12.5px; color: var(--text2); margin: 0 0 12px; line-height: 1.5; }
 @media (max-width: 520px) { .fms-ed-g { grid-template-columns: 1fr; } }
+
+.fms-r { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 700; margin-top: 2px; }
+.fms-r.y { background: #dcfce7; color: #166534; }
+.fms-r.n { background: #fee2e2; color: #991b1b; }
+.fms-c.skip { background: #f3f4f6; color: #9ca3af; font-size: 12px; text-align: center; }
