@@ -49,7 +49,7 @@ async function apiPost(params) {
 // Saves carry a request ID: a retry of the SAME save (timeout, slow network, double tap) reuses it,
 // so the server returns the first result instead of saving twice.
 const READ_ACTIONS = { login: 1, logout: 1, ping: 1, getSite: 1, getTickets: 1, getTicket: 1, getMasters: 1, getTracker: 1, getItems: 1, getReportData: 1,
-  getSettings: 1, lookupPhone: 1, getModels: 1, findRecord: 1, getCustomer: 1, listRecords: 1, getTechJobs: 1, getTracking: 1, touch: 1, getSecurity: 1, getTasks: 1 };
+  getSettings: 1, lookupPhone: 1, getModels: 1, findRecord: 1, getCustomer: 1, listRecords: 1, getTechJobs: 1, getTracking: 1, touch: 1, getSecurity: 1, getTasks: 1, getFms: 1 };
 const PENDING_REQ = {};
 const newReqId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -840,7 +840,7 @@ const SCREENS = {
   dispatch:  { id: 'scrDispatch', icon: '🚚', label: 'Dispatch',     title: 'Dispatch',     sub: 'Send out items that passed Final QC & Pack', open: openDispatch },
   masters:   { id: 'scrMasters',  icon: '⚙️', label: 'Masters',      title: 'Masters',      sub: 'Dropdown lists — names and battery / charger types', open: openMasters },
   tracker:   { id: 'scrTracker',  icon: '🛰️', label: 'Ticket Tracker', title: 'Ticket Tracker', sub: 'Where every ticket and battery is right now — with SLA', open: openTracker },
-  delays:    { id: 'scrDelays',   icon: '⏰', label: 'Delays', title: 'Delays', sub: 'Every step that has passed its planned time', open: openDelays },
+  delays:    { id: 'scrDelays',   icon: '⏰', label: 'Delays', title: 'Delays', sub: 'Every step with planned time, actual time and delay', open: openDelays },
   settings:  { id: 'scrSettings', icon: '🛠️', label: 'Settings',     title: 'Settings',     sub: 'SLA targets, lists, WhatsApp messages and screens per role', open: openSettings },
   reports:   { id: 'scrReports',  icon: '📊', label: 'Reports',      title: 'Reports',      sub: 'Filter any data and download exactly what you see as CSV', open: openReports },
   records:   { id: 'scrRecords',  icon: '🗂️', label: 'Records',      title: 'Records',      sub: 'Every customer, call, pickup, repair job, item and dispatch — click any row to open it', open: () => openRecords() }
@@ -2970,12 +2970,14 @@ function recRender() {
 }
 
 /* ============================================================
-   DELAYS — every pending step that is past its Planned time (FMS style).
-   Service sees Service tasks, Repair sees Repair tasks, Attendant/Admin see all.
+   DELAYS / FMS — every step of every ticket with Planned · Actual · Delay.
+   Two views: GRID (one row per ticket / battery, a column per step) and TASK LIST (one row per step).
+   Service sees Service steps, Repair sees Repair steps, Attendant/Admin see all.
    Only Admin can change a Planned time (reason required, original kept).
    ============================================================ */
-let DLY = [], DLY_OFF = 0, DLY_ROLE = '', dlyView = 'late', dlyTeam = '', dlyMin = 0, dlyTimer = 0;
-const DLY_VIEWS = [['late', 'Late'], ['soon', 'Late + due in 4h'], ['all', 'All pending']];
+let DLY = [], DLY_STAGES = [], DLY_OFF = 0, DLY_ROLE = '', dlyMode = 'grid', dlyView = 'late', dlyTeam = '', dlyLimit = 100, dlyTimer = 0;
+const DLY_GRID_VIEWS = [['late', 'Late'], ['open', 'Open'], ['done', 'Completed'], ['all', 'All']];
+const DLY_LIST_VIEWS = [['late', 'Late'], ['soon', 'Late + due in 4h'], ['pending', 'All pending'], ['done', 'Done'], ['all', 'Everything']];
 const dlyNow = () => Date.now() + DLY_OFF;
 
 function openDelays() {
@@ -2987,65 +2989,150 @@ function openDelays() {
   }, 60000);
 }
 async function dlyLoad(silent) {
-  if (!DLY.length && !silent) $('dlyList').innerHTML = '<div class="skeleton sk-card"></div>'.repeat(3);
+  if (!DLY.length && !silent) $('dlyBody').innerHTML = '<div class="skeleton sk-card"></div>'.repeat(3);
   try {
-    const r = await api({ action: 'getTasks' });
+    const r = await api({ action: 'getFms' });
     if (!r || !r.ok) { if (!silent) toast('❌ ' + ((r && r.msg) || 'Could not load delays')); return; }
-    DLY = r.tasks || []; DLY_ROLE = r.role || role();
+    DLY = r.tasks || []; DLY_STAGES = r.stages || CONFIG.STAGES || []; DLY_ROLE = r.role || role();
     const sv = tsOf(r.now); DLY_OFF = sv ? sv - Date.now() : 0;
     dlyRender();
-  } catch (e) { if (e !== 'auth' && !silent && !DLY.length) $('dlyList').innerHTML = '<div class="empty">Could not load data ❌</div>'; }
+  } catch (e) { if (e !== 'auth' && !silent && !DLY.length) $('dlyBody').innerHTML = '<div class="empty">Could not load data ❌</div>'; }
 }
+function dlySet(k, v) { if (k === 'mode') { dlyMode = v; dlyView = 'late'; } else if (k === 'view') dlyView = v; else dlyTeam = v; dlyLimit = 100; dlyRender(); }
+
+// one task → state + minutes late (Pending: late = now past planned · Done: late = it finished after planned)
 function dlyModel(x) {
-  const planned = tsOf(x.planned), over = dlyNow() - planned;
-  return Object.assign({}, x, { _p: planned, _over: over, _state: over > 0 ? 'late' : (over > -4 * 3600e3 ? 'soon' : 'ok') });
+  const p = tsOf(x.planned), a = tsOf(x.actual), now = dlyNow(), pending = x.status === 'Pending';
+  let state, over = 0;
+  if (pending) { over = now - p; state = over > 0 ? 'late' : (over > -4 * 3600e3 ? 'soon' : 'ok'); }
+  else { over = (Number(x.delay) || 0) * 3600e3; state = over > 0 ? 'donelate' : 'done'; }
+  return Object.assign({}, x, { _p: p, _a: a, _over: over, _state: state, _pending: pending });
 }
-function dlyType(x) { return /^(plan|start|stage|dispatch)$/.test(x.kind) ? 'item' : x.kind === 'transit' ? 'pickup' : 'ticket'; }
+const dlyColKey = t => t.kind === 'stage' ? 'stage:' + t.step : t.kind;
+function dlyCols() {
+  const svc = [['first_call', 'First call', 'service'], ['followup', 'Follow-up call', 'service'], ['transit', 'Pickup → received', 'service']];
+  const rep = [['plan', 'Plan on Repair Board', 'repair'], ['start', 'Start repair', 'repair']]
+    .concat(DLY_STAGES.slice(0, -1).map(s => ['stage:' + s, s, 'repair'])).concat([['dispatch', 'Dispatch', 'repair']]);
+  return svc.concat(rep).filter(c => (DLY_ROLE !== 'service' || c[2] === 'service') && (DLY_ROLE !== 'repair' || c[2] === 'repair') && (!dlyTeam || c[2] === dlyTeam));
+}
+// the task that represents a step: a pending one first, otherwise the latest finished one
+function dlyPick(list) {
+  let best = null;
+  list.forEach(t => {
+    if (!t._pending && t.status !== 'Done') return;
+    if (!best || (t._pending && !best._pending) || (t._pending === best._pending && String(t.created) > String(best.created))) best = t;
+  });
+  return best;
+}
+// grid rows: one per battery/charger once received, otherwise one per ticket
+function dlyRows(all) {
+  const byT = {};
+  all.forEach(t => (byT[t.tid] = byT[t.tid] || []).push(t));
+  const rows = [];
+  Object.keys(byT).forEach(tid => {
+    const list = byT[tid], head = list[0], items = {};
+    list.forEach(t => { if (/^(plan|start|stage|dispatch)$/.test(t.kind)) items[t.ref] = t.item || t.ref; });
+    const ids = Object.keys(items), tk = list.filter(t => !/^(plan|start|stage|dispatch)$/.test(t.kind));
+    (ids.length ? ids : ['']).forEach(ref => {
+      const mine = tk.concat(ref ? list.filter(t => t.ref === ref && /^(plan|start|stage|dispatch)$/.test(t.kind)) : []);
+      const cells = {};
+      const g = {};
+      mine.forEach(t => (g[dlyColKey(t)] = g[dlyColKey(t)] || []).push(t));
+      Object.keys(g).forEach(k => { cells[k] = dlyPick(g[k]); });
+      const pend = Object.keys(cells).map(k => cells[k]).filter(c => c && c._pending);
+      rows.push({ tid, ref, label: ref ? ref : tid, item: ref ? items[ref] : '', company: head.company, person: head.person, phone: head.phone, city: head.city, cells,
+        late: pend.some(c => c._state === 'late'), open: pend.length > 0, worst: pend.reduce((m, c) => Math.max(m, c._over), 0),
+        last: mine.reduce((m, t) => String(t.created) > m ? String(t.created) : m, '') });
+    });
+  });
+  return rows;
+}
+function dlyCellHtml(c) {
+  if (!c) return '<td class="fms-c none">—</td>';
+  const P = 'P ' + fmtDT(c._p);
+  let cls, body;
+  if (c._pending) {
+    cls = c._state;
+    body = '<span class="fms-p">' + P + '</span>' + (c._state === 'late' ? '<b class="fms-l">Late ' + fmtDur(c._over) + '</b>' : c._state === 'soon' ? '<b class="fms-s">in ' + fmtDur(-c._over) + '</b>' : '<span class="fms-w">waiting</span>');
+  } else {
+    cls = c._state;
+    body = '<span class="fms-p">' + P + '</span><span class="fms-a">A ' + fmtDT(c._a) + '</span>' + (c._over > 0 ? '<b class="fms-l">+' + fmtDur(c._over) + '</b>' : '<b class="fms-ok">✓ on time</b>');
+  }
+  return '<td class="fms-c ' + cls + (c.edited ? ' chg' : '') + '" data-id="' + esc(c.id) + '" onclick="dlyOpen(this.dataset.id)">' + body + '</td>';
+}
 function dlyRender() {
-  if (!$('dlyList')) return;
+  if (!$('dlyBody')) return;
   const all = DLY.map(dlyModel), q = ($('dlySearch').value || '').trim().toLowerCase();
-  const late = all.filter(x => x._state === 'late'), soon = all.filter(x => x._state === 'soon');
-  const longest = late.reduce((m, x) => Math.max(m, x._over), 0), moved = all.filter(x => x.edited).length;
+  const pend = all.filter(x => x._pending), late = pend.filter(x => x._state === 'late'), soon = pend.filter(x => x._state === 'soon');
+  const done = all.filter(x => x.status === 'Done'), onTime = done.filter(x => !(Number(x.delay) > 0)).length;
   const kpi = (lbl, val, cls, sub) => '<div class="kpi ' + (cls || '') + '"><span>' + lbl + '</span><b>' + val + '</b>' + (sub ? '<small>' + sub + '</small>' : '') + '</div>';
-  $('dlyKpis').innerHTML = kpi('Late now', late.length, late.length ? 'late' : 'good', 'past planned time') +
-    kpi('Longest delay', late.length ? fmtDur(longest) : '—', late.length ? 'late' : '', 'oldest pending step') +
+  $('dlyKpis').innerHTML = kpi('Late now', late.length, late.length ? 'late' : 'good', 'pending past planned time') +
     kpi('Due in 4 hours', soon.length, soon.length ? 'risk' : '', 'about to go late') +
-    kpi('Time changed', moved, '', 'planned time edited by admin');
-  $('dlyViews').innerHTML = DLY_VIEWS.map(v => '<button type="button" class="chip' + (dlyView === v[0] ? ' on' : '') + '" onclick="dlyView=\'' + v[0] + '\';dlyRender()">' + v[1] + '</button>').join('');
-  // team chips — only for roles that can see more than one team
+    kpi('Done on time', done.length ? Math.round(onTime * 100 / done.length) + '%' : '—', done.length && onTime / done.length < .8 ? 'risk' : 'good', done.length + ' finished steps') +
+    kpi('Time changed', pend.filter(x => x.edited).length, '', 'planned time edited by admin');
+  $('dlyMode').innerHTML = [['grid', 'Grid'], ['list', 'Task list']].map(m => '<button type="button" class="chip' + (dlyMode === m[0] ? ' on' : '') + '" onclick="dlySet(\'mode\',\'' + m[0] + '\')">' + m[1] + '</button>').join('');
   const multi = DLY_ROLE !== 'service' && DLY_ROLE !== 'repair';
-  const cnt = t => all.filter(x => (!t || x.team === t) && x._state === 'late').length;
   $('dlyTeams').style.display = multi ? '' : 'none';
   if (multi) $('dlyTeams').innerHTML = [['', 'All teams'], ['service', 'Service'], ['repair', 'Repair']].map(t =>
-    '<button type="button" class="chip' + (dlyTeam === t[0] ? ' on' : '') + '" onclick="dlyTeam=\'' + t[0] + '\';dlyRender()">' + t[1] + '<b>' + cnt(t[0]) + '</b></button>').join('');
-  let rows = all.filter(x => (!multi || !dlyTeam || x.team === dlyTeam) &&
-    (dlyView === 'all' || (dlyView === 'soon' ? x._state !== 'ok' : x._state === 'late')) &&
-    (dlyView === 'all' || !dlyMin || x._over >= dlyMin * 3600e3));
-  if (q) rows = rows.filter(x => [x.step, x.tid, x.ref, x.company, x.person, x.phone, x.dealer, x.city, x.item].join(' ').toLowerCase().indexOf(q) !== -1);
-  rows.sort((a, b) => a._p - b._p);
-  const admin = can('admin');
-  $('dlyList').innerHTML = rows.length ? rows.map(x => {
-    const link = lk(dlyType(x), x.ref, x.tid, x.ref);
-    const badge = x._state === 'late' ? '<span class="dly-badge late">+' + fmtDur(x._over) + ' late</span>' :
-      x._state === 'soon' ? '<span class="dly-badge soon">due in ' + fmtDur(-x._over) + '</span>' : '<span class="dly-badge ok">on time</span>';
-    return '<div class="dly-row ' + x._state + '">' +
-      '<div class="dly-step"><b>' + esc(x.step) + '</b><span>' + link + ' · <span class="pill pill-' + (x.team === 'repair' ? 'amber' : 'blue') + '">' + esc(x.team) + '</span></span></div>' +
-      '<div class="dly-who"><b>' + esc(x.company || x.person || '—') + '</b><span>' + esc([x.person && x.company ? x.person : '', x.item, x.city].filter(Boolean).join(' · ')) + '</span></div>' +
-      '<div class="dly-time"><span>Planned ' + esc(fmtDT(x._p)) + '</span>' + badge +
-      (x.edited ? '<small>time changed (was ' + esc(fmtDT(tsOf(x.orig))) + ')</small>' : '') + '</div>' +
-      (admin ? '<button type="button" class="btn btn-ghost btn-sm" data-id="' + esc(x.id) + '" onclick="dlyEdit(this.dataset.id)">Change time</button>' : '') +
-      '</div>';
-  }).join('') : '<div class="empty">' + (dlyView === 'late' ? '🎉 Nothing is late right now' : 'No pending steps') + '</div>';
+    '<button type="button" class="chip' + (dlyTeam === t[0] ? ' on' : '') + '" onclick="dlySet(\'team\',\'' + t[0] + '\')">' + t[1] + '<b>' + late.filter(x => !t[0] || x.team === t[0]).length + '</b></button>').join('');
+  const views = dlyMode === 'grid' ? DLY_GRID_VIEWS : DLY_LIST_VIEWS;
+  if (!views.some(v => v[0] === dlyView)) dlyView = 'late';
+  const base = all.filter(x => !multi || !dlyTeam || x.team === dlyTeam);
+  const hay = x => [x.step, x.tid, x.ref, x.company, x.person, x.phone, x.dealer, x.city, x.item].join(' ').toLowerCase();
+  if (dlyMode === 'grid') {
+    let rows = dlyRows(base);
+    const n = { late: rows.filter(r => r.late).length, open: rows.filter(r => r.open).length, done: rows.filter(r => !r.open).length, all: rows.length };
+    $('dlyViews').innerHTML = views.map(v => '<button type="button" class="chip' + (dlyView === v[0] ? ' on' : '') + '" onclick="dlySet(\'view\',\'' + v[0] + '\')">' + v[1] + '<b>' + n[v[0]] + '</b></button>').join('');
+    rows = rows.filter(r => dlyView === 'all' || (dlyView === 'late' ? r.late : dlyView === 'open' ? r.open : !r.open));
+    if (q) rows = rows.filter(r => [r.tid, r.ref, r.item, r.company, r.person, r.phone, r.city].join(' ').toLowerCase().indexOf(q) !== -1);
+    rows.sort((a, b) => (b.late - a.late) || (b.worst - a.worst) || (a.last < b.last ? 1 : -1));
+    const cols = dlyCols(), shown = rows.slice(0, dlyLimit);
+    $('dlyBody').innerHTML = rows.length ? '<div class="fms-wrap"><table class="fms-t"><thead><tr><th class="fms-id">Ticket / Battery</th><th class="fms-cu">Customer</th>' +
+      cols.map(c => '<th class="' + (c[2] === 'repair' ? 'rep' : 'svc') + '">' + esc(c[1]) + '</th>').join('') + '</tr></thead><tbody>' +
+      shown.map(r => '<tr class="' + (r.late ? 'late' : '') + '"><td class="fms-id">' + lk(r.ref ? 'item' : 'ticket', r.label, r.tid, r.label) + (r.item ? '<small>' + esc(r.item) + '</small>' : '') + '</td>' +
+        '<td class="fms-cu"><b>' + esc(r.company || r.person || '—') + '</b><small>' + esc([r.person && r.company ? r.person : '', r.city].filter(Boolean).join(' · ')) + '</small></td>' +
+        cols.map(c => dlyCellHtml(r.cells[c[0]])).join('') + '</tr>').join('') + '</tbody></table></div>' +
+      (rows.length > dlyLimit ? '<button class="btn btn-ghost btn-block" onclick="dlyLimit+=100;dlyRender()">Show more (' + (rows.length - dlyLimit) + ')</button>' : '') +
+      '<div class="fms-key"><span class="k late"></span>Late <span class="k soon"></span>Due in 4h <span class="k ok"></span>Waiting <span class="k done"></span>Done on time <span class="k donelate"></span>Done late · tap a cell for details</div>'
+      : '<div class="empty">' + (dlyView === 'late' ? '🎉 Nothing is late right now' : 'No records here') + '</div>';
+    return;
+  }
+  // ----- task list -----
+  const fil = {
+    late: x => x._state === 'late', soon: x => x._pending && x._state !== 'ok', pending: x => x._pending,
+    done: x => x.status === 'Done', all: x => x._pending || x.status === 'Done'
+  };
+  const cnt = k => base.filter(fil[k]).length;
+  $('dlyViews').innerHTML = views.map(v => '<button type="button" class="chip' + (dlyView === v[0] ? ' on' : '') + '" onclick="dlySet(\'view\',\'' + v[0] + '\')">' + v[1] + '<b>' + cnt(v[0]) + '</b></button>').join('');
+  let rows = base.filter(fil[dlyView]);
+  if (q) rows = rows.filter(x => hay(x).indexOf(q) !== -1);
+  rows.sort((a, b) => dlyView === 'done' || dlyView === 'all' ? (b._a || b._p) - (a._a || a._p) : a._p - b._p);
+  const shown = rows.slice(0, dlyLimit), admin = can('admin');
+  $('dlyBody').innerHTML = rows.length ? '<div class="fms-wrap"><table class="fms-t list"><thead><tr><th>Step</th><th>Ticket / Battery</th><th>Customer</th><th>Team</th><th>Planned</th><th>Actual</th><th>Delay</th><th>Status</th><th></th></tr></thead><tbody>' +
+    shown.map(x => {
+      const st = x._pending ? (x._state === 'late' ? '<b class="fms-l">Late</b>' : x._state === 'soon' ? '<b class="fms-s">Due soon</b>' : '<span class="fms-w">Pending</span>') : '<b class="fms-ok">Done</b>';
+      const dl = x._pending ? (x._state === 'late' ? '<b class="fms-l">+' + fmtDur(x._over) + '</b>' : '—') : (x._over > 0 ? '<b class="fms-l">+' + fmtDur(x._over) + '</b>' : '<span class="fms-ok">0</span>');
+      return '<tr class="' + (x._state === 'late' ? 'late' : '') + '"><td><b>' + esc(x.step) + '</b></td><td class="fms-id">' + lk(dlyRefType(x), x.ref, x.tid, x.ref) + (x.item ? '<small>' + esc(x.item) + '</small>' : '') + '</td>' +
+        '<td class="fms-cu"><b>' + esc(x.company || x.person || '—') + '</b></td><td><span class="pill pill-' + (x.team === 'repair' ? 'amber' : 'blue') + '">' + esc(x.team) + '</span></td>' +
+        '<td>' + esc(fmtDT(x._p)) + (x.edited ? '<small>was ' + esc(fmtDT(tsOf(x.orig))) + '</small>' : '') + '</td><td>' + (x._a ? esc(fmtDT(x._a)) : '—') + '</td><td>' + dl + '</td><td>' + st + '</td>' +
+        '<td>' + (admin && x._pending ? '<button type="button" class="btn btn-ghost btn-sm" data-id="' + esc(x.id) + '" onclick="dlyOpen(this.dataset.id)">Change time</button>' : '') + '</td></tr>';
+    }).join('') + '</tbody></table></div>' + (rows.length > dlyLimit ? '<button class="btn btn-ghost btn-block" onclick="dlyLimit+=100;dlyRender()">Show more (' + (rows.length - dlyLimit) + ')</button>' : '')
+    : '<div class="empty">' + (dlyView === 'late' ? '🎉 Nothing is late right now' : 'No steps here') + '</div>';
 }
-function dlyEdit(id) {
-  const x = DLY.find(t => t.id === id); if (!x) return;
-  const p = tsOf(x.planned), d = new Date(p), pad = pad2;
-  const val = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
-  modalOpen('Change planned time', '<div class="kv"><span>Step</span><span>' + esc(x.step) + ' · ' + esc(x.ref) + '</span></div>' +
-    '<div class="kv"><span>Now planned</span><span>' + esc(fmtDT(p)) + '</span></div>' +
-    '<label class="lbl">New planned time</label><input id="dlyNew" type="datetime-local" class="search" value="' + val + '">' +
+function dlyRefType(x) { return /^(plan|start|stage|dispatch)$/.test(x.kind) ? 'item' : x.kind === 'transit' ? 'pickup' : 'ticket'; }
+
+// details of one step · admin can move a pending step's planned time
+function dlyOpen(id) {
+  const x = DLY.map(dlyModel).find(t => t.id === id); if (!x) return;
+  const d = new Date(x._p), val = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + 'T' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  const kv = [['Step', esc(x.step) + ' · ' + esc(x.team)], ['Record', lk(dlyRefType(x), x.ref, x.tid, x.ref)], ['Customer', esc(x.company || x.person)],
+    ['Planned', esc(fmtDT(x._p))], ['Actual', x._a ? esc(fmtDT(x._a)) : 'not done yet'],
+    ['Delay', x._pending ? (x._state === 'late' ? '+' + fmtDur(x._over) + ' so far' : 'not late') : (x._over > 0 ? '+' + fmtDur(x._over) : 'on time')],
+    ['Status', esc(x.status)], ['Time changed', x.edited ? 'was ' + esc(fmtDT(tsOf(x.orig))) + ' · ' + esc(x.edited) + ' · ' + esc(x.why || '') : '']];
+  modalOpen(x.step, kvh(kv) + (can('admin') && x._pending ?
+    '<label class="lbl" style="margin-top:12px">New planned time</label><input id="dlyNew" type="datetime-local" class="search" value="' + val + '">' +
     '<label class="lbl">Reason (required)</label><input id="dlyWhy" class="search" placeholder="e.g. customer asked for later pickup">' +
-    '<button type="button" class="btn btn-primary btn-block" data-id="' + esc(id) + '" onclick="dlySave(this)">Save</button>');
+    '<button type="button" class="btn btn-primary btn-block" data-id="' + esc(id) + '" onclick="dlySave(this)">Change planned time</button>' : ''));
 }
 async function dlySave(btn) {
   const planned = $('dlyNew').value, reason = ($('dlyWhy').value || '').trim();
