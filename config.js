@@ -3,7 +3,7 @@
    ============================================================ */
 const CONFIG = {
   // GAS Web App URL (Deploy → Web app → paste the URL here)
-  API_URL: 'https://script.google.com/macros/s/AKfycbyVlpd6A_9-69tvS0bKqVaA4tH4RiLvauxnmsqpXg0w-5fU8G5jA6sKbvDaURUMpIFw6Q/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycbzfy2SFM_Wql6zalrdzLMzgtcEoIAZM-wXXVOxaHeoKubB15938LYnj7SEa426NVj1KLQ/exec',
 
   JSONP_TIMEOUT_MS: 25000,
   POST_TIMEOUT_MS: 90000,      // builty upload / Mark Received
