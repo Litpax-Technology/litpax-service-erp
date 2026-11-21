@@ -3007,7 +3007,7 @@ function dlyModel(x) {
   if (pending) { over = now - p; state = over > 0 ? 'late' : (over > -4 * 3600e3 ? 'soon' : 'ok'); }
   else if (x.status === 'Skipped') state = 'skipped';
   else { over = (Number(x.delay) || 0) * 3600e3; state = over > 0 ? 'donelate' : 'done'; }
-  return Object.assign({}, x,
+return Object.assign({}, x, { _p: p, _a: a, _over: over, _state: state, _pending: pending });
 }
 const dlyColKey = t => t.sid || ('n:' + t.step);
 // columns = the steps set up in ⚙ Steps (switched-off steps only while they still have tasks)
