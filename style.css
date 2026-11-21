@@ -1685,3 +1685,17 @@ button.kpi:hover { border-color: var(--border-strong); }
 .fms-key .k { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 5px; border: 1px solid var(--border); }
 .fms-key .k.late { background: #fdecec; } .fms-key .k.soon { background: #fff6e5; } .fms-key .k.ok { background: #fff; }
 .fms-key .k.done { background: #eefaf2; } .fms-key .k.donelate { background: #fff3e6; }
+
+/* ---------- Delays → ⚙ Steps editor ---------- */
+.fms-ed { border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 10px; background: #fff; }
+.fms-ed.off { opacity: .55; background: #f7f8fb; }
+.fms-ed-h { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+.fms-ed-h b { width: 22px; text-align: center; color: var(--muted); }
+.fms-ed-h .search { flex: 1; min-width: 0; }
+.fms-ed-g { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+.fms-ed-g label { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--text2); font-weight: 600; }
+.fms-ed-g select, .fms-ed-g input[type=number] { padding: 7px 8px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: #fff; min-width: 0; }
+.fms-ed-g .fms-ed-on { flex-direction: row; align-items: center; gap: 6px; align-self: end; }
+.fms-ed-s { display: block; margin-top: 8px; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+.fms-ed-tip { font-size: 12.5px; color: var(--text2); margin: 0 0 12px; line-height: 1.5; }
+@media (max-width: 520px) { .fms-ed-g { grid-template-columns: 1fr; } }
