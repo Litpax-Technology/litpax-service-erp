@@ -2993,7 +2993,7 @@ async function dlyLoad(silent) {
   try {
     const r = await api({ action: 'getFms' });
     if (!r || !r.ok) { if (!silent) toast('❌ ' + ((r && r.msg) || 'Could not load delays')); return; }
-    DLY = r.tasks || []; DLY_STEPS = r.steps || []; DLY_EVENTS = r.events || []; DLY_STAGES = r.stages || CONFIG.STAGES || []; DLY_ROLE = r.role || role();
+    DLY = r.tasks || []; DLY_STEPS = r.steps || []; DLY_EVENTS = r.events || []; DLY_STAGES = r.stages || CONFIG.STAGES || []; DLY_ROLE = r.role || role(); DLY_OFFICE = r.office || { on: false };
     const sv = tsOf(r.now); DLY_OFF = sv ? sv - Date.now() : 0;
     dlyRender();
   } catch (e) { if (e !== 'auth' && !silent && !DLY.length) $('dlyBody').innerHTML = '<div class="empty">Could not load data ❌</div>'; }
@@ -3147,87 +3147,198 @@ async function dlySave(btn) {
   if (r) { modalClose(); toast('✅ Planned time updated'); dlyLoad(true); }
 }
 
-// ---------- ⚙ STEPS (admin): add / edit / reorder / switch off the steps of the FMS ----------
-// A step is Normal (one Done status) or Yes/No (a "Yes" status and a "No" status — the answer is saved). A step can run only on the Yes or the No path of a Yes/No step.
-let DLY_ED = [], dlyEdN = 0;
-const DLY_DATE_OPTS = [['', 'Hours after it opens'], ['next_followup', 'The follow-up date (set on a call)'], ['plan_date', 'The plan date (Repair Board)']];
+// ---------- ⚙ STEPS (admin): the steps of the FMS — same design as the BMP "Add Step" wizard, driven by the app's statuses ----------
+// List of steps (↑ ↓ Edit Delete) + a form for one step: 1 Step details (name · who · how · Normal or Yes/No) · 2 Opens · 3 When (planned time) · 4 Done / Yes / No status · 5 Conditional.
+// Nothing is saved until "Save steps". A step that is deleted leaves the list; its open tasks are removed, finished ones stay as history.
+let DLY_ED = [], dlyEdN = 0, dlyFm = null, dlyFmIdx = -1, DLY_OFFICE = { on: false };
+const DLY_DATES = { next_followup: 'follow-up date', plan_date: 'plan date', pickup_date: 'pickup date' };
+const DLY_DATE_EV = { next_followup: 'call_logged', plan_date: 'planned', pickup_date: 'pickup_arranged' };
+const DLY_DAYS_AFTER = [[0, 'Same day'], [1, 'Next working day'], [2, 'Day after next']];
+const dlyCopy = s => ({ id: s.id, name: s.name, team: s.team, how: s.how || '', type: s.type === 'yesno' ? 'yesno' : 'normal', starts: s.starts, done: s.done, noWhen: s.noWhen || '',
+  timing: s.timing === 'date' || s.timing === 'clock' ? s.timing : 'tat', hours: s.hours === '' || s.hours == null ? '' : s.hours, dateFrom: s.dateFrom || '',
+  lead: s.lead || 0, before: s.before || 0, clock: s.clock || '', daysAfter: s.daysAfter || 0, branchOf: s.branchOf || '', branchVal: s.branchVal || '', active: s.active !== false });
 function dlySteps() {
   if (!can('admin')) return;
-  DLY_ED = DLY_STEPS.map(s => ({ id: s.id, name: s.name, team: s.team, starts: s.starts, done: s.done, hours: s.hours === '' ? '' : s.hours, dateFrom: s.dateFrom || '', active: s.active !== false,
-    type: s.type === 'yesno' ? 'yesno' : 'normal', noWhen: s.noWhen || '', branchOf: s.branchOf || '', branchVal: s.branchVal || '' }));
-  dlyEdN = 0;
+  DLY_ED = DLY_STEPS.map(dlyCopy);
+  dlyEdN = 0; dlyFm = null; dlyFmIdx = -1;
   dlyEdDraw();
 }
 function dlyEvLabel(k) { const e = DLY_EVENTS.find(x => x.key === k); return e ? e.label : k; }
-// the status that opens a step (a step can also open "right after" another step is Done — for a Yes/No step: right after its Yes or its No)
+// the status that opens a step (a step can also open "right after" another step is Done — for a Yes/No step on the No path: its No status)
 function dlyEdStart(s) {
   if (String(s.starts).indexOf('after:') !== 0) return s.starts;
   const t = DLY_ED.find(x => x.id === s.starts.substring(6));
   return !t ? '' : (t.type === 'yesno' && s.branchVal === 'No' ? t.noWhen : t.done);
 }
+// planned time in words
+function dlyTimeTxt(s) {
+  if (s.timing === 'date') {
+    const d = (Number(s.lead) || 0) + (Number(s.before) || 0), nm = DLY_DATES[s.dateFrom] || 'date';
+    return d ? d + ' day' + (d > 1 ? 's' : '') + ' before the ' + nm : 'on the ' + nm;
+  }
+  if (s.timing === 'clock') {
+    const n = Number(s.daysAfter) || 0;
+    return 'at ' + (s.clock || '?') + (n === 0 ? ' the same day' : n === 1 ? ' the next working day' : ' after ' + n + ' working days');
+  }
+  return String(s.hours) !== '' && Number(s.hours) === 0 ? 'Done at once' : '+ ' + (s.hours === '' ? '?' : s.hours) + ' h' + (DLY_OFFICE.on ? ' (working hours)' : '');
+}
+function dlyEdSum(s) {
+  const yn = s.type === 'yesno';
+  if (!s.done) return 'Choose when this step is ' + (yn ? 'Yes' : 'Done');
+  return 'Opens: ' + esc(dlyEvLabel(dlyEdStart(s))) + ' → Planned ' + esc(dlyTimeTxt(s)) + ' → ' +
+    (yn ? 'Yes: ' + esc(dlyEvLabel(s.done)) + ' · No: ' + esc(s.noWhen ? dlyEvLabel(s.noWhen) : '?') : 'Done: ' + esc(dlyEvLabel(s.done))) +
+    (s.branchOf ? ' · only on the ' + esc(s.branchVal) + ' path of “' + esc((DLY_ED.find(x => x.id === s.branchOf) || {}).name || '?') + '”' : '');
+}
+
+// ----- the list -----
 function dlyEdDraw() {
-  const opt = (v, cur, txt) => '<option value="' + esc(v) + '"' + (String(v) === String(cur) ? ' selected' : '') + '>' + esc(txt) + '</option>';
-  const evOpts = cur => '<option value="">Choose…</option>' + DLY_EVENTS.map(e => opt(e.key, cur, e.label)).join('');
-  const cards = DLY_ED.map((s, i) => {
-    const yn = s.type === 'yesno', sev = dlyEdStart(s), dates = DLY_DATE_OPTS.filter(d => !d[0] || (d[0] === 'next_followup' && sev === 'call_logged') || (d[0] === 'plan_date' && sev === 'planned'));
-    const startOpts = '<optgroup label="Opens when…">' + DLY_EVENTS.map(e => opt(e.key, s.starts, e.label)).join('') + '</optgroup>' +
-      '<optgroup label="Opens right after this step is Done">' + DLY_ED.filter(x => x !== s).map(x => opt('after:' + x.id, s.starts, (x.name || 'New step') + (x.type === 'yesno' ? ' — answered' : ' — Done'))).join('') + '</optgroup>';
-    const brOpts = '<option value="">Always (both paths)</option>' + DLY_ED.filter(x => x !== s && x.type === 'yesno').map(x =>
-      opt(x.id + '|Yes', s.branchOf + '|' + s.branchVal, 'Only if “' + (x.name || 'Yes/No step') + '” = Yes') + opt(x.id + '|No', s.branchOf + '|' + s.branchVal, 'Only if “' + (x.name || 'Yes/No step') + '” = No')).join('');
-    const hrs = s.dateFrom ? 'on the ' + (s.dateFrom === 'plan_date' ? 'plan date' : 'follow-up date') : (Number(s.hours) === 0 && String(s.hours) !== '' ? 'at once' : '+ ' + (s.hours === '' ? '?' : s.hours) + ' h');
-    const sum = s.done ? 'Opens: ' + esc(dlyEvLabel(sev)) + ' → Planned ' + hrs + ' → ' + (yn ? 'Yes: ' + esc(dlyEvLabel(s.done)) + ' · No: ' + esc(s.noWhen ? dlyEvLabel(s.noWhen) : '?') : 'Done: ' + esc(dlyEvLabel(s.done))) +
-      (s.branchOf ? ' · only on the ' + esc(s.branchVal) + ' path' : '') : 'Choose when this step is ' + (yn ? 'Yes' : 'Done');
-    return '<div class="fms-ed' + (s.active ? '' : ' off') + '"><div class="fms-ed-h"><b>' + (i + 1) + '</b>' +
-      '<input class="search" placeholder="Step name" value="' + esc(s.name) + '" oninput="DLY_ED[' + i + '].name=this.value">' +
-      '<button type="button" class="btn btn-ghost btn-sm" title="Move up" onclick="dlyEdMove(' + i + ',-1)">↑</button>' +
-      '<button type="button" class="btn btn-ghost btn-sm" title="Move down" onclick="dlyEdMove(' + i + ',1)">↓</button></div>' +
-      '<div class="fms-ed-g">' +
-      '<label>Team<select onchange="DLY_ED[' + i + '].team=this.value">' + opt('service', s.team, 'Service') + opt('repair', s.team, 'Repair') + '</select></label>' +
-      '<label>Step type<select onchange="dlyEdType(' + i + ',this.value)">' + opt('normal', s.type, 'Normal (Done)') + opt('yesno', s.type, 'Yes / No') + '</select></label>' +
-      '<label>Opens<select onchange="DLY_ED[' + i + '].starts=this.value;dlyEdFix(' + i + ');dlyEdDraw()">' + startOpts + '</select></label>' +
-      '<label>' + (yn ? 'Yes when (automatic)' : 'Done when (automatic)') + '<select onchange="DLY_ED[' + i + '].done=this.value;dlyEdDraw()">' + evOpts(s.done) + '</select></label>' +
-      (yn ? '<label>No when (automatic)<select onchange="DLY_ED[' + i + '].noWhen=this.value;dlyEdDraw()">' + evOpts(s.noWhen) + '</select></label>' : '') +
-      '<label>Planned time<select onchange="DLY_ED[' + i + '].dateFrom=this.value;dlyEdDraw()">' + dates.map(d => opt(d[0], s.dateFrom, d[1])).join('') + '</select></label>' +
-      (s.dateFrom ? '' : '<label>Hours (0 = Done at once)<input type="number" min="0" step="any" value="' + esc(s.hours) + '" oninput="DLY_ED[' + i + '].hours=this.value"></label>') +
-      '<label>Runs on<select onchange="dlyEdBranch(' + i + ',this.value)">' + brOpts + '</select></label>' +
-      '<label class="fms-ed-on"><input type="checkbox"' + (s.active ? ' checked' : '') + ' onchange="DLY_ED[' + i + '].active=this.checked;dlyEdDraw()"> Active</label></div>' +
-      '<small class="fms-ed-s">' + sum + '</small></div>';
-  }).join('');
+  dlyFm = null; dlyFmIdx = -1;
+  const cards = DLY_ED.map((s, i) => '<div class="fms-ed' + (s.active ? '' : ' off') + '"><div class="fms-ed-h"><b>' + (i + 1) + '</b>' +
+    '<div class="fms-ed-t"><span class="fms-ed-n">' + esc(s.name || 'New step') + '</span><span class="fms-pill">' + (s.team === 'repair' ? 'Repair' : 'Service') + '</span>' +
+    '<span class="fms-pill' + (s.type === 'yesno' ? ' yn' : '') + '">' + (s.type === 'yesno' ? 'Yes / No' : 'Normal') + '</span>' + (s.active ? '' : '<span class="fms-pill off">Off</span>') + '</div>' +
+    '<button type="button" class="btn btn-ghost btn-sm" title="Move up" onclick="dlyEdMove(' + i + ',-1)">↑</button>' +
+    '<button type="button" class="btn btn-ghost btn-sm" title="Move down" onclick="dlyEdMove(' + i + ',1)">↓</button></div>' +
+    '<small class="fms-ed-s">' + (s.how ? '<i>' + esc(s.how) + '</i><br>' : '') + dlyEdSum(s) + '</small>' +
+    '<div class="fms-ed-b"><button type="button" class="btn btn-ghost btn-sm" onclick="dlyFmOpen(' + i + ')">✎ Edit</button>' +
+    '<button type="button" class="btn btn-ghost btn-sm fms-del" onclick="dlyEdDel(' + i + ')">🗑 Delete</button></div></div>').join('');
   modalOpen('⚙ FMS steps',
-    '<p class="fms-ed-tip">Steps follow the <b>status</b>. A step <b>opens</b> at a status, gets a <b>Planned time</b> (hours after it opened, or a date) and is <b>Done automatically</b> when its status comes. ' +
-    'A <b>Yes / No</b> step is answered by whichever status comes first. A step can run only on the Yes or the No path — the other path is skipped. A step is switched off, never deleted. New times apply to <b>new</b> tasks.</p>' + cards +
-    '<button type="button" class="btn btn-ghost btn-block" onclick="dlyEdAdd()">＋ Add step</button>' +
+    '<p class="fms-ed-tip">Each step has a <b>who</b>, a <b>how</b> and a <b>when</b>. It <b>opens</b> at a status, gets a <b>planned time</b>, and is <b>Done automatically</b> when its status comes — nobody ticks anything. ' +
+    'A <b>Yes / No</b> step is answered by whichever status comes first, and later steps can run only on its Yes or its No path. ' +
+    (DLY_OFFICE.on ? 'Hours count <b>working hours</b> (' + esc(DLY_OFFICE.start) + '–' + esc(DLY_OFFICE.end) + ', weekly-off days and the Holidays tab are skipped). ' : 'Hours count plain 24-hour days — fill <b>Office opens / closes</b> in Settings to count working hours. ') +
+    'New times apply to <b>new</b> tasks. Nothing changes until you press <b>Save steps</b>.</p>' + cards +
+    '<button type="button" class="btn btn-ghost btn-block" onclick="dlyFmOpen(-1)">＋ Add step</button>' +
     '<button type="button" class="btn btn-primary btn-block" style="margin-top:10px" onclick="dlyEdSave(this)">Save steps</button>');
 }
-function dlyEdType(i, v) {
-  const s = DLY_ED[i]; s.type = v;
-  if (v !== 'yesno') { s.noWhen = ''; DLY_ED.forEach(x => { if (x.branchOf === s.id) { x.branchOf = ''; x.branchVal = ''; } }); }
-  dlyEdDraw();
-}
-function dlyEdBranch(i, v) {
-  const s = DLY_ED[i], p = String(v).split('|');
-  s.branchOf = p[0] || ''; s.branchVal = p[1] || '';
-  dlyEdFix(i); dlyEdDraw();
-}
-// a date source only fits a step that opens at its own status
-function dlyEdFix(i) {
-  const s = DLY_ED[i], ev = dlyEdStart(s);
-  if ((s.dateFrom === 'next_followup' && ev !== 'call_logged') || (s.dateFrom === 'plan_date' && ev !== 'planned')) { s.dateFrom = ''; if (s.hours === '') s.hours = 24; }
-}
 function dlyEdMove(i, d) { const j = i + d; if (j < 0 || j >= DLY_ED.length) return; const t = DLY_ED[i]; DLY_ED[i] = DLY_ED[j]; DLY_ED[j] = t; dlyEdDraw(); }
-function dlyEdAdd() {
-  const last = DLY_ED[DLY_ED.length - 1];
-  DLY_ED.push({ id: 'N' + (++dlyEdN), name: '', team: last ? last.team : 'service', starts: last ? 'after:' + last.id : 'ticket_created', done: '', hours: 24, dateFrom: '', active: true,
-    type: 'normal', noWhen: '', branchOf: '', branchVal: '' });
+function dlyEdDel(i) {
+  const s = DLY_ED[i]; if (!s) return;
+  const dep = DLY_ED.find(x => x !== s && (x.starts === 'after:' + s.id || x.branchOf === s.id));
+  if (dep) return toast('⚠️ “' + (dep.name || 'A step') + '” depends on “' + (s.name || 'this step') + '” — change that step first');
+  if (!confirm('Delete “' + (s.name || 'this step') + '”?\n\nIts open tasks are removed. Finished tasks stay as history.\n(It is removed when you press Save steps.)')) return;
+  DLY_ED.splice(i, 1);
+  dlyFm = null; dlyFmIdx = -1;
   dlyEdDraw();
-  const m = $('mdBody'); if (m) m.scrollTop = m.scrollHeight;
+  toast('Removed from the list — press Save steps to apply');
+}
+
+// ----- one step (add / edit) -----
+function dlyFmOpen(i) {
+  dlyFmIdx = i;
+  if (i >= 0) dlyFm = dlyCopy(DLY_ED[i]);
+  else {
+    const last = DLY_ED[DLY_ED.length - 1];
+    dlyFm = dlyCopy({ id: 'N' + (++dlyEdN), name: '', team: last ? last.team : 'service', starts: last ? 'after:' + last.id : 'ticket_created', done: '', hours: 24, timing: 'tat' });
+  }
+  dlyFm._cust = [0, 1, 2].indexOf(Number(dlyFm.daysAfter) || 0) === -1;
+  dlyFmDraw();
+  const m = $('mdBody'); if (m) m.scrollTop = 0;
+}
+function dlyFmDraw() {
+  const s = dlyFm, yn = s.type === 'yesno', sev = dlyEdStart(s), isNew = dlyFmIdx < 0;
+  const opt = (v, cur, txt) => '<option value="' + esc(v) + '"' + (String(v) === String(cur) ? ' selected' : '') + '>' + esc(txt) + '</option>';
+  const evOpts = cur => '<option value="">Choose…</option>' + DLY_EVENTS.map(e => opt(e.key, cur, e.label)).join('');
+  const others = DLY_ED.filter((x, k) => k !== dlyFmIdx);
+  const startOpts = '<optgroup label="Opens when…">' + DLY_EVENTS.map(e => opt(e.key, s.starts, e.label)).join('') + '</optgroup>' +
+    (others.length ? '<optgroup label="Opens right after this step is Done">' + others.map(x => opt('after:' + x.id, s.starts, (x.name || 'New step') + (x.type === 'yesno' ? ' — answered' : ' — Done'))).join('') + '</optgroup>' : '');
+  const decs = others.filter(x => x.type === 'yesno');
+  const dates = Object.keys(DLY_DATES).filter(k => DLY_DATE_EV[k] === sev);
+  const seg = (cur, v, txt, fn) => '<button type="button" class="fms-seg-b' + (cur === v ? ' on' : '') + '" onclick="' + fn + '(\'' + v + '\')">' + txt + '</button>';
+  let when = '';
+  if (s.timing === 'date') {
+    when = dates.length
+      ? '<label>Count from the<select onchange="dlyFm.dateFrom=this.value;dlyFmDraw()">' + '<option value="">Choose…</option>' + dates.map(k => opt(k, s.dateFrom, DLY_DATES[k])).join('') + '</select></label>' +
+        '<label>Lead time (days)<input type="number" min="0" step="any" value="' + esc(s.lead) + '" oninput="dlyFm.lead=this.value"></label>' +
+        '<label>Days before<input type="number" min="0" step="any" value="' + esc(s.before) + '" oninput="dlyFm.before=this.value"></label>' +
+        '<small class="fms-ed-s wide">Planned = the date − lead time − days before (at the day-end time from Settings; an off day or holiday moves it to the working day before).</small>'
+      : '<small class="fms-ed-s wide">The status this step opens at does not carry a date. A date is known when it opens at <b>In Follow-up</b> (follow-up date), <b>In Planning</b> (plan date) or <b>In Transit</b> (pickup date).</small>';
+  } else if (s.timing === 'clock') {
+    when = '<label>Time of day<input type="time" value="' + esc(s.clock) + '" oninput="dlyFm.clock=this.value"></label>' +
+      '<label>Days after it opens<select onchange="dlyFmDays(this.value)">' + DLY_DAYS_AFTER.map(d => opt(d[0], s._cust ? 'c' : s.daysAfter, d[1])).join('') + opt('c', s._cust ? 'c' : '', 'Custom…') + '</select></label>' +
+      (s._cust ? '<label>Working days after<input type="number" min="0" max="30" step="1" value="' + esc(s.daysAfter) + '" oninput="dlyFm.daysAfter=this.value"></label>' : '') +
+      '<small class="fms-ed-s wide">Planned = that clock time, that many working days after the day it opens (weekly-off days and holidays are skipped).</small>';
+  } else {
+    when = '<label>Hours (0 = Done at once)<input type="number" min="0" step="any" value="' + esc(s.hours) + '" oninput="dlyFm.hours=this.value"></label>' +
+      '<small class="fms-ed-s wide">' + (DLY_OFFICE.on ? 'Counted in <b>working hours</b> (' + esc(DLY_OFFICE.start) + '–' + esc(DLY_OFFICE.end) + '); weekly-off days and holidays are skipped.' : 'Counted as plain 24-hour days (weekly-off days and holidays skipped). Fill Office opens / closes in Settings to count working hours.') + '</small>';
+  }
+  const cond = '<label class="fms-ed-on wide"><input type="checkbox"' + (s.branchOf ? ' checked' : '') + (decs.length || s.branchOf ? '' : ' disabled') + ' onchange="dlyFmCond(this.checked)"> Only run on a Yes / No path of an earlier decision' + (decs.length || s.branchOf ? '' : ' <i>(no Yes/No step yet)</i>') + '</label>' +
+    (s.branchOf ? '<label>Decision step<select onchange="dlyFm.branchOf=this.value;dlyFmDraw()">' + decs.map(x => opt(x.id, s.branchOf, x.name || 'Yes/No step')).join('') + '</select></label>' +
+      '<div class="fms-ed-l"><span>Run only when</span><div class="fms-seg">' + seg(s.branchVal, 'Yes', 'Yes', 'dlyFmBr') + seg(s.branchVal, 'No', 'No', 'dlyFmBr') + '</div></div>' : '');
+  modalOpen(isNew ? '＋ Add step' : '✎ Edit step',
+    '<div class="fms-fm"><div class="fms-fm-sec">1 · Step details</div><div class="fms-ed-g">' +
+    '<label class="wide">Step name<input type="text" maxlength="60" placeholder="e.g. Service team call" value="' + esc(s.name) + '" oninput="dlyFm.name=this.value"></label>' +
+    '<label>Who (team)<select onchange="dlyFm.team=this.value">' + opt('service', s.team, 'Service') + opt('repair', s.team, 'Repair') + '</select></label>' +
+    '<label>How (tool / method)<input type="text" maxlength="120" placeholder="e.g. Phone call, WhatsApp, Repair Board" value="' + esc(s.how) + '" oninput="dlyFm.how=this.value"></label>' +
+    '<div class="fms-ed-l wide"><span>Step type</span><div class="fms-seg">' + seg(s.type, 'normal', 'Normal step (Done)', 'dlyFmType') + seg(s.type, 'yesno', 'Decision step (Yes / No)', 'dlyFmType') + '</div></div></div>' +
+    '<div class="fms-fm-sec">2 · When does it open?</div><div class="fms-ed-g"><label class="wide">Opens<select onchange="dlyFmOpens(this.value)">' + opt('', s.starts, 'Choose…') + startOpts + '</select></label></div>' +
+    '<div class="fms-fm-sec">3 · When is it planned?</div><div class="fms-ed-g"><div class="fms-ed-l wide"><span>Timing method</span><div class="fms-seg">' +
+    seg(s.timing, 'tat', 'TAT (hours)', 'dlyFmTiming') + seg(s.timing, 'date', 'Days before a date', 'dlyFmTiming') + seg(s.timing, 'clock', 'Specific clock time', 'dlyFmTiming') + '</div></div>' + when + '</div>' +
+    '<div class="fms-fm-sec">4 · When is it ' + (yn ? 'answered' : 'Done') + '? (automatic)</div><div class="fms-ed-g">' +
+    '<label class="wide">' + (yn ? 'Yes when' : 'Done when') + '<select onchange="dlyFm.done=this.value">' + evOpts(s.done) + '</select></label>' +
+    (yn ? '<label class="wide">No when<select onchange="dlyFm.noWhen=this.value">' + evOpts(s.noWhen) + '</select></label>' : '') + '</div>' +
+    '<div class="fms-fm-sec">5 · Conditional (optional)</div><div class="fms-ed-g">' + cond + '</div>' +
+    '<label class="fms-ed-on" style="margin:10px 0 0"><input type="checkbox"' + (s.active ? ' checked' : '') + ' onchange="dlyFm.active=this.checked"> Active</label></div>' +
+    '<div class="fms-fm-b"><button type="button" class="btn btn-ghost" onclick="dlyEdDraw()">Cancel</button>' +
+    (isNew ? '' : '<button type="button" class="btn btn-ghost fms-del" onclick="dlyEdDel(' + dlyFmIdx + ')">🗑 Delete</button>') +
+    '<button type="button" class="btn btn-primary" onclick="dlyFmSave()">' + (isNew ? 'Add step' : 'Save step') + '</button></div>');
+}
+function dlyFmType(v) {
+  dlyFm.type = v;
+  if (v !== 'yesno') dlyFm.noWhen = '';
+  dlyFmDraw();
+}
+function dlyFmTiming(v) {
+  dlyFm.timing = v;
+  if (v === 'tat' && dlyFm.hours === '') dlyFm.hours = 24;
+  if (v === 'date' && DLY_DATE_EV[dlyFm.dateFrom] !== dlyEdStart(dlyFm)) dlyFm.dateFrom = Object.keys(DLY_DATE_EV).find(k => DLY_DATE_EV[k] === dlyEdStart(dlyFm)) || '';
+  dlyFmDraw();
+}
+function dlyFmDays(v) {
+  if (v === 'c') { dlyFm._cust = true; dlyFm.daysAfter = Math.max(3, Number(dlyFm.daysAfter) || 3); }
+  else { dlyFm._cust = false; dlyFm.daysAfter = Number(v); }
+  dlyFmDraw();
+}
+// a date source only fits a step that opens at the status that knows that date
+function dlyFmFix() {
+  if (dlyFm.timing === 'date' && DLY_DATE_EV[dlyFm.dateFrom] !== dlyEdStart(dlyFm)) dlyFm.dateFrom = Object.keys(DLY_DATE_EV).find(k => DLY_DATE_EV[k] === dlyEdStart(dlyFm)) || '';
+}
+function dlyFmOpens(v) { dlyFm.starts = v; dlyFmFix(); dlyFmDraw(); }
+function dlyFmCond(on) {
+  if (!on) { dlyFm.branchOf = ''; dlyFm.branchVal = ''; }
+  else { const d = DLY_ED.find((x, k) => k !== dlyFmIdx && x.type === 'yesno'); if (d) { dlyFm.branchOf = d.id; dlyFm.branchVal = 'Yes'; } }
+  dlyFmFix(); dlyFmDraw();
+}
+function dlyFmBr(v) { dlyFm.branchVal = v; dlyFmFix(); dlyFmDraw(); }
+// check one step, put it in the list (nothing is sent to the server yet)
+function dlyFmSave() {
+  const s = dlyFm, nm = String(s.name || '').trim(), yn = s.type === 'yesno';
+  const bad = m => toast('⚠️ ' + m);
+  if (!nm) return bad('Write the step name');
+  if (DLY_ED.some((x, k) => k !== dlyFmIdx && String(x.name).trim().toLowerCase() === nm.toLowerCase())) return bad('Another step already has this name');
+  if (!s.starts || (String(s.starts).indexOf('after:') === 0 && !dlyEdStart(s))) return bad('Choose when this step opens');
+  if (s.timing === 'tat' && (String(s.hours).trim() === '' || !(Number(s.hours) >= 0))) return bad('Enter the hours (0 = Done at once)');
+  if (s.timing === 'date') {
+    if (!s.dateFrom) return bad('Choose the date it counts from (or use TAT / clock time)');
+    if (!(Number(s.lead || 0) >= 0) || !(Number(s.before || 0) >= 0)) return bad('Lead time and days before cannot be negative');
+  }
+  if (s.timing === 'clock' && !/^\d{1,2}:\d{2}$/.test(String(s.clock || '').trim())) return bad('Choose the time of day');
+  if (!s.done) return bad('Choose when it is ' + (yn ? 'Yes' : 'Done'));
+  if (yn && !s.noWhen) return bad('Choose when the answer is No');
+  if (yn && s.noWhen === s.done) return bad('Yes and No cannot be the same status');
+  if (s.branchOf && !s.branchVal) return bad('Choose Yes or No for the path');
+  const out = dlyCopy(s); out.name = nm;
+  if (dlyFmIdx < 0) DLY_ED.push(out);
+  else {
+    const old = DLY_ED[dlyFmIdx];
+    if (old.type === 'yesno' && !yn) DLY_ED.forEach(x => { if (x.branchOf === old.id) { x.branchOf = ''; x.branchVal = ''; } });   // not a Yes/No step any more
+    DLY_ED[dlyFmIdx] = out;
+  }
+  dlyEdDraw();
+  toast('✅ ' + (dlyFmIdx < 0 ? 'Step added' : 'Step updated') + ' — press Save steps to apply');
 }
 async function dlyEdSave(btn) {
-  const bad = DLY_ED.findIndex(s => !String(s.name).trim());
-  if (bad >= 0) return toast('⚠️ Step ' + (bad + 1) + ': write a name');
-  const r = await run({ action: 'saveFmsSteps', steps: JSON.stringify(DLY_ED.map(s => ({ id: s.id, name: s.name, team: s.team, starts: s.starts, done: s.done, hours: s.hours, dateFrom: s.dateFrom, active: s.active,
-    type: s.type, noWhen: s.noWhen, branchOf: s.branchOf, branchVal: s.branchVal }))) }, btn);
-  if (r) { modalClose(); toast('✅ Steps saved'); dlyLoad(true); }
+  const r = await run({ action: 'saveFmsSteps', steps: JSON.stringify(DLY_ED.map(s => ({ id: s.id, name: s.name, team: s.team, how: s.how, type: s.type, starts: s.starts, done: s.done, noWhen: s.noWhen,
+    timing: s.timing, hours: s.hours, dateFrom: s.dateFrom, lead: s.lead, before: s.before, clock: s.clock, daysAfter: s.daysAfter, branchOf: s.branchOf, branchVal: s.branchVal, active: s.active }))) }, btn);
+  if (r) { modalClose(); toast('✅ Steps saved' + (r.deleted ? ' · ' + r.deleted + ' deleted' : '')); dlyLoad(true); }
 }
 
 /* ============================================================
