@@ -397,6 +397,7 @@
       <div class="toolbar">
         <input id="recSearch" class="search" placeholder="Filter by ID, customer, serial, transport…" oninput="REC_LIMIT = 100; recRender()">
         <span id="recCount" class="rec-count"></span>
+        <button id="recAddStock" class="btn btn-primary btn-sm" hidden onclick="stockAddOpen()">＋ Add opening stock</button>
         <button class="btn btn-ghost btn-icon" title="Refresh" aria-label="Refresh" onclick="recLoad(true)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
       </div>
       <div id="recList"></div>
