@@ -2972,28 +2972,67 @@ function recRender() {
 
 // 4) naye functions — "DELAYS / FMS" wale comment banner se theek pehle paste karo
 // ---------- ♻️ Refurb stock: opening stock (batteries already on the shelf) ----------
+// ---------- ♻️ Refurb stock: opening stock — every model in ONE save ----------
+let OS_ROWS = [];
 function stockAddOpen() {
-  ensureModels();
+  ensureModels(); OS_ROWS = [{ category: '', model: '', serials: '', qty: '' }];
   modalOpen('♻️ Add opening stock — refurbished batteries',
-    '<div class="note">For batteries already lying repaired / ready <b>before</b> this app. Each battery gets its own STK id and shows in <b>Send replacement → Refurbished stock</b>.</div>' +
-    '<div class="form-grid">' +
-      '<div class="fg"><label>Battery type</label><select id="os_cat">' + optList(M().batteryType, '', '-- Select --') + '</select></div>' +
-      fg('Model <b>*</b>', 'os_model', 'text', '', ' maxlength="100" list="dl_models"') +
-      '<div class="fg full"><label>Serial numbers <span class="opt">(one per line)</span></label><textarea id="os_serials" rows="6" placeholder="SN001&#10;SN002&#10;SN003" oninput="stockCount()"></textarea><div class="muted-sm" id="os_cnt">0 serials</div></div>' +
-      fg('Quantity <span class="opt">(only if there are no serial numbers)</span>', 'os_qty', 'number', '', ' min="1" max="200"') +
-      fg('Remarks', 'os_rem', 'text', '', ' maxlength="300" placeholder="e.g. shelf A, repaired in Oct"') +
-    '</div><button class="btn btn-primary btn-block" onclick="stockAddSave(this)">Add to refurbished stock ✓</button>');
+    '<div class="note">For batteries already lying repaired / ready <b>before</b> this app. Add <b>all models together</b> and save once — each battery gets its own STK id and shows in <b>Send replacement → Refurbished stock</b>.</div>' +
+    '<div class="fg full"><label>Paste from Excel <span class="opt">(2 columns: Model · Serial no — all models together)</span></label><textarea id="os_paste" rows="4" placeholder="LTX-48V-30&#9;SN001&#10;LTX-48V-30&#9;SN002&#10;LTX-60V-40&#9;SN101"></textarea>' +
+      '<button type="button" class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="stockPaste()">Fill the list below ↓</button></div>' +
+    '<div id="os_rows"></div>' +
+    '<button type="button" class="btn btn-ghost btn-sm" onclick="stockRowAdd()">＋ Add another model</button>' +
+    '<div class="form-grid" style="margin-top:10px">' + fg('Remarks <span class="opt">(for all)</span>', 'os_rem', 'text', '', ' maxlength="300" placeholder="e.g. godown, repaired in Oct"') + '</div>' +
+    '<div class="muted-sm" id="os_tot" style="margin:6px 0 10px"></div>' +
+    '<button class="btn btn-primary btn-block" onclick="stockAddSave(this)">Add all to refurbished stock ✓</button>');
+  stockRowsDraw();
 }
-function stockSerials() { const seen = {}, out = []; ($('os_serials').value || '').split(/[\n\r,;]+/).forEach(x => { const t = x.trim(), k = t.replace(/\s+/g, '').toUpperCase(); if (k && !seen[k]) { seen[k] = 1; out.push(t); } }); return out; }
-function stockCount() { const n = stockSerials().length; $('os_cnt').textContent = n + ' serial' + (n === 1 ? '' : 's') + (n ? ' → ' + n + ' batteries will be added' : ''); }
+function stockSerialsOf(r) { const seen = {}, out = []; String(r.serials || '').split(/[\n\r,;]+/).forEach(x => { const t = x.trim(), k = t.replace(/\s+/g, '').toUpperCase(); if (k && !seen[k]) { seen[k] = 1; out.push(t); } }); return out; }
+function stockRowsDraw() {
+  $('os_rows').innerHTML = OS_ROWS.map((r, i) =>
+    '<div class="os-row"><div class="os-top"><select onchange="stockSet(' + i + ',\'category\',this.value)">' + optList(M().batteryType, r.category, '-- Type --') + '</select>' +
+      '<input maxlength="100" list="dl_models" placeholder="Model *" value="' + esc(r.model) + '" oninput="stockSet(' + i + ',\'model\',this.value)">' +
+      '<button type="button" class="btn btn-ghost btn-sm" title="Remove this model" onclick="stockRowDel(' + i + ')">✕</button></div>' +
+      '<textarea rows="3" placeholder="Serial numbers — one per line (or leave empty and enter the quantity)" oninput="stockSet(' + i + ',\'serials\',this.value)">' + esc(r.serials) + '</textarea>' +
+      '<div class="os-bot"><label>Quantity <span class="opt">(only if no serial numbers)</span></label><input type="number" min="1" max="500" value="' + esc(r.qty) + '" oninput="stockSet(' + i + ',\'qty\',this.value)"></div></div>').join('');
+  stockTotal();
+}
+function stockSet(i, k, v) { if (OS_ROWS[i]) OS_ROWS[i][k] = v; stockTotal(); }
+function stockRowAdd() { OS_ROWS.push({ category: '', model: '', serials: '', qty: '' }); stockRowsDraw(); }
+function stockRowDel(i) { OS_ROWS.splice(i, 1); if (!OS_ROWS.length) OS_ROWS.push({ category: '', model: '', serials: '', qty: '' }); stockRowsDraw(); }
+function stockTotal() {
+  let n = 0, m = 0; OS_ROWS.forEach(r => { const c = stockSerialsOf(r).length || Number(r.qty) || 0; if (c && String(r.model || '').trim()) { n += c; m++; } });
+  $('os_tot').textContent = n ? n + ' batter' + (n === 1 ? 'y' : 'ies') + ' · ' + m + ' model' + (m === 1 ? '' : 's') + ' will be added' : 'Nothing to add yet';
+}
+function stockPaste() {   // Excel → one row per model (serials grouped)
+  const map = {}, order = []; let skipped = 0;
+  ($('os_paste').value || '').split(/\r?\n/).forEach((line, n) => {
+    if (!line.trim()) return;
+    const parts = line.split(line.indexOf('\t') >= 0 ? '\t' : ','), model = (parts[0] || '').trim(), ser = (parts[1] || '').trim();
+    if (n === 0 && /^model/i.test(model)) return;                       // header line
+    if (!model || !ser) { skipped++; return; }
+    const m = modelOf(model), code = m ? m.code : model, k = modelKey(code);
+    if (!map[k]) { map[k] = { category: '', model: code, serials: [], qty: '' }; order.push(k); }
+    map[k].serials.push(ser);
+  });
+  if (!order.length) return toast('⚠️ Paste two columns: Model and Serial no');
+  OS_ROWS = OS_ROWS.filter(r => String(r.model || '').trim() || r.serials || r.qty).concat(order.map(k => Object.assign({}, map[k], { serials: map[k].serials.join('\n') })));
+  $('os_paste').value = ''; stockRowsDraw();
+  toast('✅ ' + order.length + ' model' + (order.length === 1 ? '' : 's') + ' filled — check the list' + (skipped ? ' · ' + skipped + ' line(s) skipped (no serial)' : ''));
+}
 async function stockAddSave(btn) {
-  const serials = stockSerials(), qty = Number($('os_qty').value) || 0, d = { action: 'addOpeningStock', category: $('os_cat').value, model: $('os_model').value.trim(), serials: serials.join('\n'), qty: serials.length ? '' : qty, remarks: $('os_rem').value.trim() };
-  if (!d.model) return toast('⚠️ Enter the model');
-  if (!serials.length && qty < 1) return toast('⚠️ Enter the serial numbers, or the quantity');
-  if ((serials.length || qty) > 200) return toast('⚠️ Add at most 200 at a time');
-  const m = modelOf(d.model); if (m) d.model = m.code;
-  const r = await run(d, btn); if (!r) return;
-  modalClose(); toast('✅ ' + r.count + ' batter' + (r.count === 1 ? 'y' : 'ies') + ' added — ' + r.first + (r.count > 1 ? ' … ' + r.last : ''));
+  const rows = OS_ROWS.map(r => { const m = modelOf(r.model), sr = stockSerialsOf(r); return { category: r.category, model: m ? m.code : String(r.model || '').trim(), serials: sr.join('\n'), qty: sr.length ? '' : (Number(r.qty) || '') }; })
+    .filter(r => r.model || r.serials || r.qty);
+  if (!rows.length) return toast('⚠️ Enter the model and the serial numbers (or the quantity)');
+  for (let i = 0; i < rows.length; i++) {
+    if (!rows[i].model) return toast('⚠️ Row ' + (i + 1) + ': enter the model');
+    if (!rows[i].serials && !(rows[i].qty >= 1)) return toast('⚠️ Row ' + (i + 1) + ' (' + rows[i].model + '): enter the serial numbers, or the quantity');
+  }
+  const total = rows.reduce((t, r) => t + (r.serials ? r.serials.split('\n').length : r.qty), 0);
+  if (total > 500) return toast('⚠️ Add at most 500 at a time (this is ' + total + ')');
+  const r = await run({ action: 'addOpeningStock', rows: JSON.stringify(rows), remarks: $('os_rem').value.trim() }, btn, true);
+  if (!r) return;
+  modalClose(); toast('✅ ' + r.count + ' batter' + (r.count === 1 ? 'y' : 'ies') + ' · ' + (r.summary || []).length + ' model' + ((r.summary || []).length === 1 ? '' : 's') + ' added — ' + r.first + (r.count > 1 ? ' … ' + r.last : ''));
   afterChange(); recLoad(true);
 }
 function stockView(id) {
