@@ -2932,7 +2932,7 @@ const REC_LISTS = {
     cols: [['Ticket', r => esc(r['Ticket ID'])], ['Customer', r => esc(r['Customer'])], ['Battery', r => esc([r['Old Model'], r['New Serial'] && '→ ' + r['New Serial']].filter(Boolean).join(' '))],
            ['Old battery', r => esc(r['Against Item ID'] ? (r['Old Outcome'] || 'with us') : 'not received')], ['Status', r => pill(r['Status'])]] },
   stock: { label: '♻️ Refurb stock', type: 'item', id: 'Stock ID', open: 'Item ID',
-    cols: [['Battery', r => esc([r['Category'], r['Model']].filter(Boolean).join(' · '))], ['Serial', r => esc(r['Serial No'])], ['From', r => esc(r['Item ID'])],
+    cols: [['Battery', r => esc([r['Category'], r['Model']].filter(Boolean).join(' · '))], ['Serial', r => esc(r['Serial No'])], ['From', r => esc(r['Item ID'] || 'Opening stock')],
            ['Added', r => esc(niceDate(r['Added At']))], ['Status', r => pill(r['Status']) + (r['Issued RPL'] ? ' ' + esc(r['Issued RPL']) : '')]] },
   parts: { label: '🔩 Parts used', type: 'item', id: 'Part Use ID', open: 'Item ID',
     cols: [['Part', r => esc(r['Part'])], ['Qty', r => esc(r['Qty'])], ['Amount', r => esc(rupee(r['Amount']))], ['Item', r => esc(r['Item ID'])], ['Customer', r => esc(r['Customer'])]] },
@@ -2942,6 +2942,7 @@ const REC_LISTS = {
 };
 let REC_TYPE = 'customers', REC_ROWS = {}, REC_LIMIT = 100;
 function openRecords() {
+  $('recAddStock').hidden = !(REC_TYPE === 'stock' && can('repair'));
   $('recTabs').innerHTML = Object.keys(REC_LISTS).map(k => '<button class="chip' + (k === REC_TYPE ? ' active' : '') + '" data-k="' + k + '" onclick="recSetType(this.dataset.k)">' + REC_LISTS[k].label + '</button>').join('');
   recLoad(false);
 }
@@ -2964,9 +2965,42 @@ function recRender() {
   if (!rows.length) { $('recList').innerHTML = '<div class="empty">No records</div>'; return; }
   const show = rows.slice(0, REC_LIMIT);
   $('recList').innerHTML = '<div class="rl"><div class="rl-row rl-head"><span>ID</span>' + L.cols.map(c => '<span>' + c[0] + '</span>').join('') + '</div>' +
-    show.map(r => '<div class="rl-row rec-click" data-t="' + L.type + '" data-i="' + esc(r[L.open || L.id] || '') + '" data-k="' + esc(r['Ticket ID'] || '') + '" onclick="lkGo(this,event)">' +
-      '<span>' + idChip(r[L.id], !r[L.id]) + '</span>' + L.cols.map(c => '<span data-l="' + c[0] + '">' + (c[1](r) || '—') + '</span>').join('') + '</div>').join('') + '</div>' +
+    show.map(r => { const own = REC_TYPE === 'stock' && !r['Item ID']; return '<div class="rl-row rec-click" data-t="' + L.type + '" data-i="' + esc(r[L.open || L.id] || '') + '" data-k="' + esc(r['Ticket ID'] || '') + '" data-s="' + esc(own ? r['Stock ID'] : '') + '" onclick="' + (own ? 'stockView(this.dataset.s)' : 'lkGo(this,event)') + '">' +
+      '<span>' + idChip(r[L.id], !r[L.id]) + '</span>' + L.cols.map(c => '<span data-l="' + c[0] + '">' + (c[1](r) || '—') + '</span>').join('') + '</div>'; }).join('') + '</div>' +
     (rows.length > REC_LIMIT ? '<button class="btn btn-ghost btn-block" onclick="REC_LIMIT += 200; recRender()">Show more (' + (rows.length - REC_LIMIT) + ')</button>' : '');
+}
+
+// 4) naye functions — "DELAYS / FMS" wale comment banner se theek pehle paste karo
+// ---------- ♻️ Refurb stock: opening stock (batteries already on the shelf) ----------
+function stockAddOpen() {
+  ensureModels();
+  modalOpen('♻️ Add opening stock — refurbished batteries',
+    '<div class="note">For batteries already lying repaired / ready <b>before</b> this app. Each battery gets its own STK id and shows in <b>Send replacement → Refurbished stock</b>.</div>' +
+    '<div class="form-grid">' +
+      '<div class="fg"><label>Battery type</label><select id="os_cat">' + optList(M().batteryType, '', '-- Select --') + '</select></div>' +
+      fg('Model <b>*</b>', 'os_model', 'text', '', ' maxlength="100" list="dl_models"') +
+      '<div class="fg full"><label>Serial numbers <span class="opt">(one per line)</span></label><textarea id="os_serials" rows="6" placeholder="SN001&#10;SN002&#10;SN003" oninput="stockCount()"></textarea><div class="muted-sm" id="os_cnt">0 serials</div></div>' +
+      fg('Quantity <span class="opt">(only if there are no serial numbers)</span>', 'os_qty', 'number', '', ' min="1" max="200"') +
+      fg('Remarks', 'os_rem', 'text', '', ' maxlength="300" placeholder="e.g. shelf A, repaired in Oct"') +
+    '</div><button class="btn btn-primary btn-block" onclick="stockAddSave(this)">Add to refurbished stock ✓</button>');
+}
+function stockSerials() { const seen = {}, out = []; ($('os_serials').value || '').split(/[\n\r,;]+/).forEach(x => { const t = x.trim(), k = t.replace(/\s+/g, '').toUpperCase(); if (k && !seen[k]) { seen[k] = 1; out.push(t); } }); return out; }
+function stockCount() { const n = stockSerials().length; $('os_cnt').textContent = n + ' serial' + (n === 1 ? '' : 's') + (n ? ' → ' + n + ' batteries will be added' : ''); }
+async function stockAddSave(btn) {
+  const serials = stockSerials(), qty = Number($('os_qty').value) || 0, d = { action: 'addOpeningStock', category: $('os_cat').value, model: $('os_model').value.trim(), serials: serials.join('\n'), qty: serials.length ? '' : qty, remarks: $('os_rem').value.trim() };
+  if (!d.model) return toast('⚠️ Enter the model');
+  if (!serials.length && qty < 1) return toast('⚠️ Enter the serial numbers, or the quantity');
+  if ((serials.length || qty) > 200) return toast('⚠️ Add at most 200 at a time');
+  const m = modelOf(d.model); if (m) d.model = m.code;
+  const r = await run(d, btn); if (!r) return;
+  modalClose(); toast('✅ ' + r.count + ' batter' + (r.count === 1 ? 'y' : 'ies') + ' added — ' + r.first + (r.count > 1 ? ' … ' + r.last : ''));
+  afterChange(); recLoad(true);
+}
+function stockView(id) {
+  const r = (REC_ROWS.stock || []).find(x => x['Stock ID'] === id); if (!r) return;
+  modalOpen('♻️ ' + id, kvh([['Battery', tv([r['Category'], r['Model']].filter(Boolean).join(' · '))], ['Serial', tv(r['Serial No'])], ['Status', pill(r['Status'])],
+    ['Sent as', r['Issued RPL'] ? esc(r['Issued RPL']) + (r['Issued At'] ? ' · ' + esc(niceDate(r['Issued At'])) : '') : ''],
+    ['Added', tv(niceDate(r['Added At']) + (r['Added By'] ? ' · ' + r['Added By'] : ''))], ['Remarks', tv(r['Remarks'])]]));
 }
 
 /* ============================================================
